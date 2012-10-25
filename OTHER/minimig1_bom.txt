@@ -1,0 +1,166 @@
+Minimig rev1.0 / Rev1.1 Bill of materials
+
+Count ComponentName  Value          RefDes
+------------------------------------------------------------------------
+
+1     3.5MM_CON_PCB                 J1
+1     74HC4060                      IC8
+5     BAV99                         D2
+                                    D3
+                                    D4
+                                    D5
+                                    D6
+1     CE_DIA7.0MM/RA 22uF/16V       C14
+4     CE_DIA7.0MM/RA 100uF/16V      C1
+                                    C2
+                                    C9
+                                    C15
+4     CT_100U/6.3V                  C4
+                                    C17
+                                    C27
+                                    C37
+22    C_0805         10n            C5
+                                    C6
+                                    C7
+                                    C8
+                                    C16
+                                    C18
+                                    C19
+                                    C21
+                                    C22
+                                    C25
+                                    C28
+                                    C29
+                                    C30
+                                    C35
+                                    C36
+                                    C39
+                                    C40
+                                    C43
+                                    C44
+                                    C46
+                                    C52
+                                    C55
+1     C_0805         22p            C47
+2     C_0805         47pF           C49
+                                    C51
+21    C_0805         100n           C3
+                                    C10
+                                    C11
+                                    C12
+                                    C13
+                                    C20
+                                    C23
+                                    C24
+                                    C26
+                                    C31
+                                    C32
+                                    C33
+                                    C34
+                                    C38
+                                    C41
+                                    C42
+                                    C45
+                                    C50
+                                    C53
+                                    C54
+                                    C56
+1     C_0805         100p           C48
+1     DC_CON                        J2
+2     Push button                   SCHK1
+                                    SCHK2
+3     DSUBH_9M                      J3
+                                    J6
+                                    J10
+1     DSUBH_15F_HD                  J4
+1     HEADER6MSIL                   J7
+1     HEADER10M                     J9
+2     JUMPER3                       1
+                                    2
+1     LED_0805       BLUE           D1
+1     LED_0805       GREEN          D7
+1     LED_0805       RED            D8
+3     LM1117MP-ADJ                  IC1
+                                    IC3
+                                    IC4
+2     M68AW512M                     IC6
+                                    IC7
+1     SP3232EUCN                    IC2
+1     MC68SEC000FU20                IC9
+1     PIC18LF252I/SP                IC10
+2     PS2_CON                       J5
+                                    J8
+6     RES_0805/1%    1K             R1
+                                    R15
+                                    R19
+                                    R21
+                                    R23
+                                    R51
+1     RES_0805/1%    1meg           R55
+6     RES_0805/1%    2K2            R7
+                                    R9
+                                    R11
+                                    R28
+                                    R67
+                                    R68
+1     RES_0805/1%    2.2K           R54
+7     RES_0805/1%    4K7            R20
+                                    R22
+                                    R24
+                                    R59
+                                    R63
+                                    R64
+                                    R65
+10    RES_0805/1%    100            R12
+                                    R14
+                                    R35
+                                    R36
+                                    R37
+                                    R38
+                                    R39
+                                    R40
+                                    R42
+                                    R49 (was 1K in rev1.0 schematics)
+2     RES_0805/1%    180            R25
+                                    R26
+28    RES_0805/1%    270            R2
+                                    R3
+                                    R13
+                                    R18
+                                    R27
+                                    R29
+                                    R30
+                                    R31
+                                    R32
+                                    R33
+                                    R34
+                                    R41
+                                    R43
+                                    R44
+                                    R45
+                                    R46
+                                    R47
+                                    R48
+                                    R50
+                                    R52
+                                    R53
+                                    R56
+                                    R57
+                                    R58
+                                    R60
+                                    R61
+                                    R62
+                                    R66
+7     RES_0805/1%    560            R4
+                                    R5
+                                    R6
+                                    R8
+                                    R10
+                                    R16
+                                    R17
+1     SD_CARD                       J11
+1     XC3S400-4PQ208                IC5
+1     XTAL_THRUHOLE  4.433619MHz    X1
+1     XTAL_THRUHOLE  20.000MHz      X2
+------------------------------------------------------------------------
+
