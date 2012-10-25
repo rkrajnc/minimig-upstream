@@ -134,6 +134,9 @@
 // 2011-03-06	- changed autofire function to handless mode
 // 2011-03-08	- added dip and fat agnus DIWSTRT handling (fix RoboCop2)
 // 2011-04-02	- added functional ciaa port b (parallel) register to let Unreal game work and some trainer store data
+// 2011-04-04	- added pwm controlled power-led at "off" state and active Turbo mode (thanks Herzi for the idea)
+// 2011-04-10	- added readable VPOSW and VHPOSW register (fix for RSI slideshow)
+// 11-04-2011	- autofire function toggle able via capslock / led status
 
 module Minimig1
 (
@@ -363,9 +366,19 @@ wire buf_sck;
 BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 
 // power led control
-// when _led=0, pwrled=on
-// when _led=1, pwrled=powered by weak pullup
-assign pwrled = _led ? 1'b0 : 1'b1;
+reg	[3:0] led_cnt;
+reg	led_dim;
+
+assign pwrled = (_led & (led_dim | ~turbo)) ? 1'b0 : 1'b1; // led dim at off-state and active turbo mode
+//assign pwrled = _led ? 1'b0 : 1'b1;
+
+// power-led pwm 
+always @(posedge clk)
+		led_cnt <= led_cnt + 1;
+
+always @(posedge clk)
+	if (_hsync)
+		led_dim <= |led_cnt;
 
 // drive step sound emulation
 reg	_step_del;
@@ -384,7 +397,7 @@ assign sol_pulse = sol & ~sol_del; // rising edge detection
 
 reg	[3:0] drv_cnt;
 always @(posedge clk)
-	if (drv_cnt != 0 && sol_pulse || drv_cnt == 0 && step_pulse) // count only sol pulses when counter is not zero or step pulses otherwise
+	if (drv_cnt != 0 && sol_pulse || drv_cnt == 0 && step_pulse && ~boot) // count only sol pulses when counter is not zero or step pulses and bootloader is not active
 		drv_cnt <= drv_cnt + 1;
 
 reg	drvsnd;
@@ -416,8 +429,8 @@ assign init_b = (vsync_t);
 // instantiate agnus
 Agnus AGNUS1
 (
-	.clk({clk}),
-	.clk28m({clk28m}),
+	.clk(clk),
+	.clk28m(clk28m),
 	.cck(cck),
 	.reset(reset),
 	.aen(sel_reg),
@@ -441,7 +454,7 @@ Agnus AGNUS1
 	.strhor_denise(strhor_denise),
 	.strhor_paula(strhor_paula),
 	.htotal(htotal),
-	.int3({int3}),
+	.int3(int3),
 	.audio_dmal(audio_dmal),
 	.audio_dmas(audio_dmas),
 	.disk_dmal(disk_dmal),
@@ -457,8 +470,8 @@ Agnus AGNUS1
 // instantiate paula
 Paula PAULA1
 (
-	.clk({clk}),
-	.clk28m({clk28m}),
+	.clk(clk),
+	.clk28m(clk28m),
 	.cck(cck),
 	.reset(reset),
 	.reg_address_in(reg_address),
@@ -471,8 +484,8 @@ Paula PAULA1
 	.strhor(strhor_paula),
 	.vblint(vbl_int),
 	.int2(int2|gayle_irq),
-	.int3({int3}),
-	.int6({int6}),
+	.int3(int3),
+	.int6(int6),
 	._ipl(_iplx),
 	.audio_dmal(audio_dmal),
 	.audio_dmas(audio_dmas),
@@ -528,6 +541,7 @@ userio USERIO1
 	.ps2mclk(msclk),
 	._fire0(_fire0),
 	._fire1(_fire1),
+	.aflock(aflock),
 	._joy1(_joy1),
 	._joy2(_joy2 & kb_joy2),
 	._lmb(kb_lmb),
@@ -590,20 +604,20 @@ Amber AMBER1
 	.red_in(red_i),
 	.blue_in(blue_i),
 	.green_in(green_i),
-	._hsync_in({_hsync_i}),
-	._vsync_in({_vsync_i}),
-	._csync_in({_csync_i}),
+	._hsync_in(_hsync_i),
+	._vsync_in(_vsync_i),
+	._csync_in(_csync_i),
 	.red_out(red),
 	.blue_out(blue),
 	.green_out(green),
-	._hsync_out({_hsync}),
-	._vsync_out({_vsync})
+	._hsync_out(_hsync),
+	._vsync_out(_vsync)
 );
 
 // instantiate cia A
 ciaa CIAA1
 (
-	.clk({clk}),
+	.clk(clk),
 	.aen(sel_cia_a),
 	.rd(cpu_rd),
 	.wr(cpu_lwr|cpu_hwr),
@@ -612,7 +626,7 @@ ciaa CIAA1
 	.data_in(cpu_data_out[7:0]),
 	.data_out(cia_data_out[7:0]),
 	.tick(_vsync_i),
-	.eclk(eclk[8]),
+	.eclk({eclk[8]}),
 	.irq({int2}),
 	.porta_in({_fire1,_fire0,_ready,_track0,_wprot,_change}),
 	.porta_out({_led,ovl}),
@@ -624,6 +638,7 @@ ciaa CIAA1
 	._lmb(kb_lmb),
 	._rmb(kb_rmb),
 	._joy2(kb_joy2),
+	.aflock(aflock),
 	.freeze(freeze),
 	.disk_led(disk_led)
 );
@@ -631,7 +646,7 @@ ciaa CIAA1
 // instantiate cia B
 ciab CIAB1 
 (
-	.clk({clk}),
+	.clk(clk),
 	.aen(sel_cia_b),
 	.rd(cpu_rd),
 	.wr(cpu_hwr|cpu_lwr),
@@ -640,9 +655,9 @@ ciab CIAB1
 	.data_in(cpu_data_out[15:8]),
 	.data_out(cia_data_out[15:8]),
 	.tick(_hsync_i),
-	.eclk(eclk[8]),
-	.flag(index),
+	.eclk({eclk[8]}),
 	.irq({int6}),
+	.flag(index),
 	.porta_in({1'b0,cts,1'b0}),
 	.porta_out({dtr,rts}),
 	.portb_out({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
@@ -651,11 +666,11 @@ ciab CIAB1
 // instantiate cpu bridge
 m68k_bridge CPU1 
 (
-	.clk28m({clk28m}),
+	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
 	.cck(cck),
-	.clk({clk}),
+	.clk(clk),
 	.cpu_clk(cpu_clk),
 	.eclk(eclk),
 	.vpa(sel_cia),
@@ -703,7 +718,7 @@ bank_mapper BMAP1
 // instantiate sram bridge
 sram_bridge RAM1 
 (
-	.clk28m({clk28m}),
+	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),	
 	.bank(bank),
@@ -724,12 +739,12 @@ sram_bridge RAM1
 
 ActionReplay CART1
 (
-	.clk({clk}),
+	.clk(clk),
 	.reset(reset),
 	.cpu_address(cpu_address),
 	.cpu_address_in(cpu_address_out),
-	.cpu_clk({cpu_clk}),
-	._cpu_as({_cpu_as}),
+	.cpu_clk(cpu_clk),
+	._cpu_as(_cpu_as),
 	.reg_address_in(reg_address),
 	.reg_data_in(custom_data_in),
 	.data_in(cpu_data_out),
@@ -740,7 +755,7 @@ ActionReplay CART1
 	.dbr(dbr),
 	.boot(boot),
 	.freeze(freeze),
-	.int7({int7}),
+	.int7(int7),
 	.ovr(ovr),
 	.selmem(selcart),
 	.aron(aron)
@@ -790,7 +805,7 @@ gary GARY1
 
 gayle GAYLE1
 (
-	.clk({clk}),
+	.clk(clk),
 	.reset(reset),
 	.address_in(cpu_address_out),
 	.data_in(cpu_data_out),
@@ -819,7 +834,7 @@ gayle GAYLE1
 // instantiate boot rom
 bootrom BOOTROM1 
 (	
-	.clk({clk}),
+	.clk(clk),
 	.aen(sel_boot),
 	.rd(cpu_rd),
 	.address_in(cpu_address_out[10:1]),
@@ -829,7 +844,7 @@ bootrom BOOTROM1
 // instantiate system control
 syscontrol CONTROL1 
 (	
-	.clk({clk}),
+	.clk(clk),
 	.cnt(sof),
 	.mrst(kbdrst | usrrst),
 	.boot_done(sel_cia_a & sel_cia_b),
@@ -841,13 +856,13 @@ syscontrol CONTROL1
 // instantiate clock generator
 clock_generator CLOCK1
 (	
-	.mclk({mclk}),
-	.clk28m({clk28m}),	// 28.37516 MHz clock output
+	.mclk(mclk),
+	.clk28m(clk28m),	// 28.37516 MHz clock output
 	.c1(c1),			// clock enable signal
 	.c3(c3),			// clock enable signal
-	.cck({cck}),			// colour clock enable
+	.cck(cck),			// colour clock enable
 	.clk(clk),			// 7.09379  MHz clock output
-	.cpu_clk({cpu_clk}),
+	.cpu_clk(cpu_clk),
 	.turbo(turbo),
 	.eclk(eclk)			// ECLK enable (1/10th of CLK)
 );
@@ -880,12 +895,12 @@ assign sdo = (!_scs[0] || !_scs[1]) ? (paula_sdo | user_sdo) : 1'bz;
 
 // cpu reset output
 //assign _cpu_reset = rst_sel ? ~reset_out : 1'bz;
-assign _cpu_reset = (~reset_out);
+assign _cpu_reset = ~reset_out;
 
 // input reset from the CPU control bus
 always @(posedge clk)
 //	if (~rst_sel)
-		reset <= (~_cpu_reset);
+		reset <= ~_cpu_reset;
 	
 //--------------------------------------------------------------------------------------
 
@@ -1014,7 +1029,6 @@ begin
 		5'b1_1101 : bank = {  1'b0, slow2, slow1, slow0,     kick,  cart, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP + 1.5MB SLOW
 		5'b1_1110 : bank = { slow1, slow2, slow0, chip2,     kick,  cart, chip1, chip0 }; // 1.5M CHIP + 1.5MB SLOW
 		5'b1_1111 : bank = { slow1, slow0, chip3, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP + 1.5MB SLOW
-//		5'b1_1111 : bank = { slow1, slow0, slow2, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP + 1.5MB SLOW
 	endcase
 end
 
@@ -1135,18 +1149,18 @@ always @(posedge clk28m)
 	if (!c1 && !c3) // deassert chip selects in Q0
 		_ce[3:0] <= 4'b1111;
 	else if (c1 && !c3) // assert chip selects in Q1
-		_ce[3:0] <= {~|bank[7:6],~|bank[5:4],~|bank[3:2],~|bank[1:0]};
+		_ce[3:0] <= ({~|bank[7:6],~|bank[5:4],~|bank[3:2],~|bank[1:0]});
 
 // ram address bus
 always @(posedge clk28m)
 	if (c1 && !c3 && enable)	// set address in Q1		
-		address <= {bank[7]|bank[5]|bank[3]|bank[1],address_in[18:1]};
+		address <= ({bank[7]|bank[5]|bank[3]|bank[1],address_in[18:1]});
 			
 // data_out multiplexer
 assign data_out[15:0] = (enable && rd) ? data[15:0] : 16'b0000000000000000;
 
 // data bus output buffers
-assign data[15:0] = doe ? data_in[15:0] : 16'bz;
+assign data[15:0] = doe ? data_in[15:0] : 16'bzzzzzzzzzzzzzzzz;
 
 endmodule
 
@@ -1304,9 +1318,9 @@ always @(negedge cpu_clk)
 // cached memory ranges
 wire [3:0] cache_bank;
 assign cache_bank[0] = (address[23:19] == 5'b1100_0) ? VCC : GND;	// SLOW RAM $C00000-$C7FFFF
-assign cache_bank[1] = (address[23:19] == 5'b1100_1) ? VCC : GND;	// SLOW RAM $C80000-$CFFFFF	
-assign cache_bank[2] = (address[23:19] == 5'b1101_0) ? VCC : GND;	// SLOW RAM $D00000-$D7FFFF	
-assign cache_bank[3] = (address[23:19] == 5'b1111_1) ? VCC : GND;	// KICK ROM $F80000-$FFFFFF	
+assign cache_bank[1] = (address[23:19] == 5'b1100_1) ? VCC : GND;	// SLOW RAM $C80000-$CFFFFF
+assign cache_bank[2] = (address[23:19] == 5'b1101_0) ? VCC : GND;	// SLOW RAM $D00000-$D7FFFF
+assign cache_bank[3] = (address[23:19] == 5'b1111_1) ? VCC : GND;	// KICK ROM $F80000-$FFFFFF
 
 // enable caching of selected memory range
 wire [3:0] bank_enable;

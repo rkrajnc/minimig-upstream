@@ -99,6 +99,7 @@ module ciaa
 	output	_lmb,
 	output	_rmb,
 	output	[5:0] _joy2,
+	output	aflock,				// auto fire lock
 	output	freeze,				// Action Replay freeze key
 	input	disk_led			// floppy disk activity LED
 );
@@ -159,8 +160,8 @@ assign data_out = (icr_out | tmra_out | tmrb_out | tmrd_out | sdr_out | pb_out |
 //----------------------------------------------------------------------------------
 wire	keystrobe;
 wire	keyack;
-reg		[7:0] sdr_latch;
 wire	[7:0] keydat;
+reg	[7:0] sdr_latch;
 
 ps2keyboard	kbd1
 (
@@ -168,8 +169,9 @@ ps2keyboard	kbd1
 	.reset(reset),
 	.ps2kdat(kbddat),
 	.ps2kclk(kbdclk),
-	.leda(~porta_out[1]),	// power/filter LED
-	.ledb(disk_led),		// disk activity LED
+	.leda(~porta_out[1]),	// keyboard joystick LED - num lock
+	.ledb(disk_led),			// disk activity LED - scroll lock
+	.aflock(aflock),
 	.kbdrst(kbdrst),
 	.keydat(keydat[7:0]),
 	.keystrobe(keystrobe),

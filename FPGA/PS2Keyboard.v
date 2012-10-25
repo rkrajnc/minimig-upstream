@@ -53,6 +53,7 @@ module ps2keyboard
 	inout	ps2kclk,			//keyboard PS/2 clk
 	input	leda,				//keyboard led a in
 	input	ledb,				//keyboard led b in
+	output	aflock,		// auto fire toggle
 	output	kbdrst,				//keyboard reset out
 	output	[7:0] keydat,		//keyboard data out
 	output	reg keystrobe,		//keyboard data out strobe
@@ -286,8 +287,8 @@ ps2keyboardmap km1
 //
 //Capslock on amiga is "remembered" by keyboard. A ps/2 keyboard doesn't do this
 //therefore, amiga-like caps lock behaviour is simulated here
-wire keyequal;
-reg [7:0]keydat2;
+wire	keyequal;
+reg	[7:0]keydat2;
 
 assign keyequal = keydat2[6:0]==keydat[6:0] ? 1 : 0;//detect if latched key equals new key
 //latch last key downstroke event
@@ -306,6 +307,8 @@ always @(posedge clk)
 	else if (valid && !keydat[7] && caps && !(keyequal && (keydat[7]==keydat2[7])))
 		capslock <= ~capslock;
 
+assign aflock = capslock;
+
 //generate keystrobe to indicate valid keycode				
 always @(capslock or caps or keyequal or keydat or keydat2 or valid)
 	if (capslock && caps)//filter out capslock downstroke && capslock upstroke events if capslock is set
@@ -320,7 +323,7 @@ always @(capslock or caps or keyequal or keydat or keydat2 or valid)
 //Keyboard reset detector. 
 //Reset is accomplished by holding down the
 //ctrl or caps, left alt and right alt keys all at the same time
-reg [2:0]kbdrststatus;
+reg	[2:0]kbdrststatus;
 
 always @(posedge clk)
 begin

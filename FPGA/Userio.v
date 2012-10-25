@@ -57,7 +57,8 @@
 //					- lmb & rmb emulation
 //
 // SB:
-//	06-03-2011	- add autofire without key press & permanent fire at KP0
+//	06-03-2011	- added autofire without key press & permanent fire at KP0
+// 11-04-2011	- autofire function toggle able via capslock / led status
 
 module userio
 (
@@ -77,6 +78,7 @@ module userio
 	output	_fire1,					// joystick 1 fire output (to CIA)
 	input	[5:0] _joy1,			// joystick 1 in (default mouse port)
 	input	[5:0] _joy2,			// joystick 2 in (default joystick port)
+	input	aflock,					// auto fire lock
 	input	_lmb,
 	input	_rmb,
 	input	[7:0] osd_ctrl,			// OSD control (minimig->host, [menu,select,down,up])
@@ -142,17 +144,18 @@ always @(posedge clk)
 			autofire_cnt <= autofire_config;
 		else
 			autofire_cnt <= autofire_cnt - 1;
-			
+
+// autofire 
 always @(posedge clk)
 	if (sof)
 		if (autofire_config == 0)
 			autofire <= 1'b0;
-		else if (autofire_cnt == 1 && _xjoy2[4] == 1)
+		else if (autofire_cnt == 1)
 			autofire <= ~autofire;
 
-// autofire 
+// auto fire function toggle via capslock status
 always @(posedge clk)
-	sel_autofire <= _xjoy2[4] ? autofire : 0;
+	sel_autofire <= (~aflock ^ _xjoy2[4]) ? autofire : 1'b0;
 
 // disable keyboard when OSD is displayed
 always @(key_disable)
@@ -219,7 +222,7 @@ always @(reg_address_in or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mrigh
 	else if (reg_address_in[8:1]==POTINP[8:1])// read mouse and joysticks extra buttons
 		data_out[15:0] = {1'b0,_sjoy2[5],3'b010,_mright&_sjoy1[5]&_rmb,1'b0,_mthird,8'b00000000};
 	else
-		data_out[15:0] = 16'h0000;
+		data_out[15:0] = 16'h00_00;
 
 // assign fire outputs to cia A
 assign _fire1 = _sjoy2[4];

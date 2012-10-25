@@ -715,7 +715,6 @@ always @(posedge clk)
 // vertical display window enable		
 always @(posedge clk)
 	if (sof && ~a1k || vpos[10:0]==0 && a1k || vpos[10:0]==vdiwstop[10:0]) // DIP Agnus can't start display DMA at scanline 0
-//	if (sof || vpos[10:0]==vdiwstop[10:0])
 		vdiwena <= GND;
 	else if (vpos[10:0]==vdiwstrt[10:0])
 		vdiwena <= VCC;
