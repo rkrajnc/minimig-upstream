@@ -49,13 +49,15 @@ enum MENU
     MENU_FIRMWARE_OPTIONS_ENABLE2,
     MENU_FIRMWARE_OPTIONS_ENABLED1,
     MENU_FIRMWARE_OPTIONS_ENABLED2,
-    MENU_ERROR
+    MENU_ERROR,
+    MENU_INFO,
 };
 
 void InsertFloppy(adfTYPE *drive);
 void HandleUI(void);
 void PrintDirectory(void);
 void ScrollLongName(void);
-void ErrorMessage(const char *message, unsigned char code);
+void ErrorMessage(char *message, unsigned char code);
+void InfoMessage(char *message);
 
 

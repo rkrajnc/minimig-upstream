@@ -30,6 +30,10 @@ JB:
             - code cleanup
 2009-05-03  - modified sorting algorithm in LoadDirectory() to display sub-directories above files
 2009-08-23  - modified ScanDirectory() to support page scrolling and parent dir selection
+2009-11-22  - modified FileSeek()
+            - added FileReadEx()
+2009-12-15  - all entries are now sorted by name with extension
+            - directory short names are displayed with extensions
 
 */
 
@@ -321,7 +325,7 @@ int CompareDirEntries(DIRENTRY *pDirEntry1, char *pLFN1, DIRENTRY *pDirEntry2, c
     else
     {
         pStr1 = (const char*)pDirEntry1->Name;
-        len = 8;
+        len = 11;
     }
 
     if (*pLFN2)
@@ -329,7 +333,7 @@ int CompareDirEntries(DIRENTRY *pDirEntry1, char *pLFN1, DIRENTRY *pDirEntry2, c
     else
     {
         pStr2 = (const char*)pDirEntry2->Name;
-        len = 8;
+        len = 11;
     }
 
     rc = _strnicmp(pStr1, pStr2, len);
@@ -373,10 +377,10 @@ char ScanDirectory(unsigned long mode, char *extension, unsigned char options)
     char *ptr;
     static char lfn[261];
     unsigned char lfn_error = 1;
-
+    /*
     unsigned long time;
     time = GetTimer(0);
-
+    */
     lfn[0] = 0;
 
     if (mode == SCAN_INIT)
@@ -758,9 +762,9 @@ char ScanDirectory(unsigned long mode, char *extension, unsigned char options)
                             else if ((mode >= '0' && mode <= '9') || (mode >= 'A' && mode <= 'Z')) // find first entry beginning with given character
                             {
                                 if (find_file)
-                                    x = pEntry->Name[0] >= mode && is_file;
+                                    x = tolower(pEntry->Name[0]) >= tolower(mode) && is_file;
                                 else if (find_dir)
-                                     x = pEntry->Name[0] >= mode || is_file;
+                                     x = tolower(pEntry->Name[0]) >= tolower(mode) || is_file;
                                 else
                                     x = (CompareDirEntries(pEntry, lfn, &DirEntry[sort_table[iSelectedEntry]], DirEntryLFN[sort_table[iSelectedEntry]]) > 0); // compare with the last visible entry
 
@@ -885,10 +889,10 @@ char ScanDirectory(unsigned long mode, char *extension, unsigned char options)
             }
         }
     }
-
+    /*
     time = GetTimer(0) - time;
     printf("ScanDirectory(): %lu ms\r", time >> 20);
-
+    */
     return rc;
 }
 
@@ -970,12 +974,16 @@ unsigned char FileNextSector(fileTYPE *file)
 }
 #pragma section_no_code_init
 
-unsigned char FileSeek(fileTYPE *file, unsigned long offset)
+unsigned char FileSeek(fileTYPE *file, unsigned long offset, unsigned long origin)
 {
 // offset in sectors (512 bytes)
+// origin can be set to SEEK_SET or SEEK_CUR
 
     unsigned long sb;
     unsigned short i;
+
+    if (origin == SEEK_CUR)
+        offset += file->sector;
 
     if (file->sector > offset) // current filepointer is beyond requested position
     { // so move it backwards
@@ -989,6 +997,7 @@ unsigned char FileSeek(fileTYPE *file, unsigned long offset)
             file->sector = offset;
         }
     }
+
     // moving forward
     while ((file->sector^offset) & cluster_mask)  // compare clusters
     { // different clusters, get next one
@@ -1011,7 +1020,19 @@ unsigned char FileSeek(fileTYPE *file, unsigned long offset)
             buffered_fat_index = sb; // remember current buffer index
         }
 
-        file->cluster = fat32 ? fat_buffer.fat32[i] & 0x0FFFFFFF : fat_buffer.fat16[i]; // get FAT-link
+        if (fat32)
+        {
+            file->cluster = fat_buffer.fat32[i] & 0x0FFFFFFF; // get FAT32 link
+            if (file->cluster == 0x0FFFFFFF) // FAT32 EOC
+                return 0;
+        }
+        else
+        {
+            file->cluster = fat_buffer.fat16[i]; // get FAT16 link
+            if (file->cluster == 0xFFFF) // FAT16 EOC
+                return 0;
+        }
+
         file->sector += cluster_size; // move file pointer to next cluster
     }
 
@@ -1021,7 +1042,7 @@ unsigned char FileSeek(fileTYPE *file, unsigned long offset)
 }
 
 #pragma section_code_init
-unsigned char FileRead(fileTYPE *file)
+unsigned char FileRead(fileTYPE *file, unsigned char *pBuffer)
 {
     unsigned long sb;
 
@@ -1029,14 +1050,37 @@ unsigned char FileRead(fileTYPE *file)
     sb += cluster_size * (file->cluster-2);  // cluster offset
     sb += file->sector & ~cluster_mask;      // sector offset in cluster
 
-    if (!MMC_Read(sb, sector_buffer)) // read sector from drive
-        return(0);
-    else
-        return(1);
+    return(MMC_Read(sb, pBuffer));       // read sector from drive
 }
 #pragma section_no_code_init
 
-unsigned char FileWrite(fileTYPE *file)
+unsigned char FileReadEx(fileTYPE *file, unsigned char *pBuffer, unsigned long nSize)
+{
+    unsigned long sb;
+    unsigned long bc; // block count of single multisector read operation
+
+    while (nSize)
+    {
+        sb = data_start;                         // start of data in partition
+        sb += cluster_size * (file->cluster-2);  // cluster offset
+        sb += file->sector & ~cluster_mask;      // sector offset in cluster
+        bc = cluster_size - (file->sector & ~cluster_mask); // sector offset in the cluster
+        if (nSize < bc)
+            bc = nSize;
+
+        if (!MMC_ReadMultiple(sb, pBuffer, bc))
+            return 0;
+
+        if (!FileSeek(file, bc, SEEK_CUR))
+            return 0;
+
+        nSize -= bc;
+    }
+
+    return 1;
+}
+
+unsigned char FileWrite(fileTYPE *file,unsigned char *pBuffer)
 {
     unsigned long sector;
 
@@ -1044,10 +1088,7 @@ unsigned char FileWrite(fileTYPE *file)
     sector += cluster_size * (file->cluster-2);  // cluster offset
     sector += file->sector & ~cluster_mask;    // sector offset in cluster
 
-    if (!MMC_Write(sector, sector_buffer)) // write sector from drive
-        return(0);
-    else
-        return(1);
+    return(MMC_Write(sector, pBuffer)); // write sector from drive
 }
 
 unsigned char FileCreate(unsigned long iDirectory, fileTYPE *file)

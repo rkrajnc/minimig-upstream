@@ -47,7 +47,7 @@ void __init_hardware(void)
     // output enable register
     *AT91C_PIOA_OER = DISKLED | MMC_SEL | CCLK | DIN | PROG_B | FPGA0 | FPGA1 | FPGA2;
     // pull-up disable register
-    *AT91C_PIOA_PPUDR = DISKLED | MMC_SEL | MMC_CLKEN  | CCLK | DIN | PROG_B | FPGA0 | FPGA1 | FPGA2;
+    *AT91C_PIOA_PPUDR = DISKLED | MMC_SEL | MMC_CLKEN  | CCLK | DIN | PROG_B | INIT_B | DONE | FPGA0 | FPGA1 | FPGA2;
 
     // Enable peripheral clock in the PMC
     AT91C_BASE_PMC->PMC_PCER = 1 << AT91C_ID_PIOA;

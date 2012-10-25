@@ -40,3 +40,4 @@ typedef struct
     hardfileTYPE  hardfile[2];
 } configTYPE;
 
+extern configTYPE config; 

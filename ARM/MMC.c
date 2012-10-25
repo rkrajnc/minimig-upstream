@@ -19,85 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // --== based on the work by Dennis van Weeren and Jan Derogee ==--
-// 2008-10-03      - adaptation for ARM controller
-// 2009-07-23      - clean-up and some optimizations
+// 2008-10-03 - adaptation for ARM controller
+// 2009-07-23 - clean-up and some optimizations
+// 2009-11-22 - multiple sector read implemented
+
 
 #include "AT91SAM7S256.h"
 #include "stdio.h"
-#include "string.h" 
+#include "string.h"
 #include "hardware.h"
 #include "MMC.h"
 #include "FAT.h"
 #include "firmware.h"
-
-// MMC commandset
-#define     CMD0        0x40        /*Resets the multimedia card*/
-#define     CMD1        0x41        /*Activates the card's initialization process*/
-#define     CMD2        0x42        /*--*/
-#define     CMD3        0x43        /*--*/
-#define     CMD4        0x44        /*--*/
-#define     CMD5        0x45        /*reseved*/
-#define     CMD6        0x46        /*reserved*/
-#define     CMD7        0x47        /*--*/
-#define     CMD8        0x48        /*reserved*/
-#define     CMD9        0x49        /*CSD : Ask the selected card to send its card specific data*/
-#define     CMD10       0x4a        /*CID : Ask the selected card to send its card identification*/
-#define     CMD11       0x4b        /*--*/
-#define     CMD12       0x4c        /*--*/
-#define     CMD13       0x4d        /*Ask the selected card to send its status register*/
-#define     CMD14       0x4e        /*--*/
-#define     CMD15       0x4f        /*--*/
-#define     CMD16       0x50        /*Select a block length (in bytes) for all following block commands (Read:between 1-512 and Write:only 512)*/
-#define     CMD17       0x51        /*Reads a block of the size selected by the SET_BLOCKLEN command, the start address and block length must be set so that the data transferred will not cross a physical block boundry*/
-#define     CMD18       0x52        /*--*/
-#define     CMD19       0x53        /*reserved*/
-#define     CMD20       0x54        /*--*/
-#define     CMD21       0x55        /*reserved*/
-#define     CMD22       0x56        /*reserved*/
-#define     CMD23       0x57        /*reserved*/
-#define     CMD24       0x58        /*Writes a block of the size selected by CMD16, the start address must be alligned on a sector boundry, the block length is always 512 bytes*/
-#define     CMD25       0x59        /*--*/
-#define     CMD26       0x5a        /*--*/
-#define     CMD27       0x5b        /*Programming of the programmable bits of the CSD*/
-#define     CMD28       0x5c        /*If the card has write protection features, this command sets the write protection bit of the addressed group. The porperties of the write protection are coded in the card specific data (WP_GRP_SIZE)*/
-#define     CMD29       0x5d        /*If the card has write protection features, this command clears the write protection bit of the addressed group*/
-#define     CMD30       0x5e        /*If the card has write protection features, this command asks the card to send the status of the write protection bits. 32 write protection bits (representing 32 write protect groups starting at the specific address) followed by 16 CRD bits are transferred in a payload format via the data line*/
-#define     CMD31       0x5f        /*reserved*/
-#define     CMD32       0x60        /*sets the address of the first sector of the erase group*/
-#define     CMD33       0x61        /*Sets the address of the last sector in a cont. range within the selected erase group, or the address of a single sector to be selected for erase*/
-#define     CMD34       0x62        /*Removes on previously selected sector from the erase selection*/
-#define     CMD35       0x63        /*Sets the address of the first erase group within a range to be selected for erase*/
-#define     CMD36       0x64        /*Sets the address of the last erase group within a continuos range to be selected for erase*/
-#define     CMD37       0x65        /*Removes one previously selected erase group from the erase selection*/
-#define     CMD38       0x66        /*Erases all previously selected sectors*/
-#define     CMD39       0x67        /*--*/
-#define     CMD40       0x68        /*--*/
-#define     CMD41       0x69        /*reserved*/
-#define     CMD42       0x6a        /*reserved*/
-#define     CMD43       0x6b        /*reserved*/
-#define     CMD44       0x6c        /*reserved*/
-#define     CMD45       0x6d        /*reserved*/
-#define     CMD46       0x6e        /*reserved*/
-#define     CMD47       0x6f        /*reserved*/
-#define     CMD48       0x70        /*reserved*/
-#define     CMD49       0x71        /*reserved*/
-#define     CMD50       0x72        /*reserved*/
-#define     CMD51       0x73        /*reserved*/
-#define     CMD52       0x74        /*reserved*/
-#define     CMD53       0x75        /*reserved*/
-#define     CMD54       0x76        /*reserved*/
-#define     CMD55       0x77        /*reserved*/
-#define     CMD56       0x78        /*reserved*/
-#define     CMD57       0x79        /*reserved*/
-#define     CMD58       0x7a        /*reserved*/
-#define     CMD59       0x7b        /*Turns the CRC option ON or OFF. A '1' in the CRC option bit will turn the option ON, a '0' will turn it OFF*/
-#define     CMD60       0x7c        /*--*/
-#define     CMD61       0x7d        /*--*/
-#define     CMD62       0x7e        /*--*/
-#define     CMD63       0x7f        /*--*/
-
-// external references
-extern unsigned char DIRECT_TRANSFER_MODE;
 
 // variables
 unsigned char crc;
@@ -108,6 +41,7 @@ unsigned char CardType;
 // internal functions
 void MMC_CRC(unsigned char c);
 unsigned char MMC_Command(unsigned char cmd, unsigned long arg);
+unsigned char MMC_CMD12(void);
 
 // init memory card
 unsigned char MMC_Init(void)
@@ -255,8 +189,10 @@ unsigned char MMC_Init(void)
 
 // Read single 512-byte block
 #pragma section_code_init
-unsigned long MMC_Read(unsigned long lba, unsigned char *pReadBuffer)
+unsigned char MMC_Read(unsigned long lba, unsigned char *pReadBuffer)
 {
+// if pReadBuffer is NULL then use direct to the FPGA transfer mode (FPGA2 asserted)
+
     unsigned long i;
     unsigned long t;
 
@@ -284,7 +220,7 @@ unsigned long MMC_Read(unsigned long lba, unsigned char *pReadBuffer)
         }
     }
 
-    if (DIRECT_TRANSFER_MODE)
+    if (pReadBuffer == NULL)
     {   // in this mode we do not receive data, instead the FPGA captures directly the data stream transmitted by the SD/MMC card
         *AT91C_PIOA_CODR = FPGA2; // enable FPGA2 output
         for (i = 0; i < 512; i++)
@@ -323,8 +259,85 @@ unsigned long MMC_Read(unsigned long lba, unsigned char *pReadBuffer)
 }
 #pragma section_no_code_init
 
+// read multiple 512-byte blocks
+unsigned char MMC_ReadMultiple(unsigned long lba, unsigned char *pReadBuffer, unsigned long nBlockCount)
+{
+// if pReadBuffer is NULL then use direct to the FPGA transfer mode (FPGA2 asserted)
+
+    unsigned long i;
+    unsigned long t;
+
+    if (CardType != CARDTYPE_SDHC) // SDHC cards are addressed in sectors not bytes
+        lba = lba << 9; // otherwise convert sector adddress to byte address
+
+    EnableCard();
+
+    if (MMC_Command(CMD18, lba))
+    {
+        printf("CMD18 (READ_MULTIPLE_BLOCK): invalid response 0x%02X (lba=%lu)\r", response, lba);
+        DisableCard();
+        return(0);
+    }
+
+    while (nBlockCount--)
+    {
+        // now we are waiting for data token, it takes around 300us
+        timeout = 0;
+        while (SPI(0xFF) != 0xFE)
+        {
+            if (timeout++ >= 1000000) // we can't wait forever
+            {
+                printf("CMD18 (READ_MULTIPLE_BLOCK): no data token! (lba=%lu)\r", lba);
+                DisableCard();
+                return(0);
+            }
+        }
+
+        if (pReadBuffer == NULL)
+        {   // in this mode we do not receive data, instead the FPGA captures directly the data stream transmitted by the SD/MMC card
+            *AT91C_PIOA_CODR = FPGA2; // enable FPGA2 output
+            for (i = 0; i < 512; i++)
+            {
+                while (!(*AT91C_SPI_SR & AT91C_SPI_TDRE)); // wait until transmiter buffer is empty
+                *AT91C_SPI_TDR = 0xFF; // write dummy spi data
+            }
+            while (!(*AT91C_SPI_SR & AT91C_SPI_TXEMPTY)); // wait for transfer end
+            t = *AT91C_SPI_RDR; // dummy read to empty receiver buffer for new data
+            *AT91C_PIOA_SODR = FPGA2; // disable FPGA2 output
+        }
+        else
+        {
+            *AT91C_PIOA_SODR = AT91C_PA13_MOSI; // set GPIO output register
+            *AT91C_PIOA_OER = AT91C_PA13_MOSI;  // GPIO pin as output
+            *AT91C_PIOA_PER = AT91C_PA13_MOSI;  // enable GPIO function
+            // use SPI PDC (DMA transfer)
+            *AT91C_SPI_TPR = (unsigned long) pReadBuffer;
+            *AT91C_SPI_TCR = 512;
+            *AT91C_SPI_TNCR = 0;
+            *AT91C_SPI_RPR = (unsigned long) pReadBuffer;
+            *AT91C_SPI_RCR = 512;
+            *AT91C_SPI_RNCR = 0;
+            *AT91C_SPI_PTCR = AT91C_PDC_RXTEN | AT91C_PDC_TXTEN; // start DMA transfer
+            // wait for tranfer end
+            while ((*AT91C_SPI_SR & (AT91C_SPI_ENDTX | AT91C_SPI_ENDRX)) != (AT91C_SPI_ENDTX | AT91C_SPI_ENDRX));
+            *AT91C_SPI_PTCR = AT91C_PDC_RXTDIS | AT91C_PDC_TXTDIS; // disable transmitter and receiver
+            *AT91C_PIOA_PDR = AT91C_PA13_MOSI; // disable GPIO function
+
+            pReadBuffer += 512; // point to next sector
+        }
+
+        SPI(0xFF); // read CRC lo byte
+        SPI(0xFF); // read CRC hi byte
+    }
+
+    MMC_CMD12(); // stop multi block transmission
+
+    DisableCard();
+    return(1);
+}
+
 // write 512-byte block
-unsigned long MMC_Write(unsigned long lba, unsigned char *pWriteBuffer)
+unsigned char MMC_Write(unsigned long lba, unsigned char *pWriteBuffer)
 {
     unsigned long i;
 
@@ -418,6 +431,33 @@ unsigned char MMC_Command(unsigned char cmd, unsigned long arg)
 }
 #pragma section_no_code_init
 
+// stop multi block data transmission
+unsigned char MMC_CMD12(void)
+{
+    SPI(CMD12); // command
+    SPI(0x00);
+    SPI(0x00);
+    SPI(0x00);
+    SPI(0x00);
+    SPI(0x00); // dummy CRC7
+    SPI(0xFF); // skip stuff byte
+
+    unsigned char Ncr = 100;  // Ncr = 0..8 (SD) / 1..8 (MMC)
+    do
+        response = SPI(0xFF); // get response
+    while (response == 0xFF && Ncr--);
+
+    timeout = 0;
+    while (SPI(0xFF) == 0x00) // wait until the card is not busy
+        if (timeout++ >= 1000000)
+        {
+            printf("CMD12 (STOP_TRANSMISSION): busy wait timeout!\r");
+            DisableCard();
+            return(0);
+        }
+
+    return response;
+}
 #pragma section_code_init
 void MMC_CRC(unsigned char c)
 {

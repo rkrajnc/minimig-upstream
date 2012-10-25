@@ -35,24 +35,6 @@ This is the Minimig OSD (on-screen-display) handler.
 #include "hardware.h"
 #include "stdio.h"
 
-// some constants
-#define OSDNLINE        8           // number of lines of OSD
-#define OSDLINELEN      256         // single line length in bytes
-#define OSDCMDREAD      0x00        // OSD read controller/key status
-#define OSDCMDWRITE     0x20        // OSD write video data command
-#define OSDCMDENABLE    0x60        // OSD enable command
-#define OSDCMDDISABLE   0x40        // OSD disable command
-#define OSDCMDRST       0x80        // OSD reset command
-#define OSDCMDCFGSCL    0xA0        // OSD settings: scanlines effect
-#define OSDCMDENAHDD    0xB0        // OSD enable HDD command
-#define OSDCMDCFGFLP    0xC0        // OSD settings: floppy config
-#define OSDCMDCFGCPU    0xD0        // OSD settings: cpu config
-#define OSDCMDCFGFLT    0xE0        // OSD settings: filter
-#define OSDCMDCFGMEM    0xF0        // OSD settings: memory config
-
-#define REPEATDELAY     500         // repeat delay in 1ms units
-#define REPEATRATE      50          // repeat rate in 1ms units
-
 // *character font
 const unsigned char charfont[256][8] =
 {
@@ -457,11 +439,23 @@ void OsdClear(void)
     DisableOsd();
 }
 
+void OsdWaitVBL(void)
+{
+    unsigned long pioa_old = 0;
+    unsigned long pioa = 0;
+
+    while ((~pioa ^ pioa_old) & INIT_B)
+    {
+        pioa_old = pioa;
+        pioa = *AT91C_PIOA_PDSR;
+    }
+}
+
 // enable displaying of OSD
-void OsdEnable(void)
+void OsdEnable(unsigned char mode)
 {
     EnableOsd();
-    SPI(OSDCMDENABLE);
+    SPI(OSDCMDENABLE | mode & DISABLE_KEYBOARD);
     DisableOsd();
 }
 
@@ -497,7 +491,7 @@ void ConfigMemory(unsigned char memory)
 void ConfigChipset(unsigned char chipset)
 {
     EnableOsd();
-    SPI(OSDCMDCFGCPU | (chipset & 0x0F));
+    SPI(OSDCMDCFGCHP | (chipset & 0x0F));
     DisableOsd();
 }
 
@@ -518,7 +512,14 @@ void ConfigScanlines(unsigned char scanlines)
 void ConfigIDE(unsigned char gayle, unsigned char master, unsigned char slave)
 {
     EnableOsd();
-    SPI(OSDCMDENAHDD | (slave ? 4 : 0) | (master ? 2 : 0) | (gayle ? 1 : 0));
+    SPI(OSDCMDCFGIDE | (slave ? 4 : 0) | (master ? 2 : 0) | (gayle ? 1 : 0));
+    DisableOsd();
+}
+
+void ConfigAutofire(unsigned char autofire)
+{
+    EnableOsd();
+    SPI(OSDCMDAUTOFIRE | (autofire & 0x03));
     DisableOsd();
 }
 
@@ -526,6 +527,7 @@ void ConfigIDE(unsigned char gayle, unsigned char master, unsigned char slave)
 unsigned char OsdGetCtrl(void)
 {
     static unsigned char c2;
+    static unsigned long delay;
     static unsigned long repeat;
     static unsigned char repeat2;
     unsigned char c1,c;
@@ -536,8 +538,13 @@ unsigned char OsdGetCtrl(void)
     DisableOsd();
 
     // add front menu button
-    if (CheckButton())
-        c1 = 0x88;
+    if (!CheckButton())
+        delay = GetTimer(BUTTONDELAY);
+    else if (CheckTimer(delay))
+    {
+        c1 = KEY_MENU;
+        delay = GetTimer(-1);
+    }
 
     // generate normal "key-pressed" event
     c = 0;
@@ -547,7 +554,7 @@ unsigned char OsdGetCtrl(void)
     c2 = c1;
 
     // generate repeat "key-pressed" events
-    if (!c1)
+    if (c1 & KEY_UPSTROKE)
     {
         repeat = GetTimer(REPEATDELAY);
     }
@@ -570,7 +577,10 @@ unsigned char OsdGetCtrl(void)
 
 unsigned char GetASCIIKey(unsigned char keycode)
 {
-    return keycode & 0x80 ? 0 : keycode_table[keycode & 0x7F];
+    if (keycode & KEY_UPSTROKE)
+       return 0;
+
+    return keycode_table[keycode & 0x7F];
 }
 
 

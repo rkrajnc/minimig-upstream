@@ -59,24 +59,26 @@ typedef union {
 #define FILETIME(h,m,s) (((h<<11)&0xF800)|((m<<5)&0x7E0)|((s/2)&0x1F))
 #define FILEDATE(y,m,d) ((((y-1980)<<9)&0xFE00)|((m<<5)&0x1E0)|(d&0x1F))
 
-/*global sector buffer, data for read/write actions is stored here.
-BEWARE, this buffer is also used and thus trashed by all other functions*/
-extern unsigned char sector_buffer[512];/*sector buffer*/
+// global sector buffer, data for read/write actions is stored here.
+// BEWARE, this buffer is also used and thus trashed by all other functions
+extern unsigned char sector_buffer[512]; // sector buffer
 extern unsigned char cluster_size;
 extern unsigned long cluster_mask;
+extern unsigned char fat32;
 
-/*constants*/
+// constants
 #define DIRECTORY_ROOT 0
 
-#define FILESEEK_START  0/*start search from beginning of directory*/
-#define FILESEEK_NEXT   1/*find next file in directory*/
-#define FILESEEK_PREV   2/*find previous file in directory*/
+// file seeking
+#define SEEK_SET  0
+#define SEEK_CUR  1
+
 // scanning flags
-#define SCAN_INIT  0 /*start search from beginning of directory*/
-#define SCAN_NEXT  1 /*find next file in directory*/
-#define SCAN_PREV -1 /*find previous file in directory*/
-#define SCAN_NEXT_PAGE   2 /*find next 8 files in directory*/
-#define SCAN_PREV_PAGE  -2 /*find previous 8 files in directory*/
+#define SCAN_INIT  0       // start search from beginning of directory
+#define SCAN_NEXT  1       // find next file in directory
+#define SCAN_PREV -1       // find previous file in directory
+#define SCAN_NEXT_PAGE   2 // find next 8 files in directory
+#define SCAN_PREV_PAGE  -2 // find previous 8 files in directory
 #define SCAN_INIT_FIRST  3 // search for an entry with given cluster number
 #define SCAN_INIT_NEXT   4 // search for entries higher than the first one
 
@@ -87,14 +89,15 @@ extern unsigned long cluster_mask;
 #define FIND_FILE  8 // find first file entry beginning with given charater
 
 
-/*functions*/
+// functions
 unsigned char FindDrive(void);
 unsigned long GetFATLink(unsigned long cluster);
 unsigned char FileNextSector(fileTYPE *file);
 unsigned char FileOpen(fileTYPE *file, char *name);
-unsigned char FileSeek(fileTYPE *file, unsigned long offset);
-unsigned char FileRead(fileTYPE *file);
-unsigned char FileWrite(fileTYPE *file);
+unsigned char FileSeek(fileTYPE *file, unsigned long offset, unsigned long origin);
+unsigned char FileRead(fileTYPE *file, unsigned char *pBuffer);
+unsigned char FileWrite(fileTYPE *file, unsigned char *pBuffer);
+unsigned char FileReadEx(fileTYPE *file, unsigned char *pBuffer, unsigned long nSize);
 
 unsigned char FileCreate(unsigned long iDirectory, fileTYPE *file);
 unsigned char UpdateEntry(fileTYPE *file);

@@ -18,12 +18,18 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// 2009-10-10   - any length (any multiple of 8 bytes) fpga core file support
+// 2009-12-10   - changed command header id
+// 2010-04-14   - changed command header id
+
 #include "AT91SAM7S256.h"
 #include "stdio.h"
 #include "errors.h"
 #include "hardware.h"
 #include "FAT.h"
 #include "FDD.h"
+
+#define CMD_HDRID 0xAA69
 
 extern fileTYPE file;
 
@@ -86,8 +92,14 @@ void ShiftFpga(unsigned char data)
 // FPGA configuration
 unsigned char ConfigureFpga(void)
 {
-    unsigned long   t;
+    unsigned long  t;
+    unsigned long  n;
     unsigned char *ptr;
+
+    // set outputs
+    *AT91C_PIOA_SODR = CCLK | DIN | PROG_B;
+    // enable outputs
+    *AT91C_PIOA_OER = CCLK | DIN | PROG_B;
 
     // reset FGPA configuration sequence
     // specs: PROG_B pulse min 0.3 us
@@ -129,6 +141,7 @@ unsigned char ConfigureFpga(void)
 
     // send all bytes to FPGA in loop
     t = 0;
+    n = file.size >> 3;
     ptr = sector_buffer;
     do
     {
@@ -143,7 +156,7 @@ unsigned char ConfigureFpga(void)
             if ((t & 0x1FF) == 0)
                 printf("*");
 
-            if (!FileRead(&file))
+            if (!FileRead(&file, sector_buffer))
                 return(0);
 
             ptr = sector_buffer;
@@ -166,7 +179,10 @@ unsigned char ConfigureFpga(void)
             FileNextSector(&file);
 
     }
-    while (t < 212392 / 8); // configuration file size
+    while (t < n);
+
+    // disable outputs
+    *AT91C_PIOA_ODR = CCLK | DIN | PROG_B;
 
     printf("]\r");
     printf("FPGA bitstream loaded\r");
@@ -193,7 +209,7 @@ void SendFile(fileTYPE *file)
     while (n--)
     {
         // read data sector from memory card
-        FileRead(file);
+        FileRead(file, sector_buffer);
 
         do
         {
@@ -263,8 +279,8 @@ char BootPrint(const char *text)
                 if (c3 == 0x80 && c4 == 0x06) // command packet size must be 12 bytes
                 {
                     cmd = 0;
-                    SPI(0xAA); // command header
-                    SPI(0x67);
+                    SPI(CMD_HDRID >> 8); // command header
+                    SPI(CMD_HDRID & 0xFF);
                     SPI(0x00); // cmd: 0x0001 = print text
                     SPI(0x01);
                     // data packet size in bytes
@@ -332,8 +348,8 @@ char BootUpload(fileTYPE *file, unsigned char base, unsigned char size)
                 if (c3 == 0x80 && c4 == 0x06) // command packet size 12 bytes
                 {
                     cmd = 0;
-                    SPI(0xAA);
-                    SPI(0x67); // command header
+                    SPI(CMD_HDRID >> 8); // command header
+                    SPI(CMD_HDRID & 0xFF);
                     SPI(0x00);
                     SPI(0x02); // cmd: 0x0002 = upload memory
                     // memory base address
@@ -383,8 +399,8 @@ void BootExit(void)
         {
             if (c3 == 0x80 && c4 == 0x06) // command packet size 12 bytes
             {
-                SPI(0xAA); // command header
-                SPI(0x67);
+                SPI(CMD_HDRID >> 8); // command header
+                SPI(CMD_HDRID & 0xFF);
                 SPI(0x00); // cmd: 0x0003 = restart
                 SPI(0x03);
                 // don't care
@@ -422,8 +438,8 @@ void ClearMemory(unsigned long base, unsigned long size)
         {
             if (c3 == 0x80 && c4 == 0x06)// command packet size 12 bytes
             {
-                SPI(0xAA); // command header
-                SPI(0x67);
+                SPI(CMD_HDRID >> 8); // command header
+                SPI(CMD_HDRID & 0xFF);
                 SPI(0x00); // cmd: 0x0004 = clear memory
                 SPI(0x04);
                 // memory base
@@ -442,4 +458,20 @@ void ClearMemory(unsigned long base, unsigned long size)
         }
         DisableFpga();
     }
+}
+
+unsigned char GetFPGAStatus(void)
+{
+    unsigned char status;
+
+    EnableFpga();
+    status = SPI(0);
+    SPI(0);
+    SPI(0);
+    SPI(0);
+    SPI(0);
+    SPI(0);
+    DisableFpga();
+
+    return status;
 }

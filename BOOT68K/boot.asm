@@ -20,7 +20,10 @@
 ; 2008-08-17	- first complete version
 ; 2009-02-14	- added memory clear command
 ; 2009-09-11	- changed header signature and updated version number
-;
+; 2009-12-17	- changed header signature and updated version number
+;		- added step pulse for updating disk change latch
+; 2009-12-24	- updated version number
+; 2010-04-14	- changed header signature and updated version number ($AA69)
 ;
 ;
 ; how to build:
@@ -195,6 +198,8 @@ pal_agnus:
 	move.b	#$F7,$BFD100	; _sel0 active
 
 wait_for_diskchange:
+	move.b	#$F6,$BFD100	; _sel0 and _step active
+	move.b	#$F7,$BFD100	; _sel0 active
 	btst	#2,$BFE001	; _chng active? (disk present)
 	beq	wait_for_diskchange
 
@@ -203,7 +208,7 @@ read_cmd:
 	bsr	DiskRead
 
 	move.l	#disk_buffer,A0
-	cmp.w	#$AA67,(A0)+
+	cmp.w	#$AA69,(A0)+
 	bne	bad_header
 
 	move.w	(A0)+,D0
@@ -555,7 +560,7 @@ title_msg:
 	dc.b	"For updates and support please visit www.minimig.net",10,0
 
 bootloader_msg:
-	dc.b	10,"Bootloader BYQ090911",10,0
+	dc.b	10,"Bootloader BYQ091224",10,0
 
 fpga_msg:
 	dc.b	10,"FPGA core F",0

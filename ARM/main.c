@@ -25,6 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // 2009-06-26   - SDHC and FAT32 support
 // 2009-08-10   - hardfile selection
 // 2009-09-11   - minor changes to hardware initialization routine
+// 2009-10-10   - any length fpga core file support
+// 2009-11-14   - adapted floppy gap size
+//              - changes to OSD labels
+// 2009-12-24   - updated version number
+// 2010-01-09   - changes to floppy handling
+// 2010-07-28   - improved menu button handling
+//              - improved FPGA configuration routines
+//              - added support for OSD vsync
+// 2010-08-15   - support for joystick emulation
+// 2010-08-18   - clean-up
 
 #include "AT91SAM7S256.h"
 #include "stdio.h"
@@ -41,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "menu.h"
 #include "config.h"
 
-const char version[] = {"$VER:AYQ090911"};
+const char version[] = {"$VER:AYQ100818"};
 
 extern char *config_filter_msg[];
 extern char *config_memory_chip_msg[];
@@ -118,7 +128,7 @@ unsigned char LoadConfiguration(char *filename)
         printf("Configuration file size: %lu\r", file.size);
         if (file.size == sizeof(config))
         {
-            FileRead(&file);
+            FileRead(&file, sector_buffer);
 
             // check file id and version
             if (strncmp((char*)sector_buffer, config_id, sizeof(config.id)) == 0)
@@ -161,7 +171,7 @@ unsigned char SaveConfiguration(char *filename)
 
         memset((void*)&sector_buffer, 0, sizeof(sector_buffer));
         memcpy((void*)&sector_buffer, (void*)&config, sizeof(config));
-        FileWrite(&file);
+        FileWrite(&file, sector_buffer);
         return(1);
     }
     else
@@ -178,7 +188,7 @@ unsigned char SaveConfiguration(char *filename)
             memset((void*)sector_buffer, 0, sizeof(sector_buffer));
             memcpy((void*)sector_buffer, (void*)&config, sizeof(config));
 
-            if (FileWrite(&file))
+            if (FileWrite(&file, sector_buffer))
             {
                 printf("File written successfully.\r");
                 return(1);
@@ -217,6 +227,7 @@ void main(void)
     unsigned char key;
     unsigned long time;
     unsigned short spiclk;
+    //unsigned char CSD[16];
 
     DISKLED_ON;
 
@@ -282,7 +293,7 @@ void main(void)
     if (!rc)
         BootPrint("Configuration file not found...\n");
 
-    sprintf(s, "CPU clock     : %s MHz", config.chipset & 0x01 ? "28.36": "7.09");
+    sprintf(s, "CPU clock     : %s", config.chipset & 0x01 ? "turbo" : "normal");
     BootPrint(s);
     sprintf(s, "Chip RAM size : %s", config_memory_chip_msg[config.memory & 0x03]);
     BootPrint(s);
@@ -291,7 +302,7 @@ void main(void)
 
     sprintf(s, "Floppy drives : %u", config.floppy.drives + 1);
     BootPrint(s);
-    sprintf(s, "Floppy speed  : %s", config.floppy.speed ? "2x": "1x");
+    sprintf(s, "Floppy speed  : %s", config.floppy.speed ? "fast": "normal");
     BootPrint(s);
 
     BootPrint("");

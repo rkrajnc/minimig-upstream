@@ -18,6 +18,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// 2009-11-14   - adapted gap size
+// 2009-12-24   - updated sync word list
+//              - fixed sector header generation
+// 2010-01-09   - support for variable number of tracks
+
 #include "AT91SAM7S256.h"
 #include "stdio.h"
 #include "string.h"
@@ -29,51 +34,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 unsigned char DEBUG = 0;
 
 unsigned char drives = 0; // number of active drives reported by FPGA (may change only during reset)
-adfTYPE *pdfx; // drive select pointer
-adfTYPE df[4]; // drive 0 information structure
+adfTYPE *pdfx;            // drive select pointer
+adfTYPE df[4];            // drive 0 information structure
 
 extern fileTYPE file;
 
-void SectorGapToFpga(void)
-{
-    unsigned char i = 244;
-    do
-    {
-        SPI(0xAA);
-        SPI(0xAA);
-    }
-    while (--i);
-}
-
-void SectorHeaderToFpga(unsigned char n, unsigned char dsksynch, unsigned char dsksyncl)
-{
-    if (n)
-    {
-        SPI(0xAA);
-        SPI(0xAA);
-
-        if (--n)
-        {
-            SPI(0xAA);
-            SPI(0xAA);
-
-            if (--n)
-            {
-                SPI(dsksynch);
-                SPI(dsksyncl);
-            }
-        }
-    }
-}
+#define TRACK_SIZE 12668
+#define HEADER_SIZE 0x40
+#define DATA_SIZE 0x400
+#define SECTOR_SIZE (HEADER_SIZE + DATA_SIZE)
+#define SECTOR_COUNT 11
+#define LAST_SECTOR (SECTOR_COUNT - 1)
+#define GAP_SIZE (TRACK_SIZE - SECTOR_COUNT * SECTOR_SIZE)
 
 // sends the data in the sector buffer to the FPGA, translated into an Amiga floppy format sector
 // note that we do not insert clock bits because they will be stripped by the Amiga software anyway
-unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned char dsksynch, unsigned char dsksyncl)
+void SendSector(unsigned char *pData, unsigned char sector, unsigned char track, unsigned char dsksynch, unsigned char dsksyncl)
 {
-    unsigned char c, i;
-    unsigned char csum[4];
+    unsigned char checksum[4];
+    unsigned short i;
+    unsigned char x;
     unsigned char *p;
-    unsigned char c3, c4;
 
     // preamble
     SPI(0xAA);
@@ -87,137 +68,97 @@ unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned 
     SPI(dsksynch);
     SPI(dsksyncl);
 
-    // clear header checksum
-    csum[0] = 0;
-    csum[1] = 0;
-    csum[2] = 0;
-    csum[3] = 0;
-
     // odd bits of header
-    c = 0x55;
-    csum[0] ^= c;
-    SPI(c);
-    c = (track >> 1) & 0x55;
-    csum[1] ^= c;
-    SPI(c);
-    c = (sector >> 1) & 0x55;
-    csum[2] ^= c;
-    SPI(c);
-    c = ((11 - sector) >> 1) & 0x55;
-    csum[3] ^= c;
-    SPI(c);
+    x = 0x55;
+    checksum[0] = x;
+    SPI(x);
+    x = track >> 1 & 0x55;
+    checksum[1] = x;
+    SPI(x);
+    x = sector >> 1 & 0x55;
+    checksum[2] = x;
+    SPI(x);
+    x = 11 - sector >> 1 & 0x55;
+    checksum[3] = x;
+    SPI(x);
 
     // even bits of header
-    c = 0x55;
-    csum[0] ^= c;
-    SPI(c);
-    c = track & 0x55;
-    csum[1] ^= c;
-    SPI(c);
-    c = sector & 0x55;
-    csum[2] ^= c;
-    SPI(c);
-    c = (11 - sector) & 0x55;
-    csum[3] ^= c;
-    SPI(c);
+    x = 0x55;
+    checksum[0] ^= x;
+    SPI(x);
+    x = track & 0x55;
+    checksum[1] ^= x;
+    SPI(x);
+    x = sector & 0x55;
+    checksum[2] ^= x;
+    SPI(x);
+    x = 11 - sector & 0x55;
+    checksum[3] ^= x;
+    SPI(x);
 
     // sector label and reserved area (changes nothing to checksum)
-    for (i = 0; i < 32; i++)
-        SPI(0x55);
+    i = 0x20;
+    while (i--)
+        SPI(0xAA);
 
-    // checksum over header
-    SPI((csum[0] >> 1) | 0xAA);
-    SPI((csum[1] >> 1) | 0xAA);
-    SPI((csum[2] >> 1) | 0xAA);
-    SPI((csum[3] >> 1) | 0xAA);
-    SPI(csum[0] | 0xAA);
-    SPI(csum[1] | 0xAA);
-    SPI(csum[2] | 0xAA);
-    SPI(csum[3] | 0xAA);
+    // send header checksum
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(checksum[0] | 0xAA);
+    SPI(checksum[1] | 0xAA);
+    SPI(checksum[2] | 0xAA);
+    SPI(checksum[3] | 0xAA);
 
     // calculate data checksum
-    csum[0] = 0;
-    csum[1] = 0;
-    csum[2] = 0;
-    csum[3] = 0;
-    i = 128;
-    p = sector_buffer;
-    do
+    checksum[0] = 0;
+    checksum[1] = 0;
+    checksum[2] = 0;
+    checksum[3] = 0;
+
+    p = pData;
+    i = DATA_SIZE / 2 / 4;
+    while (i--)
     {
-        c = *p++;
-        csum[0] ^= c >> 1;
-        csum[0] ^= c;
-        c = *p++;
-        csum[1] ^= c >> 1;
-        csum[1] ^= c;
-        c = *p++;
-        csum[2] ^= c >> 1;
-        csum[2] ^= c;
-        c = *p++;
-        csum[3] ^= c >> 1;
-        csum[3] ^= c;
+        x = *p++;
+        checksum[0] ^= x ^ x >> 1;
+        x = *p++;
+        checksum[1] ^= x ^ x >> 1;
+        x = *p++;
+        checksum[2] ^= x ^ x >> 1;
+        x = *p++;
+        checksum[3] ^= x ^ x >> 1;
     }
-    while (--i);
 
-    csum[0] &= 0x55;
-    csum[1] &= 0x55;
-    csum[2] &= 0x55;
-    csum[3] &= 0x55;
-
-    // checksum over data
-    SPI((csum[0] >> 1) | 0xAA);
-    SPI((csum[1] >> 1) | 0xAA);
-    SPI((csum[2] >> 1) | 0xAA);
-    SPI((csum[3] >> 1) | 0xAA);
-    SPI(csum[0] | 0xAA);
-    SPI(csum[1] | 0xAA);
-    SPI(csum[2] | 0xAA);
-    SPI(csum[3] | 0xAA);
+    // send data checksum
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(0xAA);
+    SPI(checksum[0] | 0xAA);
+    SPI(checksum[1] | 0xAA);
+    SPI(checksum[2] | 0xAA);
+    SPI(checksum[3] | 0xAA);
 
     // odd bits of data field
-    i = 128;
-    p = sector_buffer;
-    do
-    {
-        c = *p++;
-        c >>= 1;
-        c |= 0xAA;
-        SPI(c);
-
-        c = *p++;
-        c >>= 1;
-        c |= 0xAA;
-        SPI(c);
-
-        c = *p++;
-        c >>= 1;
-        c |= 0xAA;
-        SPI(c);
-
-        c = *p++;
-        c >>= 1;
-        c |= 0xAA;
-        SPI(c);
-    }
-    while (--i);
+    i = DATA_SIZE / 2;
+    p = pData;
+    while (i--)
+        SPI(*p++ >> 1 | 0xAA);
 
     // even bits of data field
-    i = 128;
-    p = sector_buffer;
-    do
-    {
-        c = *p++;
-        SPI(c | 0xAA);
-        c = *p++;
-        SPI(c | 0xAA);
-        c = *p++;
-        c3 = SPI(c | 0xAA);
-        c = *p++;
-        c4 = SPI(c | 0xAA);
-    }
-    while (--i);
+    i = DATA_SIZE / 2;
+    p = pData;
+    while (i--)
+        SPI(*p++ | 0xAA);
+}
 
-    return((c3 << 8) | c4);
+void SendGap(void)
+{
+    unsigned short i = GAP_SIZE;
+    while (i--)
+        SPI(0xAA);
 }
 
 // read a track from disk
@@ -225,9 +166,18 @@ void ReadTrack(adfTYPE *drive)
 { // track number is updated in drive struct before calling this function
 
     unsigned char sector;
-    unsigned char c1, c2, c3, c4;
-    unsigned char dsksynch, dsksyncl;
-    unsigned short n;
+    unsigned char status;
+    unsigned char track;
+    unsigned short dsksync;
+    unsigned short dsklen;
+    //unsigned short n;
+
+    if (drive->track >= drive->tracks)
+    {
+        printf("Illegal track read: %d\r", drive->track);
+        ErrorMessage("    Illegal track read!", drive->track);
+        drive->track = drive->tracks - 1;
+    }
 
     // display track number: cylinder & head
     if (DEBUG)
@@ -238,7 +188,7 @@ void ReadTrack(adfTYPE *drive)
         drive->track_prev = drive->track;
         sector = 0;
         file.cluster = drive->cache[drive->track];
-        file.sector = drive->track * 11;
+        file.sector = drive->track * SECTOR_COUNT;
         drive->sector_offset = sector;
         drive->cluster_offset = file.cluster;
     }
@@ -246,100 +196,84 @@ void ReadTrack(adfTYPE *drive)
     { // same track, start at next sector in track
         sector = drive->sector_offset;
         file.cluster = drive->cluster_offset;
-        file.sector = (drive->track * 11) + sector;
+        file.sector = (drive->track * SECTOR_COUNT) + sector;
     }
 
     EnableFpga();
-    c1 = SPI(0); //read request signal
-    c2 = SPI(0); //track number (cylinder & head)
-    dsksynch = SPI(0); //disk sync high byte
-    dsksyncl = SPI(0); //disk sync low byte
-    c3 = 0x3F & SPI(0); //msb of mfm words to transfer
-    c4 = SPI(0); //lsb of mfm words to transfer
+    status   = SPI(0); // read request signal
+    track    = SPI(0); // track number (cylinder & head)
+    dsksync  = SPI(0) << 8; // disk sync high byte
+    dsksync |= SPI(0); // disk sync low byte
+    dsklen   = SPI(0) << 8 & 0x3F00; // msb of mfm words to transfer
+    dsklen  |= SPI(0); // lsb of mfm words to transfer
     DisableFpga();
 
+    if (track >= drive->tracks)
+        track = drive->tracks - 1;
+
     if (DEBUG)
-        printf("(%u)[%02X%02X]:", c1>>6, dsksynch, dsksyncl);
+        printf("(%u)[%04X]:", status >> 6, dsksync);
 
     while (1)
     {
-        FileRead(&file);
+        FileRead(&file, sector_buffer);
 
         EnableFpga();
 
         // check if FPGA is still asking for data
-        c1 = SPI(0); // read request signal
-        c2 = SPI(0); // track number (cylinder & head)
-        dsksynch = SPI(0); // disk sync high byte
-        dsksyncl = SPI(0); // disk sync low byte
-        c3 = SPI(0); // msb of mfm words to transfer
-        c4 = SPI(0); // lsb of mfm words to transfer
+        status   = SPI(0); // read request signal
+        track    = SPI(0); // track number (cylinder & head)
+        dsksync  = SPI(0) << 8; // disk sync high byte
+        dsksync |= SPI(0); // disk sync low byte
+        dsklen   = SPI(0) << 8 & 0x3F00; // msb of mfm words to transfer
+        dsklen  |= SPI(0); // lsb of mfm words to transfer
 
-        if ((dsksynch == 0x00 && dsksyncl == 0x00) || (dsksynch == 0x89 && dsksyncl == 0x14)) // workaround for Copy Lock in Wiz'n'Liz (might brake other games)
-        { // KS 1.3 doesn't write dsksync register after reset
-            dsksynch = 0x44;
-            dsksyncl = 0x89;
-        }
+        if (track >= drive->tracks)
+            track = drive->tracks - 1;
+
+        // workaround for Copy Lock in Wiz'n'Liz and North&South (might brake other games)
+        if (dsksync == 0x0000 || dsksync == 0x8914 || dsksync == 0xA144)
+            dsksync = 0x4489;
+
+        // North&South: $A144
         // Wiz'n'Liz (Copy Lock): $8914
         // Prince of Persia: $4891
         // Commando: $A245
 
         if (DEBUG)
-            printf("%X:%02X%02X", sector, c3, c4);
-
-        c3 &= 0x3F;
+            printf("%X:%04X", sector, dsklen);
 
         // some loaders stop dma if sector header isn't what they expect
         // because we don't check dma transfer count after sending a word
         // the track can be changed while we are sending the rest of the previous sector
         // in this case let's start transfer from the beginning
-        if (c2 == drive->track)
+        if (track == drive->track)
         {
             // send sector if fpga is still asking for data
-        if (c1 & CMD_RDTRK)
-        {
-            if (c3 == 0 && c4 < 4)
-                SectorHeaderToFpga(c4, dsksynch, dsksyncl);
-            else
+            if (status & CMD_RDTRK)
             {
-                n = SectorToFpga(sector, drive->track, dsksynch, dsksyncl);
+                //GenerateHeader(sector_header, sector_buffer, sector, track, dsksync);
+                //SendSector(sector_header, sector_buffer);
+                SendSector(sector_buffer, sector, track, (unsigned char)(dsksync >> 8), (unsigned char)dsksync);
 
-                if (DEBUG) // printing remaining dma count
-                    printf("-%04X", n);
-
-                n--;
-                c3 = (n >> 8) & 0x3F;
-                c4 = (unsigned char)n;
-
-                if (c3 == 0 && c4 < 4)
-                {
-                    SectorHeaderToFpga(c4, dsksynch, dsksyncl);
-                    if (DEBUG)
-                        printf("+%X", c4);
-                }
-                else if (sector == 10)
-                {
-                    SectorGapToFpga();
-                    if (DEBUG)
-                        printf("+++");
-                }
+                if (sector == LAST_SECTOR)
+                    SendGap();
             }
-        }
         }
 
         // we are done accessing FPGA
         DisableFpga();
 
         // track has changed
-        if (c2 != drive->track)
+        if (track != drive->track)
             break;
 
         // read dma request
-        if (!(c1 & CMD_RDTRK))
+        if (!(status & CMD_RDTRK))
             break;
 
         sector++;
-        if (sector < 11)
+        if (sector < SECTOR_COUNT)
         {
             FileNextSector(&file);
         }
@@ -347,7 +281,7 @@ void ReadTrack(adfTYPE *drive)
         {
             sector = 0;
             file.cluster = drive->cache[drive->track];
-            file.sector = drive->track * 11;
+            file.sector = drive->track * SECTOR_COUNT;
         }
 
         // remember current sector and cluster
@@ -359,7 +293,6 @@ void ReadTrack(adfTYPE *drive)
     }
     if (DEBUG)
         printf(":OK\r");
-
 }
 
 unsigned char FindSync(adfTYPE *drive)
@@ -675,7 +608,7 @@ void WriteTrack(adfTYPE *drive)
                 if (GetData())
                 {
                     if (drive->status & DSK_WRITABLE)
-                        FileWrite(&file);
+                        FileWrite(&file, sector_buffer);
                     else
                     {
                         Error = 30;
@@ -692,7 +625,6 @@ void WriteTrack(adfTYPE *drive)
             ErrorMessage("  WriteTrack", Error);
         }
     }
-
 }
 
 void UpdateDriveStatus(void)

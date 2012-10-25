@@ -90,7 +90,7 @@ unsigned char CheckFirmware(fileTYPE *file, char *name)
 
         if (file->size >= sizeof(UPGRADE))
         {
-            FileRead(file);
+            FileRead(file, sector_buffer);
             crc = ~CalculateCRC32(-1, sector_buffer, sizeof(UPGRADE) - 4);
             printf("Upgrade ROM size      : %lu\r", pUpgrade->rom.size);
             printf("Upgrade header CRC    : %08lX\r", pUpgrade->crc);
@@ -114,7 +114,7 @@ unsigned char CheckFirmware(fileTYPE *file, char *name)
                                read_size = size;
 
                             FileNextSector(file);
-                            FileRead(file);
+                            FileRead(file, sector_buffer);
                             crc = CalculateCRC32(crc, sector_buffer, read_size);
                             size -= read_size;
                         }
@@ -122,7 +122,7 @@ unsigned char CheckFirmware(fileTYPE *file, char *name)
                         printf("ROM CRC from header   : %08lX\r", rom_crc);
                         if (~crc == rom_crc)
                         { // upgrade file CRC is OK so go back to the beginning of the file
-                            FileSeek(file, 0);
+                            FileSeek(file, 0, SEEK_SET);
                             Error = ERROR_NONE;
                             return 1;
                         }
@@ -173,7 +173,7 @@ __noinline unsigned long WriteFirmware(fileTYPE *file)
             read_size = size;
 
         FileNextSector(file);
-        FileRead(file);
+        FileRead(file, sector_buffer);
 
         // fill the rest of buffer
         for (i = read_size; i < 512; i++)
