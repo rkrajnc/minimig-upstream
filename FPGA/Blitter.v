@@ -64,90 +64,97 @@
 // 25-01-2006		-added bblck signal	
 // 14-02-2006		-improved bblck table
 // 07-07-2006		-added some comments
+// JB:
+// 2008-03-03		-added BLTCON0L, BLTSIZH and BLTSIZV
+// 2008-07-08		-clean up
 
-module blitter(clk,reset,reqdma,ackdma,bzero,bbusy,bblck,horbeam,wr,datain,dataout,regaddressin,addressout);
-input 	clk;	 				//bus clock
-input 	reset;	 			//reset
-output	reqdma;				//blitter requests dma cycle
-input	ackdma;				//agnus dma priority logic grants dma cycle
-output	bzero;				//blitter zero status
-output	bbusy;				//blitter busy status
-output	bblck;				//blitter is blocking cpu, cpu may not access chip bus
-input	horbeam;				//least significant bit of horbeam[]
-output	wr;					//write (blitter writes to memory)
-input 	[15:0] datain;	    		//bus data in
-output	[15:0] dataout;		//bus data out
-input 	[8:1] regaddressin;		//register address inputs
-output 	[20:1] addressout; 		//chip address outputs
+module blitter
+(
+	input 	clk,	 				//bus clock
+	input 	reset,	 				//reset
+	output	reqdma,					//blitter requests dma cycle
+	input	ackdma,					//agnus dma priority logic grants dma cycle
+	output	reg bzero,				//blitter zero status
+	output	bbusy,					//blitter busy status
+	output	reg bblck,				//blitter is blocking cpu, cpu may not access chip bus
+	input	horbeam,				//least significant bit of horbeam[]
+	output	wr,						//write (blitter writes to memory)
+	input 	[15:0] datain,	    //bus data in
+	output	[15:0] dataout,		//bus data out
+	input 	[8:1] regaddressin,	//register address inputs
+	output 	[20:1] addressout 	//chip address outputs
+);
 
 //register names and adresses		
-parameter BLTCON0=9'h040;
-parameter BLTCON1=9'h042;
-parameter BLTAFWM=9'h044;
-parameter BLTALWM=9'h046;
-parameter BLTADAT=9'h074;
-parameter BLTBDAT=9'h072;
-parameter BLTCDAT=9'h070;
-parameter BLTSIZE=9'h058;
+parameter BLTCON0  = 9'h040;
+parameter BLTCON0L = 9'h05A;
+parameter BLTCON1  = 9'h042;
+parameter BLTAFWM  = 9'h044;
+parameter BLTALWM  = 9'h046;
+parameter BLTADAT  = 9'h074;
+parameter BLTBDAT  = 9'h072;
+parameter BLTCDAT  = 9'h070;
+parameter BLTSIZE  = 9'h058;
+parameter BLTSIZH  = 9'h05E;
+parameter BLTSIZV  = 9'h05C;
 
 //channel select codes
-parameter CHA=2'b00;			//channel A
-parameter CHB=2'b01;			//channel B
-parameter CHC=2'b10;			//channel C
-parameter CHD=2'b11;		    	//channel D
+parameter CHA = 2'b00;		//channel A
+parameter CHB = 2'b01;		//channel B
+parameter CHC = 2'b10;		//channel C
+parameter CHD = 2'b11;		//channel D
 
 //local signals
-reg		bzero;				//see above
-reg 		bblck;				//see above
+reg		[15:0]bltcon0;	//blitter control register 0
+reg		[15:0]bltcon1;	//blitter control register 1
+reg		[15:0]bltafwm;	//blitter first word mask for source A
+reg		[15:0]bltalwm;	//blitter last word mask for source A
+reg		[15:0]bltadat;	//blitter source A preload data register
+reg		[15:0]bltbdat;	//blitter source B preload data register
+reg		[15:0]bltaold;	//blitter source A 'old' data
+reg		[15:0]bltbold;	//blitter source B 'old' data
+reg		[15:0]ahold;		//A holding register
+reg		[15:0]bhold;		//B holding register
+reg		[15:0]chold;		//C holding register
+reg		[15:0]dhold;		//D holding register
+reg		[10:0]bltwidth;	//blitsize number of words (width)
+reg		[14:0]bltheight;	//blitsize number of lines (height)
 
-reg		[15:0]bltcon0;			//blitter control register 0
-reg		[15:0]bltcon1;			//blitter control register 1
-reg		[15:0]bltafwm;			//blitter first word mask for source A
-reg		[15:0]bltalwm;			//blitter last word mask for source A
-reg		[15:0]bltadat;			//blitter source A preload data register
-reg		[15:0]bltbdat;			//blitter source B preload data register
-reg		[15:0]bltaold;			//blitter source A 'old' data
-reg		[15:0]bltbold;			//blitter source B 'old' data
-reg		[15:0]ahold;			//A holding register
-reg		[15:0]bhold;			//B holding register
-reg		[15:0]chold;			//C holding register
-reg		[15:0]dhold;			//D holding register
-reg		[5:0]bltwidth;			//blitsize number of words (width)
-reg		[9:0]bltheight;		//blitsize number of lines (height)
+reg		[14:0]bltsizv;	//register value
 
-reg		[4:0]bltstate;			//blitter state
-reg		[4:0]bltnext;			//blitter next state
+reg		[4:0]bltstate;	//blitter state
+reg		[4:0]bltnext;		//blitter next state
 
-reg		ife;					//enable inclusive fill mode
-reg		efe;					//enable exclusive fill mode
+reg		ife;				//enable inclusive fill mode
+reg		efe;				//enable exclusive fill mode
 reg		desc;				//descending mode
-reg		bpa;					//bypass preload register for channel A
-reg		bpb;					//bypass preload register for channel B
-reg		tmb;					//channel B is in texturing mode
+reg		bpa;				//bypass preload register for channel A
+reg		bpb;				//bypass preload register for channel B
+reg		tmb;				//channel B is in texturing mode
 reg		sing;				//single bit per horizontal line (special line mode)
 reg		enable;				//blit cycle enable signal
 
-reg		[1:0]chs;				//channel select(A,B,C,D)
-wire		ame;					//instruct address generator to add or subtract modulo	(enable)
-reg		ams;					//instruct address generator to subtract modulo
-wire		ape;					//instruct address generator increment or decrement pointer (enable)
-reg		apd;	  				//instruct address generator to decrement pointer
-wire		amb;					//instruct address generator to only use modulo B and C
-wire		sbz;					//set blitter zero bit
-wire		incash;				//increment ASH (line mode)
-wire		decash;				//decrement ASH (line mode)
-wire		rlb;					//rotate B holding register to the left (line mode)
-reg		fpl;					//first pixel on horizontal line signal used for special line draw mode (SING) 	
+reg		[1:0]chs;			//channel select(A,B,C,D)
+wire	ame;				//instruct address generator to add or subtract modulo	(enable)
+reg		ams;				//instruct address generator to subtract modulo
+wire	ape;				//instruct address generator increment or decrement pointer (enable)
+reg		apd;	  			//instruct address generator to decrement pointer
+wire	amb;				//instruct address generator to only use modulo B and C
+wire	sbz;				//set blitter zero bit
+wire	incash;				//increment ASH (line mode)
+wire	decash;				//decrement ASH (line mode)
+wire	rlb;				//rotate B holding register to the left (line mode)
+reg		fpl;				//first pixel on horizontal line signal used for special line draw mode (SING) 	
 
 reg		start;				//blitter is started by write to BLTSIZE
-wire		fwt;					//first word time
-wire		lwt;					//last word time
+wire	fwt;				//first word time
+wire	lwt;				//last word time
 reg		bbusyd;				//bbusy delayed for channel D modulo handling
 reg		lwtd;				//last word time delayed for channel D modulo handling
-wire		nml;					//no more lines to blit (blit is done), only valid during first word time
-wire		signout;				//new accumulator sign calculated by address generator (line mode)
+wire	nml;				//no more lines to blit (blit is done), only valid during first word time
+wire	signout;			//new accumulator sign calculated by address generator (line mode)
 reg		sign;				//current sign of accumulator (line mode)
-reg		plr;					//move pointer left or right due to shifter roll over (line mode)
+reg		plr;				//move pointer left or right due to shifter roll over (line mode)
         
 //--------------------------------------------------------------------------------------
 
@@ -175,9 +182,16 @@ always @(bltcon0 or bltcon1)
 //bltcon0 USE and LF part
 always @(posedge clk)
 	if(reset)
-		bltcon0[11:0]<=0;
+		bltcon0[11:8]<=0;
 	else if (regaddressin[8:1]==BLTCON0[8:1])
-		bltcon0[11:0]<=datain[11:0];
+		bltcon0[11:8]<=datain[11:8];
+
+//bltcon0 USE and LF part
+always @(posedge clk)
+	if(reset)
+		bltcon0[7:0]<=0;
+	else if (regaddressin[8:1]==BLTCON0[8:1] || regaddressin[8:1]==BLTCON0L[8:1])
+		bltcon0[7:0]<=datain[7:0];
 
 //writing of bltcon1 from bus
 always @(posedge clk)
@@ -227,10 +241,10 @@ always @(posedge clk)
 reg		[15:0]amux;
 reg		[15:0]amask;
 reg		[15:0]bmux;
-wire		[15:0]newmux;
-wire		[15:0]oldmux;
-wire		[3:0]shmux;
-wire		[15:0]shiftout;
+wire	[15:0]newmux;
+wire	[15:0]oldmux;
+wire	[3:0]shmux;
+wire	[15:0]shiftout;
 
 //channel A mask select
 always @(bltafwm or bltalwm or fwt or lwt)
@@ -289,11 +303,15 @@ always @(posedge clk)
 assign newmux[15:0]=(chs[1:0]==CHA[1:0])?amux[15:0]:bmux[15:0];
 assign oldmux[15:0]=(chs[1:0]==CHA[1:0])?bltaold[15:0]:bltbold[15:0];
 assign shmux[3:0]=(chs[1:0]==CHA[1:0])?bltcon0[15:12]:bltcon1[15:12];
-bltshift blts1 (	.desc(desc),
-				.sh(shmux),
-				.new(newmux),
-				.old(oldmux),
-				.out(shiftout) );
+
+bltshift blts1
+(
+	.desc(desc),
+	.sh(shmux),
+	.new(newmux),
+	.old(oldmux),
+	.out(shiftout)
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -314,12 +332,12 @@ always @(posedge clk)
 //fill logic and loaded into the channel D holding register.
 
 //local signals
-reg		[15:0]ain;		//A channel input for minterm generator
-reg		[15:0]bin; 		//B channel input for minterm generator
-wire		[15:0]mintermout;  	//minterm generator output
-wire		[15:0]fillout;		//fill logic output
-wire		fci;				//fill carry in
-wire		fco;	    			//fill carry out to next word
+reg		[15:0]ain;			//A channel input for minterm generator
+reg		[15:0]bin; 			//B channel input for minterm generator
+wire	[15:0]mintermout;  	//minterm generator output
+wire	[15:0]fillout;		//fill logic output
+wire	fci;				//fill carry in
+wire	fco;	    		//fill carry out to next word
 reg		fcy;	   			//fill carry latch
 
 //minterm A channel input select: special line draw mode or normal blit mode
@@ -337,19 +355,25 @@ always @(tmb or bhold)
 		bin[15:0]=bhold[15:0];	
 
 //minterm generator instantation
-bltminterm bltmt1 (	.lf(bltcon0[7:0]),
-				.ain(ain[15:0]),
-				.bin(bin[15:0]),
-				.cin(chold[15:0]),
-				.out(mintermout[15:0])	);
+bltminterm bltmt1
+(
+	.lf(bltcon0[7:0]),
+	.ain(ain[15:0]),
+	.bin(bin[15:0]),
+	.cin(chold[15:0]),
+	.out(mintermout[15:0])
+);
 				
 //fill logic instantiation
-bltfill bltfl1 (	.ife(ife),
-				.efe(efe),
-				.fci(fci),
-				.fco(fco),
-				.in(mintermout[15:0]),
-				.out(fillout[15:0])		);
+bltfill bltfl1
+(
+	.ife(ife),
+	.efe(efe),
+	.fci(fci),
+	.fco(fco),
+	.in(mintermout[15:0]),
+	.out(fillout[15:0])
+);
 
 //fill carry control
 assign fci=(fwt)?bltcon1[2]:fcy;
@@ -389,51 +413,59 @@ always @(posedge clk)
 //by the software. (see amiga hardware reference manual)
 //<start> is also controlled here (used to start the blitter state machine)
 //<bbusy1d> and <lwtd> are delayed version for channel D (pipeline delay)
-reg		[5:0]bltwcount;
+reg		[10:0]bltwcount;
 
 //start control
 always @(posedge clk)
 	if(reset)
-		start<=0;
-	else if(regaddressin[8:1]==BLTSIZE[8:1])//blitter is started by write to BLTSIZE
-		start<=1;
-	else if(bbusy)//state machine has got the message, we can clear start now
-		start<=0;
+		start <= 0;
+	else if ( regaddressin[8:1] == BLTSIZE[8:1] || regaddressin[8:1] == BLTSIZH[8:1])//blitter is started by write to BLTSIZE
+		start <= 1;
+	else if (bbusy)//state machine has got the message, we can clear start now
+		start <= 0;
 
 //bltwidth register (lower 6 bits of BLTSIZE)
 always @(posedge clk)
-	if(regaddressin[8:1]==BLTSIZE[8:1])
-		bltwidth[5:0]<=datain[5:0];
+	if ( regaddressin[8:1] == BLTSIZE[8:1] )
+		bltwidth[10:0] <= { 4'b0000, (datain[5:0]==6'b00_0000)?1'b1:1'b0, datain[5:0] };
+	else if ( regaddressin[8:1] == BLTSIZH[8:1] )
+		bltwidth[10:0] <= datain[10:0];
 
 //bltwidth counter			
 always @(posedge clk)
-	if(regaddressin[8:1]==BLTSIZE[8:1])//blitsize written, go to first word time
-		bltwcount[5:0]<=6'b000001;
+	if (regaddressin[8:1] == BLTSIZE[8:1] || regaddressin[8:1] == BLTSIZH[8:1])//blitsize written, go to first word time
+		bltwcount[10:0] <= 11'b000_0000_0001;
 	else if(enable && (chs[1:0]==CHD[1:0]))//decrement blitsize counter
 	begin
-		if(lwt)//if last word time, go to first word time
-			bltwcount[5:0]<=6'b000001;
-		else//else go to next word
-			bltwcount[5:0]<=bltwcount[5:0]+1'b1;
+		if (lwt) //if last word time, go to first word time
+			bltwcount[10:0] <= 11'b000_0000_0001;
+		else //else go to next word
+			bltwcount[10:0] <= bltwcount[10:0] + 1'b1;
 	end
 
 //bltheight register (upper 10 bits of BLTSIZE) and counter 
 always @(posedge clk)
-	if(regaddressin[8:1]==BLTSIZE[8:1])//blitheight loaded by write to bltsize
-		bltheight[9:0]<=datain[15:6];
+	if (regaddressin[8:1] == BLTSIZE[8:1]) //blitheight loaded by write to bltsize
+		bltheight[14:0] <= { 4'b0000, (datain[15:6]==10'b00_0000_0000)?1'b1:1'b0, datain[15:6] };
+	else if (regaddressin[8:1] == BLTSIZH[8:1]) //blitheight loaded by write to bltsizh
+		bltheight[14:0]<= bltsizv[14:0];
 	else if(enable && lwt && (chs[1:0]==CHD[1:0]))//if last word in this line decrement height counter
-		bltheight[9:0]<=bltheight[9:0]-1'b1;
+		bltheight[14:0] <= bltheight[14:0] - 1'b1;
+
+always @(posedge clk)
+	if (regaddressin[8:1] == BLTSIZV[8:1]) //blitheight loaded by write to bltsizv
+		bltsizv[14:0]<= datain[14:0];
 
 //generate fwt (first word time) signal
-assign fwt=(bltwcount[5:0]==6'b000001)?1:0;
+assign fwt = (bltwcount[10:0] == 11'b000_0000_0001) ? 1 : 0;
 
 //generate lwt (last word time) signal
-assign lwt=(bltwcount[5:0]==bltwidth[5:0])?1:0;
+assign lwt = (bltwcount[10:0] == bltwidth[10:0]) ? 1 : 0;
 
 //generate lwtd (delayed last word time) signal 
 //and bbusyd1 (delayed bbusy1) signal
 always @(posedge clk)
-	if(regaddressin[8:1]==BLTSIZE[8:1])//reset signals upon BLTSIZE write, just to be sure
+	if (regaddressin[8:1]==BLTSIZE[8:1] || regaddressin[8:1]==BLTSIZH[8:1])//reset signals upon BLTSIZE write, just to be sure
 	begin
 		lwtd<=1'b0;
 		bbusyd<=1'b0;
@@ -445,21 +477,24 @@ always @(posedge clk)
 	end
 
 //generate nml (no more lines) signal (only valid during first word time)
-assign nml=((bltheight[9:0]==10'b0000000000) && fwt)?1:0;
+assign nml = ((bltheight[14:0] == 15'b000_0000_0000_0000) && fwt) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
 //instantiate address generator
-bltaddress bltad1 (	.clk(clk),
-				.reset(reset),
-				.enable(enable),
-				.modb(amb),
-				.chs(chs),
-				.alu({ame,ams,ape,apd}),
-				.signout(signout),
-				.datain(datain),
-				.regaddressin(regaddressin),
-				.addressout(addressout)	);
+bltaddress bltad1
+(
+	.clk(clk),
+	.reset(reset),
+	.enable(enable),
+	.modb(amb),
+	.chs(chs),
+	.alu({ame,ams,ape,apd}),
+	.signout(signout),
+	.datain(datain),
+	.regaddressin(regaddressin),
+	.addressout(addressout)
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -772,15 +807,16 @@ endmodule
 //For example, when shifting <new> to the right,
 //the bits to the left are filled with <old>. The bits of <new> that 
 //are shifted out are discarded.  
-module bltshift(desc,sh,new,old,out);
-input	desc;				//select descending mode (shift to the left)
-input	[3:0]sh;				//shift value (0 to 15)
-input 	[15:0] new;	    		//barrel shifter data in
-input 	[15:0] old;	    		//barrel shifter data in
-output	[15:0] out;			//barrel shifter data out
+module bltshift
+(
+	input	desc,				//select descending mode (shift to the left)
+	input	[3:0]sh,			//shift value (0 to 15)
+	input 	[15:0]new,		//barrel shifter data in
+	input 	[15:0]old,		//barrel shifter data in
+	output	reg [15:0]out		//barrel shifter data out
+);
 
 //local signals
-reg		[15:0]out;			//see above
 wire		[30:0]bshiftin;		//barrel shifter input
 wire		[3:0]bsh;				//barrel shift value
 
@@ -821,12 +857,14 @@ endmodule
 //and checks every logic combination against the LF control byte.
 //If a combination is marked as 1 in the LF byte, the ouput will
 //also be 1, else the output is 0.
-module bltminterm(lf,ain,bin,cin,out);
-input	[7:0]lf;				//LF control byte
-input	[15:0]ain;			//A channel in
-input	[15:0]bin;			//B channel in
-input	[15:0]cin;			//C channel in
-output	[15:0]out;			//function generator output
+module bltminterm
+(
+	input	[7:0]lf,			//LF control byte
+	input	[15:0]ain,		//A channel in
+	input	[15:0]bin,		//B channel in
+	input	[15:0]cin,		//C channel in
+	output	[15:0]out			//function generator output
+);
 
 reg		[15:0]mt0;			//minterm 0
 reg		[15:0]mt1;			//minterm 1
@@ -867,16 +905,17 @@ endmodule
 //The fill logic module has 2 modes, inclusive fill and exclusive fill.
 //Both share the same xor operation but in inclusive fill mode,
 //the output of the xor-filler is or-ed with the input data.	
-module bltfill(ife,efe,fci,fco,in,out);
-input	ife;					//inclusive fill enable
-input	efe;					//exclusive fill enable
-input	fci;					//fill carry input
-output	fco;					//fill carry output
-input	[15:0]in;				//data in
-output	[15:0]out;			//data out
+module bltfill
+(
+	input	ife,					//inclusive fill enable
+	input	efe,					//exclusive fill enable
+	input	fci,					//fill carry input
+	output	fco,					//fill carry output
+	input	[15:0]in,				//data in
+	output	reg [15:0]out			//data out
+);
 
 //local signals
-reg		[15:0]out;
 reg		[15:0]carry;
 
 //generate all fill carry's
@@ -923,42 +962,42 @@ endmodule
 //chs[1:0]	modb=0	modb=1
 //2'b00		A		B
 //2'b01		B		B
-//2'b10 		C		C
-//2'b11 		D		C
+//2'b10 	C		C
+//2'b11 	D		C
 
-module bltaddress(clk,reset,enable,modb,chs,alu,signout,datain,regaddressin,addressout);
-input	clk;					//bus clock
-input	reset;				//reset
-input	enable;				//cycle enable input
-input	modb;				//always select modulo B or C (dependening of chs[1])
-input	[1:0]chs;				//channel select
-input	[3:0]alu;				//ALU function select
-output	signout;				//sign output (used for line mode)
-input	[15:0]datain;			//bus data in
-input	[8:1]regaddressin;		//register address input
-output	[20:1]addressout;		//generated address out
+module bltaddress
+(
+	input	clk,					//bus clock
+	input	reset,					//reset
+	input	enable,					//cycle enable input
+	input	modb,					//always select modulo B or C (dependening of chs[1])
+	input	[1:0]chs,				//channel select
+	input	[3:0]alu,				//ALU function select
+	output	signout,				//sign output (used for line mode)
+	input	[15:0]datain,			//bus data in
+	input	[8:1]regaddressin,	//register address input
+	output	reg [20:1]addressout	//generated address out
+);
 
 //register names and addresses
 parameter BLTAMOD=9'h064;
 parameter BLTBMOD=9'h062;
 parameter BLTCMOD=9'h060;
 parameter BLTDMOD=9'h066;
-parameter	BLTAPTH=9'h050;
-parameter	BLTAPTL=9'h052;
-parameter	BLTBPTH=9'h04c;
-parameter	BLTBPTL=9'h04e;
-parameter	BLTCPTH=9'h048;
-parameter	BLTCPTL=9'h04a;
-parameter	BLTDPTH=9'h054;
-parameter	BLTDPTL=9'h056;
+parameter BLTAPTH=9'h050;
+parameter BLTAPTL=9'h052;
+parameter BLTBPTH=9'h04c;
+parameter BLTBPTL=9'h04e;
+parameter BLTCPTH=9'h048;
+parameter BLTCPTL=9'h04a;
+parameter BLTDPTH=9'h054;
+parameter BLTDPTL=9'h056;
 
 //local signals
-reg		[20:1]addressout;		//see above
-
-reg		[15:1]bltamod;			//blitter modulo for source A
-reg		[15:1]bltbmod;			//blitter modulo for source B
-reg		[15:1]bltcmod;			//blitter modulo for source C
-reg		[15:1]bltdmod;			//blitter modulo for destination D
+reg		[15:1]bltamod;		//blitter modulo for source A
+reg		[15:1]bltbmod;		//blitter modulo for source B
+reg		[15:1]bltcmod;		//blitter modulo for source C
+reg		[15:1]bltdmod;		//blitter modulo for destination D
 reg		[20:1]bltapt;			//blitter pointer A
 reg		[20:1]bltbpt;			//blitter pointer B
 reg		[20:1]bltcpt;			//blitter pointer C

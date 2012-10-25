@@ -25,22 +25,24 @@
 // 21-06-2005		-changed sprite priority logic and nsprite output
 // 02-10-2005		-sprites are now attached if odd,even or both sprites SPRXCTL bit 7 is set
 // 17-10-2005		-sprites were displayed one pixel too early, fixed.
+// JB:
+// 2008-07-14		- swapped shifta and shiftb in serialized output (fix for Zool2: copper directly writes to SPRxDATx registers)
 
-module sprites(clk,reset,regaddress,horbeam,datain,nsprite,sprdata);
-input 	clk;					//bus clock	
-input 	reset;		    		//reset
-input	[8:1]regaddress;		//register address input
-input	[8:0]horbeam;			//horizontal beam counter
-input 	[15:0]datain; 			//bus data in
-output 	[7:0]nsprite;		  	//sprite data valid signals 
-output	[3:0]sprdata;			//sprite data out
+module sprites
+(
+	input 	clk,					//bus clock	
+	input 	reset,		    		//reset
+	input	[8:1]regaddress,		//register address input
+	input	[8:0]horbeam,			//horizontal beam counter
+	input 	[15:0]datain, 		//bus data in
+	output 	[7:0]nsprite,		  	//sprite data valid signals 
+	output	reg [3:0]sprdata		//sprite data out
+);
 
 //register names and adresses		
 parameter	SPRPOSCTLBASE=9'h140;	//sprite data, position and control register base address
 
 //local signals
-reg		[3:0]sprdata;			//see above
-
 wire		selspr0;				//select sprite 0
 wire		selspr1;				//select sprite 1
 wire		selspr2;				//select sprite 2
@@ -86,84 +88,108 @@ assign selspr7=(selsprx&&(regaddress[5:3]==7))?1:0;
 //--------------------------------------------------------------------------------------
 
 //instantiate sprite 0
-sprshift	sps0(	.clk(clk),
-				.reset(reset),
-				.aen(selspr0),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat0),
-				.attach(attach0)	);
+sprshift sps0
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr0),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat0),
+	.attach(attach0)
+);
 
 //instantiate sprite 1
-sprshift	sps1(	.clk(clk),
-				.reset(reset),
-				.aen(selspr1),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat1),
-				.attach(attach1)	);
+sprshift sps1
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr1),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat1),
+	.attach(attach1)
+);
 
 //instantiate sprite 2
-sprshift	sps2(	.clk(clk),
-				.reset(reset),
-				.aen(selspr2),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat2),
-				.attach(attach2)	);
+sprshift sps2
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr2),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat2),
+	.attach(attach2)
+);
 
 //instantiate sprite 3
-sprshift	sps3(	.clk(clk),
-				.reset(reset),
-				.aen(selspr3),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat3),
-				.attach(attach3)	);
+sprshift sps3
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr3),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat3),
+	.attach(attach3)
+);
 
 //instantiate sprite 4
-sprshift	sps4(	.clk(clk),
-				.reset(reset),
-				.aen(selspr4),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat4),
-				.attach(attach4)	);
+sprshift sps4
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr4),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat4),
+	.attach(attach4)
+);
 
 //instantiate sprite 5
-sprshift	sps5(	.clk(clk),
-				.reset(reset),
-				.aen(selspr5),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat5),
-				.attach(attach5)	);
+sprshift sps5
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr5),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat5),
+	.attach(attach5)
+);
 
 //instantiate sprite 6
-sprshift	sps6(	.clk(clk),
-				.reset(reset),
-				.aen(selspr6),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat6),
-				.attach(attach6)	);
+sprshift sps6
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr6),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat6),
+	.attach(attach6)
+);
 
 //instantiate sprite 7
-sprshift	sps7(	.clk(clk),
-				.reset(reset),
-				.aen(selspr7),
-				.address(regaddress[2:1]),
-				.horbeam(horbeam),
-				.datain(datain),
-				.sprdata(sprdat7),
-				.attach(attach7)	);
+sprshift sps7
+(
+	.clk(clk),
+	.reset(reset),
+	.aen(selspr7),
+	.address(regaddress[2:1]),
+	.horbeam(horbeam),
+	.datain(datain),
+	.sprdata(sprdat7),
+	.attach(attach7)
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -245,15 +271,17 @@ endmodule
 //as described	in the amiga hardware reference manual
 //this is to make sure that the horizontal start position of a sprite
 //aligns with the bitplane/playfield start position
-module sprshift(clk,reset,aen,address,horbeam,datain,sprdata,attach);
-input 	clk;					//bus clock	
-input 	reset;		    		//reset
-input	aen;					//address enable
-input	[1:0]address;		    	//register address input
-input	[8:0]horbeam;			//horizontal beam counter
-input 	[15:0]datain; 			//bus data in
-output	[1:0]sprdata;			//serialized sprite data out
-output	attach;				//sprite is attached
+module sprshift
+(
+	input 	clk,					//bus clock	
+	input 	reset,		    		//reset
+	input	aen,					//address enable
+	input	[1:0]address,		   	//register address input
+	input	[8:0]horbeam,			//horizontal beam counter
+	input 	[15:0]datain, 		//bus data in
+	output	[1:0]sprdata,			//serialized sprite data out
+	output	reg attach				//sprite is attached
+);
 
 //register names and adresses		
 parameter POS=2'b00;  		
@@ -262,14 +290,13 @@ parameter DATA=2'b10;
 parameter DATB=2'b11;  		
 
 //local signals
-reg		attach;				//see above
 reg		[15:0]datla;			//data register A
 reg		[15:0]datlb;			//data register B
 reg		[15:0]shifta;			//shift register A
 reg		[15:0]shiftb;			//shift register B
 reg		[8:0]hstart;			//horizontal start value
-reg		armed;				//sprite "armed" signal
-wire		load;				//load shift register signal
+reg		armed;					//sprite "armed" signal
+wire	load;					//load shift register signal
 
 //--------------------------------------------------------------------------------------
 
@@ -325,7 +352,7 @@ always @(posedge clk)
 	end
 
 //assign serialized output data
-assign sprdata[1:0]={shifta[15],shiftb[15]};
+assign sprdata[1:0] = {shiftb[15],shifta[15]};
 
 //--------------------------------------------------------------------------------------
 

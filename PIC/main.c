@@ -1,5 +1,5 @@
-/*
-Copyright 2005, 2006, 2007, 2008 Dennis van Weeren
+ /*
+Copyright 2005, 2006, 2007 Dennis van Weeren
 
 This file is part of Minimig
 
@@ -25,36 +25,73 @@ Minimig boot controller / floppy emulator / on screen display
 02-01-2007		-added osd support
 11-02-2007		-added insert floppy progress bar
 01-07-2007		-added filetype filtering for directory routines
-20-01-2008		-adapted code to use new ata.h
-				-adapted code to use new fat16.h
-				-fixed filetype filtering in scroll code
-27-04-2008		-added support for 256kb and encrypted roms
-				-added led error posting
+
+JB:
+2008-02-09      -added error handling
+				number of blinks:
+				1: neither mmc nor sd card detected
+				2: fat16 filesystem not detected
+				3: FPGA configuration error (INIT low or DONE high before config)
+				4: no MINIMIG1.BIN file found
+				5: FPGA configuration error (DONE is low after config)
+				6: no kickstart file found
+
+2008-07-18		-better read support (sector loaders are now less confused)
+				-write support added (strict sector format checking - may not work with non DOS games)
+				-removed bug in filename filtering (initial directory fill didn't filter)
+				-communication interface with new bootloader
+				-OSD control of reset, ram configuration, interpolation filters and kickstart
+
+				WriteTrack errors:
+				#20 : unexpected dma transfer end (sector header)
+				#21 : no second sync word found
+				#22 : first header byte not 0xFF
+				#23 : second header byte (track number) not within 0..159 range
+				#24 : third header byte (sector number) not within 0..10 range
+				#25 : fourth header byte (sectors to gap number) not within 1..11 range
+				#26 : header checksum error
+				#27 : track number in sector header not the same as drive head position
+				#28 : unexpected dma transfer end (sector data)
+				#29 : data checksum error
+				#30 : write attempt to protected disk
+
+2008-07-25		-update of write sector header format checking
+				-disk led active during writes to disk
 */
 
 #include <pic18.h>
-#include "hardware.h"
-#include "osd.h"
 #include <stdio.h>
 #include <string.h>
-#include "ata.h"
-#include "fat16.h"
+#include "hardware.h"
+#include "osd.h"
+#include "ata18.h"
+#include "fat1618_2.h"
+
+#define DEBUG
 
 void CheckTrack(struct adfTYPE *drive);
 void ReadTrack(struct adfTYPE *drive);
-void ReadRom(const unsigned char *fn);
-void ReadRomSend(unsigned char *data, unsigned short n);
+void SendFile(struct file2TYPE *file);
 void WriteTrack(struct adfTYPE *drive);
-void SectorToFpga(unsigned char sector,unsigned char track);
+unsigned char FindSync(struct adfTYPE *drive);
+unsigned char GetHeader(unsigned char *pTrack, unsigned char *pSector);
+unsigned char GetData();
+
+char BootPrint(const char* text);
+char BootUpload(struct file2TYPE *file, unsigned char base, unsigned char size);
+void BootExit(void);
+void ErrorMessage(const char* message, unsigned char code);
+unsigned short SectorToFpga(unsigned char sector,unsigned char track);
+void SectorGapToFpga(void);
+void SectorHeaderToFpga(unsigned char);
+char UploadKickstart(const unsigned char *name);
 unsigned char Open(const unsigned char *name);
-void ConfigureFpga(void);
+unsigned char ConfigureFpga(void);
 void HandleFpgaCmd(unsigned char c1, unsigned char c2);
 void InsertFloppy(struct adfTYPE *drive);
 void ScrollDir(const unsigned char *type, unsigned char mode);
 void PrintDir(void);
 void User(void);
-void ErrorFlash(unsigned char error);
-
 
 /*FPGA commands <c1> argument*/
 #define		CMD_USERSELECT		0x80	/*user interface SELECT*/
@@ -64,9 +101,11 @@ void ErrorFlash(unsigned char error);
 #define		CMD_RDTRCK			0x02	/*FPGA requests reading of track <c2>*/
 #define		CMD_WRTRCK			0x01	/*FPGA requests writing of trck <c2>*/
 
+#define		ST_READREQ	0x02
+
 /*floppy status*/
 #define		DSK_INSERTED		0x01	/*disk is inserted*/
-#define		DSK_WRITEABLE		0x02	/*disk is writeable*/
+#define		DSK_WRITABLE		0x02	/*disk is writable*/
 
 /*menu states*/
 #define		MENU_NONE1			0		/*no menu*/		
@@ -75,21 +114,25 @@ void ErrorFlash(unsigned char error);
 #define		MENU_MAIN2			3		/*main menu*/
 #define		MENU_FILE1			4		/*file requester menu*/
 #define		MENU_FILE2			5		/*file requester menu*/
+#define		MENU_RESET1			6		/*reset menu*/
+#define		MENU_RESET2			7		/*reset menu*/
+#define		MENU_SETTINGS1		8		/*settings menu*/
+#define		MENU_SETTINGS2		9		/*settings menu*/
+#define		MENU_ROMSELECT1		10		/*rom select menu*/
+#define		MENU_ROMSELECT2		11		/*rom select menu*/
+#define		MENU_ROMFILE1		12		/*rom file select menu*/
+#define		MENU_ROMFILE2		13		/*rom file select menu*/
+#define		MENU_ERROR			127		/*error message menu*/
 
 /*other constants*/
 #define		DIRSIZE				8		/*size of directory display window*/
 #define		REPEATTIME			50		/*repeat delay in 10ms units*/
 #define		REPEATRATE			5		/*repeat rate in 10ms units*/
 
-/*error numbers*/
-#define		ERR_NOBIN			2		/*no .bin FPGA CORE file found*/
-#define		ERR_NOROM			3		/*no .rom AMIGA ROM file found*/
-#define		ERR_NOKEY			4		/*no .key KEY file found*/
-#define		ERR_CONFIG			5		/*FPGA config failed*/
-#define		ERR_MMC				6		/*no MMC card found*/
-#define		ERR_FILE			7		/*generic file error*/
-
-
+#define		EEPROM_LRFILTER		0x10
+#define		EEPROM_HRFILTER		0x11
+#define		EEPROM_MEMCFG		0x12
+#define		EEPROM_KICKNAME		0x18	//size 8
 
 /*variables*/
 struct adfTYPE
@@ -103,72 +146,164 @@ struct adfTYPE
 	unsigned char name[12];				/*floppy name*/
 };
 struct adfTYPE df0;						/*drive 0 information structure*/
-struct fileTYPE file;					/*global file handle*/
-struct fileTYPE directory[DIRSIZE];		/*directory array*/
+struct file2TYPE file;					/*global file handle*/
+struct file2TYPE directory[DIRSIZE];	/*directory array*/
 unsigned char dirptr;					/*pointer into directory array*/
 
+unsigned char menustate = MENU_NONE1;
+unsigned char menusub = 0;
+
 unsigned char s[25];					/*used to build strings*/
+
+bdata unsigned char kickname[12];
+
+unsigned char lr_filter;
+unsigned char hr_filter;
+const char* filter_msg[] = {"none","HOR ","VER ","H+V "};
+unsigned char memcfg;
+const char* memcfg_msg[] = {"512K CHIP","1Meg CHIP","512K/512K","1Meg/512K"};
+
+unsigned char Error;
+
+void FatalError(unsigned char code)
+{
+// code = number of blinks
+	unsigned long t;
+	unsigned char i;
+	while (1)
+	{
+		i = code;
+		do
+		{
+			t = 38000;
+			while (--t) //wait 100ms
+				DISKLED = 1;
+			t = 2*38000;	
+			while (--t) //wait 200ms
+				DISKLED = 0;
+		} while (--i);
+		t = 8*38000;
+		while (--t) //wait 900ms
+			DISKLED = 0;
+	}
+}
+
 
 /*This is where it all starts after reset*/
 void main(void)
 {
-	unsigned char c1,c2;
+	unsigned char c1,c2,c3,c4;
 	unsigned short t;
+	unsigned char c;
+	unsigned char i;
 
 	/*initialize hardware*/
 	HardwareInit();
 
-	printf("\r\nMinimig Controller\r\n");
-	printf("by Dennis van Weeren\r\n");
-	printf("build 27-04-2008\r\n\r\n");
+	lr_filter = eeprom_read(EEPROM_LRFILTER);
+	if (lr_filter&0xFC)
+		lr_filter = 0;
 
-	/*intialize mmc card*/
-	if(!CARD_Init())
-		ErrorFlash(ERR_MMC);	
-	/*initalize FAT partition*/
-	if(!FindDrive())
-		ErrorFlash(ERR_MMC);
-	printf("MMC device found\r\n");
-	
-	/*configure FPGA*/
-	printf("configuring FPGA\r\n");
-	ConfigureFpga();
-	printf("FPGA configured\r\n");
-		
-	/*wait for FPGA to load kickstart*/
-	printf("waiting for FPGA to boot...");
-	df0.status=1;
-	while(1)
+	hr_filter = eeprom_read(EEPROM_HRFILTER);
+	if (hr_filter&0xFC)
+		hr_filter = 0;
+
+	memcfg = eeprom_read(EEPROM_MEMCFG);
+	if (memcfg&0xFC)
+		memcfg = 0;
+
+	//check correctness of kickstart file name
+	for (i=0;i<8;i++)
 	{
-		/*read command from FPGA*/
-		EnableFpga();
-		c1=SPI(0);
-		c2=SPI(0);
-		DisableFpga();	
-		
-		/*FPGA asking for kickstart by reading track 0 ?*/
-		if((c1==CMD_RDTRCK) && (c2==0))
+		c = eeprom_read(EEPROM_KICKNAME+i);
+		if (c==' ' || (c>='0' && c<='9') || (c>='A' && c<='Z'))	//only 0-9,A-Z and space allowed
+			kickname[i] = c;
+		else
 		{
-			printf("done\r\nloading kickstart\r\n");
-			/*send rom image to FPGA and exit this loop*/
-			ReadRom("KICK    ROM");
-			printf("kickstart loaded\r\n");
+			strncpy(kickname,"KICK    ",8);	//if illegal character detected revert to default name
 			break;
 		}
-		
-		/*else dispatch to standard command handler*/
-		HandleFpgaCmd(c1,c2);		
 	}
-	df0.status=0;
+	strncpy(&kickname[8],"ROM",3);	//add rom file extension
+
+	printf("\rMinimig Controller by Dennis van Weeren\r");
+	printf("Bug fixes, mods and extensions by Jakub Bednarski\r\r");
+	printf("Version PYQ080725\r\r");
+
+	/*intialize mmc card*/
+	if (SDCARD_Init()==0)
+	{
+		FatalError(1);
+	}	
+
+	/*initalize FAT partition*/
+	if (FindDrive2())
+	{	
+		printf("FAT16 filesystem found!\r");
+	}
+	else
+	{
+		printf("No FAT16 filesystem!\r");
+		FatalError(2);
+	}
 	
+/*	if (DONE) //FPGA has not been configured yet
+	{
+		printf("FPGA already configured\r");
+	}
+	else
+*/	{
+		/*configure FPGA*/
+		if (ConfigureFpga())
+		{	
+			printf("FPGA configured\r");
+		}
+		else
+		{
+			printf("FPGA configuration failed\r");
+			FatalError(3);
+		}
+	}		
+
+	BootPrint("** PIC firmware PYQ080725 **\n");
+
+	if (UploadKickstart(kickname))
+	{
+		strcpy(kickname,"KICK    ROM");	
+		if (UploadKickstart(kickname))
+			FatalError(6);
+	}
+
+	if (!CheckButton())	//if menu button pressed don't load Action Replay
+		if (Open("AR3     ROM"))
+		{
+			if (file.len == 0x40000)
+			{//256KB Action Replay 3 ROM
+				BootPrint("\nUploading Action Replay ROM...");
+				BootUpload(&file,0x40,0x04);
+			}
+			else
+			{
+				BootPrint("\nUnsupported AR3.ROM file size!!!");
+				FatalError(6);		
+			}
+		}
+
+	OsdFilter(lr_filter,hr_filter);	//set interpolation filters
+	OsdMemoryConfig(memcfg);		//set memory config
+
+	printf("Bootloading complete.\r");
+
+	BootPrint("Exiting bootloader...");
+	BootExit();
+
+	df0.status=0;
 
 	/******************************************************************************/
 	/******************************************************************************/
 	/*System is up now*/
 	/******************************************************************************/
 	/******************************************************************************/
-
-	printf("System is up\r\n");
 
 	/*fill initial directory*/
 	ScrollDir("ADF",0);
@@ -188,7 +323,7 @@ void main(void)
 			HandleFpgaCmd(c1,c2);
 		
 		/*handle user interface*/
-		if(CheckTimer(t))
+		if (CheckTimer(t))
 		{
 			t=GetTimer(2);
 			User();
@@ -196,11 +331,202 @@ void main(void)
 	}
 }
 
+char UploadKickstart(const unsigned char *name)
+{
+	if (Open(name))
+	{
+		if (file.len == 0x80000)
+		{//512KB Kickstart ROM
+			BootPrint("Uploading 512KB Kickstart...");
+			BootUpload(&file,0xF8,0x08);
+		}
+		else if (file.len == 0x40000)
+		{//256KB Kickstart ROM
+			BootPrint("Uploading 256KB Kickstart...");
+			BootUpload(&file,0xF8,0x04);
+		}
+		else
+		{
+			BootPrint("Unsupported Kickstart ROM file size!");
+			return 41;
+		}
+	}
+	else
+	{
+		sprintf(s,"No \"%11s\" file!",name);
+		BootPrint(s);
+		return 40;
+	}
+	return 0;
+}
+
+char BootPrint(const char* text)
+{
+	char c1,c2,c3,c4;
+	char cmd;
+	const char* p;
+	unsigned char n;
+	
+ 	p = text;
+	n = 0;
+	while (*(p++) != 0)
+		n++; //calculating string length
+
+	cmd = 1;
+	while (1)
+	{
+		EnableFpga();
+		c1=SPI(0);
+		c2=SPI(0);
+		c3=SPI(0);
+		c4=SPI(1);	//disk present
+		//printf("CMD%d:%02X,%02X,%02X,%02X\r",cmd,c1,c2,c3,c4);
+		if (c1 == CMD_RDTRCK)
+		{
+			if (cmd)
+			{//command phase
+				if (c3==0x80 && c4==0x06)	//command packet size 12 bytes
+				{
+					cmd = 0;;
+					SPI(0xAA);	//command header
+					SPI(0x55);
+					SPI(0x00);	//cmd: 0001 = print
+					SPI(0x01);
+					//data packet size in bytes
+					SPI(0x00);
+					SPI(0x00);
+					SPI(0x00);
+					SPI(n+2); //+2 because only even byte count is possible to send and we have to send termination zero byte
+					//don't care
+					SPI(0x00);
+					SPI(0x00);
+					SPI(0x00);
+					SPI(0x00);
+				}
+				else break;
+			}
+			else
+			{//data phase
+				if (c3==0x80 && c4==((n+2)>>1))
+				{
+					p = text;
+					n = c4<<1;
+					while (n--)
+					{
+						c4 = *p;
+						SPI(c4);
+						if (c4) //if current character is not zero go to next one
+							p++;
+					}
+					DisableFpga();	
+					return 1;
+				}
+				else break;
+			}
+		}
+		DisableFpga();	
+	}
+	DisableFpga();	
+	return 0;
+}
+
+char BootUpload(struct file2TYPE *file, unsigned char base, unsigned char size)
+// this function sends given file to minimig's memory
+// base - memory base address (bits 23..16)
+// size - memory size (bits 23..16)
+{
+	char c1,c2,c3,c4;
+	char cmd;
+	
+	cmd = 1;
+	while (1)
+	{
+		EnableFpga();
+		c1=SPI(0);
+		c2=SPI(0);
+		c3=SPI(0);
+		c4=SPI(1);	//disk present
+		//printf("CMD%d:%02X,%02X,%02X,%02X\r",cmd,c1,c2,c3,c4);
+		if (c1 == CMD_RDTRCK)
+		{
+			if (cmd)
+			{//command phase
+				if (c3==0x80 && c4==0x06)	//command packet size 12 bytes
+				{
+					cmd = 0;
+					SPI(0xAA);
+					SPI(0x55);	//command header 0xAA55
+					SPI(0x00);
+					SPI(0x02);	//cmd: 0x0002 = upload memory
+					//memory base address
+					SPI(0x00);
+					SPI(base);
+					SPI(0x00);
+					SPI(0x00);
+					//memory size
+					SPI(0x00);
+					SPI(size);
+					SPI(0x00);
+					SPI(0x00);
+				}
+				else break;
+			}
+			else
+			{//data phase
+				DisableFpga();	
+				printf("uploading ROM file\r");
+				//send rom image to FPGA
+				SendFile(file);
+				printf("\rROM file uploaded\r");
+				return 0;
+			}
+		}
+		DisableFpga();	
+	}
+	DisableFpga();
+	return -1;
+}
+
+void BootExit(void)
+{
+	char c1,c2,c3,c4;
+	while (1)
+	{
+		EnableFpga();
+		c1 = SPI(0);
+		c2 = SPI(0);
+		c3 = SPI(0);
+		c4 = SPI(1);	//disk present
+		if (c1 == CMD_RDTRCK)
+		{
+			if (c3==0x80 && c4==0x06)	//command packet size 12 bytes
+			{
+				SPI(0xAA);	//command header
+				SPI(0x55);
+				SPI(0x00);	//cmd: 0003 = restart
+				SPI(0x03);
+				//don't care
+				SPI(0x00);
+				SPI(0x00);
+				SPI(0x00);
+				SPI(0x00);
+				//don't care
+				SPI(0x00);
+				SPI(0x00);
+				SPI(0x00);
+				SPI(0x00);
+			}
+			DisableFpga();	
+			return;
+		}
+		DisableFpga();	
+	}
+}
+
 /*user interface*/
 void User(void)
 {
-	static unsigned char menustate,menusub;
-	unsigned char c,up,down,select,menu;
+	unsigned char i,c,up,down,select,menu;
 	
 	/*get user control codes*/
 	c=OsdGetCtrl();
@@ -210,18 +536,18 @@ void User(void)
 	down=0;
 	select=0;
 	menu=0;
-	if(c&OSDCTRLUP)
+	if (c&OSDCTRLUP)
 		up=1;
-	if(c&OSDCTRLDOWN)
+	if (c&OSDCTRLDOWN)
 		down=1;
-	if(c&OSDCTRLSELECT)
+	if (c&OSDCTRLSELECT)
 		select=1;
-	if(c&OSDCTRLMENU)
+	if (c&OSDCTRLMENU)
 		menu=1;
 	
 		
 	/*menu state machine*/
-	switch(menustate)
+	switch (menustate)
 	{
 		/******************************************************************/
 		/*no menu selected / menu exited / menu not displayed*/
@@ -232,7 +558,7 @@ void User(void)
 			break;
 			
 		case MENU_NONE2:
-			if(menu)/*check if user wants to go to menu*/
+			if (menu)/*check if user wants to go to menu*/
 			{
 				menustate=MENU_MAIN1;
 				menusub=0;
@@ -246,74 +572,90 @@ void User(void)
 		/******************************************************************/
 		case MENU_MAIN1:
 			/*menu title*/
-			OsdWrite(0," ** Minimig Menu **");
+			OsdWrite(0," ** Minimig Menu **",0);
 			
 			/*df0 info*/
 			strcpy(s,"     df0: ");
-			if(df0.status&DSK_INSERTED)/*floppy currently in df0*/
+			if (df0.status&DSK_INSERTED)/*floppy currently in df0*/
 				strncpy(&s[10],df0.name,8);
 			else/*no floppy in df0*/
 				strncpy(&s[10],"--------",8);
 			s[18]=0x0d;
 			s[19]=0x00;
-			OsdWrite(2,s);	
+			OsdWrite(2,s,0);	
 			
+			if (df0.status&DSK_INSERTED)/*floppy currently in df0*/
+				if (df0.status&DSK_WRITABLE)/*floppy is writable*/
+					strcpy(s,"     writable ");
+				else
+					strcpy(s,"     read only");
+			else	/*no floppy in df0*/
+				strcpy(s,"     no disk  ");
+			OsdWrite(3,s,0);	
+
 			/*eject/insert df0 options*/
-			if(df0.status&DSK_INSERTED)/*floppy currently in df0*/
+			if (df0.status&DSK_INSERTED)/*floppy currently in df0*/
 				sprintf(s,"     eject df0 ");
 			else/*no floppy in df0*/
 				sprintf(s,"     insert df0");
-			OsdWrite(3,s);	
+			OsdWrite(4,s,menusub==0);	
 
+			OsdWrite(5,"     settings",menusub==1);
+			
 			/*reset system*/
-			OsdWrite(4,"     reset");
+			OsdWrite(6,"     reset",menusub==2);
 			
 			/*exit menu*/
-			OsdWrite(5,"     exit\n");
-			
-			/*display arrow indicating currently selected item*/
-			if(menusub==0)
-				OsdWrite(3,"--> ");
-			else if(menusub==1)
-				OsdWrite(4,"--> ");
-			else if(menusub==2)
-				OsdWrite(5,"--> ");
-							
+			OsdWrite(7,"     exit",menusub==3);
+
 			/*goto to second state of main menu*/
-			menustate=MENU_MAIN2;
+			menustate = MENU_MAIN2;
 			break;
 			
 		case MENU_MAIN2:
 			
-			if(menu)/*menu pressed*/
+			if (menu)/*menu pressed*/
 				menustate=MENU_NONE1;
-			else if(up)/*up pressed*/
+			else if (up)/*up pressed*/
 			{
-				if(menusub>0)
+				if (menusub>0)
 					menusub--;
 				menustate=MENU_MAIN1;
 			}
-			else if(down)/*down pressed*/
+			else if (down)/*down pressed*/
 			{
-				if(menusub<2)
+				if (menusub<3)
 					menusub++;
 				menustate=MENU_MAIN1;
 			}
-			else if(select)/*select pressed*/
+			else if (select)/*select pressed*/
 			{
-				if(menusub==0 && (df0.status&DSK_INSERTED))/*eject floppy*/
+				if (menusub==0 && (df0.status&DSK_INSERTED))/*eject floppy*/
 				{
-					df0.status=0;
-					menustate=MENU_MAIN1;	
+					df0.status = 0;
+					menustate = MENU_MAIN1;	
 				}
-				else if(menusub==0)/*insert floppy*/
+				else if (menusub==0)/*insert floppy*/
 				{
-					df0.status=0;
-					menustate=MENU_FILE1;
+					df0.status = 0;
+					menustate = MENU_FILE1;
 					OsdClear();
 				}
-				else if(menusub==2)/*exit menu*/
-					menustate=MENU_NONE1;
+				else if (menusub==1)/*settings*/
+				{
+					menusub = 4;
+					menustate = MENU_SETTINGS1;
+					OsdClear();
+				}
+				else if (menusub==2)/*reset*/
+				{
+					menusub = 1;
+					menustate = MENU_RESET1;
+					OsdClear();
+				}
+				else if (menusub==3)/*exit menu*/
+					menustate = MENU_NONE1;
+
 			}
 			
 			break;
@@ -327,32 +669,300 @@ void User(void)
 			break;
 
 		case MENU_FILE2:
-			if(down)/*scroll down through file requester*/
+			if (down)/*scroll down through file requester*/
 			{
 				ScrollDir("ADF",1);
 				menustate=MENU_FILE1;
 			}
 			
-			if(up)/*scroll up through file requester*/
+			if (up)/*scroll up through file requester*/
 			{
 				ScrollDir("ADF",2);
 				menustate=MENU_FILE1;
 			}
 			
-			if(select)/*insert floppy*/
+			if (select)/*insert floppy*/
 			{
-				file=directory[dirptr];
-				InsertFloppy(&df0);
-				menustate=MENU_MAIN1;
-				menusub=2;
+				if (directory[dirptr].len)
+				{
+					file = directory[dirptr];
+					InsertFloppy(&df0);
+				}
+				menustate = MENU_MAIN1;
+				menusub = 3;
 				OsdClear();
 			}
 			
-			if(menu)/*exit menu*/
-				menustate=MENU_NONE1;
+			if (menu)/*return to main menu*/
+			{
+				menustate = MENU_MAIN1;
+				menusub = 0;
+				OsdClear();	
+			}			
+			break;
+		/******************************************************************/
+		/*reset menu*/
+		/******************************************************************/
+		case MENU_RESET1:
+			/*menu title*/
+			OsdWrite(0,"    Reset Minimig?",0);
+			OsdWrite(2,"      yes",menusub==0);
+			OsdWrite(3,"      no",menusub==1);
+		
+			/*goto to second state of reset menu*/
+			menustate = MENU_RESET2;
+			break;
+
+		case MENU_RESET2:
+			if (down && menusub<1)
+			{
+				menusub++;
+				menustate = MENU_RESET1;
+			}
+			
+			if (up && menusub>0)
+			{
+				menusub--;
+				menustate = MENU_RESET1;
+			}
+			
+			if (select)
+			{
+				if (menusub==0)
+				{
+					OsdReset(0);
+					menustate = MENU_NONE1;
+				}
+			}
+			
+			if (menu || (select && menusub==1))/*exit menu*/
+			{
+					menustate = MENU_MAIN1;
+					menusub = 2;
+					OsdClear();
+			}
+			break;			
+		/******************************************************************/
+		/*settings menu*/
+		/******************************************************************/
+		case MENU_SETTINGS1:
+			/*menu title*/
+			OsdWrite(0,"   ** SETTINGS **",0);
+
+			strcpy(s,"  Lores Filter: ");
+			strcpy(&s[16],filter_msg[lr_filter]);
+			OsdWrite(2,s,menusub==0);
+	
+			strcpy(s,"  Hires Filter: ");
+			strcpy(&s[16],filter_msg[hr_filter]);
+			OsdWrite(3,s,menusub==1);
+
+			strcpy(s,"  RAM: ");
+			strcpy(&s[7],memcfg_msg[memcfg]);
+			OsdWrite(4,s,menusub==2);
+
+			strcpy(s,"  ROM:           ");
+			strncpy(&s[7],kickname,8);
+			OsdWrite(5,s,menusub==3);
+
+
+			OsdWrite(7,"        exit",menusub==4);
+		
+			/*goto to second state of reset menu*/
+			menustate = MENU_SETTINGS2;
+			break;
+
+		case MENU_SETTINGS2:
+			if (down && menusub<4)
+			{
+				menusub++;
+				menustate = MENU_SETTINGS1;
+			}
+			
+			if (up && menusub>0)
+			{
+				menusub--;
+				menustate = MENU_SETTINGS1;
+			}
+			
+			if (select)
+			{
+				if (menusub==0)
+				{
+					lr_filter++;
+					lr_filter &= 0x03;
+					menustate = MENU_SETTINGS1;
+					OsdFilter(lr_filter,hr_filter);
+				}
+				else if (menusub==1)
+				{
+					hr_filter++;
+					hr_filter &= 0x03;
+					menustate = MENU_SETTINGS1;
+					OsdFilter(lr_filter,hr_filter);
+				}
+				else if (menusub==2)
+				{
+					memcfg++;
+					memcfg &= 0x03;
+					menustate = MENU_SETTINGS1;
+					OsdMemoryConfig(memcfg);
+				}
+				else if (menusub==3)
+				{
+					if (df0.status&DSK_INSERTED)
+						OsdWrite(5,"   Remove floppy!",1);
+					else
+					{
+						menustate = MENU_ROMSELECT1;
+						OsdClear();
+					}
+				}
+
+				else if (menusub==4)
+				{
+					if 	(lr_filter != eeprom_read(EEPROM_LRFILTER))
+						eeprom_write(EEPROM_LRFILTER,lr_filter);
+
+					if 	(hr_filter != eeprom_read(EEPROM_HRFILTER))
+						eeprom_write(EEPROM_HRFILTER,hr_filter);
+
+					if 	(memcfg != eeprom_read(EEPROM_MEMCFG))
+						eeprom_write(EEPROM_MEMCFG,memcfg);
+				}
+			}
+			
+			if (menu || (select && menusub==4)) /*return to main menu*/
+			{
+					menustate = MENU_MAIN1;
+					menusub = 1;
+					OsdClear();
+			}
+			break;			
+
+		/******************************************************************/
+		/*kickstart rom select menu*/
+		/******************************************************************/
+		case MENU_ROMSELECT1:
+			/*menu title*/
+			OsdWrite(0,"   ** Kickstart **",0);
+
+			strcpy(s,"    ROM: ");
+			strncpy(&s[9],kickname,8);
+			s[9+8] = 0;
+			OsdWrite(2,s,0);
+			OsdWrite(3,"    select",menusub==0);
+			OsdWrite(4,"    rekick",menusub==1);
+			OsdWrite(5,"    rekick & save",menusub==2);
+	
+			OsdWrite(7,"        exit",menusub==3);
+		
+			/*goto to second state of reset menu*/
+			menustate = MENU_ROMSELECT2;
+			break;
+
+		case MENU_ROMSELECT2:
+			if (down && menusub<3)
+			{
+				menusub++;
+				menustate = MENU_ROMSELECT1;
+			}
+			
+			if (up && menusub>0)
+			{
+				menusub--;
+				menustate = MENU_ROMSELECT1;
+			}
+			
+			if (select)
+			{
+				if (menusub==0)
+				{
+					ScrollDir("ROM",0);
+					menustate = MENU_ROMFILE1;
+					OsdClear();
+				}
+				else if (menusub==1 || menusub==2)
+				{
+					OsdDisable();
+					menustate = MENU_NONE1;
+					OsdReset(1);
+					if (UploadKickstart(kickname)==0)
+					{
+						BootExit();
+						if (menusub==2)
+						{
+							for (i=0;i<8;i++)
+							{
+								if (kickname[i] != eeprom_read(EEPROM_KICKNAME+i))
+									eeprom_write(EEPROM_KICKNAME+i,kickname[i]);
+								
+							}
+						}
+					}
+				}
+			}
+			if (menu || (select && menusub==3))/*return to settings menu*/
+			{
+				menustate = MENU_SETTINGS1;
+				menusub = 3;
+				OsdClear();
+			}
 				
 			break;
+		/******************************************************************/
+		/*rom file requester menu*/
+		/******************************************************************/
+		case MENU_ROMFILE1:
+			PrintDir();
+			menustate = MENU_ROMFILE2;
+			break;
+
+		case MENU_ROMFILE2:
+			if (down)/*scroll down through file requester*/
+			{
+				ScrollDir("ROM",1);
+				menustate = MENU_ROMFILE1;
+			}
 			
+			if (up)/*scroll up through file requester*/
+			{
+				ScrollDir("ROM",2);
+				menustate=MENU_ROMFILE1;
+			}
+			
+			if (select)/*select rom file*/
+			{
+				menusub = 3;
+				if (directory[dirptr].len)
+				{
+					file = directory[dirptr];
+					strncpy(kickname,file.name,8+3);
+					menusub = 1;
+				}
+				ScrollDir("ADF",0);
+				menustate = MENU_ROMSELECT1;
+				OsdClear();
+			}
+			
+			if (menu)/*return to kickstrat rom select menu*/
+			{
+				ScrollDir("ADF",0);
+				menustate = MENU_ROMSELECT1;
+				menusub = 0;
+				OsdClear();
+			}
+				
+			break;
+		/******************************************************************/
+		/*error message menu*/
+		/******************************************************************/
+		case MENU_ERROR:
+			if (menu) /*exit when menu button is pressed*/
+			{
+				menustate = MENU_NONE1;
+			}
+			break;
 		/******************************************************************/
 		/*we should never come here*/
 		/******************************************************************/
@@ -361,23 +971,41 @@ void User(void)
 	}
 }
 
+void ErrorMessage(const char* message, unsigned char code)
+{
+	unsigned char i;
+	menustate = MENU_ERROR;
+	OsdClear();
+	OsdWrite(0,"    *** ERROR ***",1);
+	strncpy(s,message,21);
+	s[21] = 0;
+	OsdWrite(2,s,0);
+	if (code)
+	{
+		sprintf(s,"  error #%d",code);
+		OsdWrite(4,s,0);
+	}
+	OsdEnable();
+}
+
 /*print the contents of directory[] and the pointer dirptr onto the OSD*/
 void PrintDir(void)
 {
 	unsigned char i;
 
+	for(i=0;i<21;i++)
+		s[i] = ' ';
+	s[21] = 0;
+
+	if (directory[0].len==0)
+		OsdWrite(1,"   No files!",1);
+	else
 	for(i=0;i<DIRSIZE;i++)
 	{
-			if(i==dirptr)
-				sprintf(s,"--> ");
-			else
-				sprintf(s,"    ");
-
-			strncpy(&s[4],directory[i].name,8);
-			s[12]=0x0d;
-			s[13]=0x00;
-			OsdWrite(i,s);
-	}	
+		strncpy(&s[3],directory[i].name,8);
+		OsdWrite(i,s,i==dirptr);
+	}
+	
 }
 
 /*This function "scrolls" through the flashcard directory and fills the directory[] array to be printed later.
@@ -389,82 +1017,77 @@ This function can also filter on filetype. <type> must point to a string contain
 to filter on. If the first character is a '*', no filter is applied (wildcard)*/
 void ScrollDir(const unsigned char *type, unsigned char mode)
 {
-	unsigned char i,m,r;
+	unsigned char i,rc;
 	
-	switch(mode)
+	switch (mode)
 	{
 		/*reset directory to beginning*/
 		case 0:
 		default:
-			i=0;
-			m=FILESEEK_START;
-			while(i<DIRSIZE)							/*fill directory with available files*/
+			i = 0;
+			mode = FILESEEK_START;
+			memset(directory,0,sizeof(directory));
+			/*fill directory with available files*/
+			while (i<DIRSIZE)
 			{
-				if(!FileSearch(&file,m))				/*search file*/
+				if (!FileSearch2(&file,mode))/*search file*/
 					break;
-				m=FILESEEK_NEXT;
-
-				if((type[0]=='*') || (!strncmp(&file.name[8],type,3)))	/*check filetype(i.o.w. file extension)*/
-				{
-					directory[i++]=file;
-				}
+				mode = FILESEEK_NEXT;
+				if ((type[0]=='*') || (strncmp(&file.name[8],type,3)==0))/*check filetype*/
+					directory[i++] = file;
 			}
-
-			while(i<DIRSIZE)							/*there are no more directory entries, so we must fill the buffer with empty lines*/
-			{
-				directory[i].name[0]=0;
-				directory[i].len=0;
-				i++;
-			}
+			/*clear rest of directory*/
+			while (i<DIRSIZE)
+				directory[i++].len = 0;
 			/*preset pointer*/
-			dirptr=0;
+			dirptr = 0;
 			
 			break;
 			
 		/*scroll down*/
 		case 1:
-			if(dirptr>=DIRSIZE-1)/*pointer is at bottom of directory window*/
+			if (dirptr >= DIRSIZE-1)/*pointer is at bottom of directory window*/
 			{
-				file=directory[(DIRSIZE-1)];
+				file = directory[(DIRSIZE-1)];
 				
 				/*search next file and check for filetype/wildcard and/or end of directory*/
 				do
-					r=FileSearch(&file,FILESEEK_NEXT);
-				while((type[0]!='*')&&(strncmp(&file.name[8],type,3))&&r);
+					rc = FileSearch2(&file,FILESEEK_NEXT);
+				while ((type[0]!='*') && (strncmp(&file.name[8],type,3)) && rc);
 				
 				/*update directory[] if file found*/
-				if(r)
+				if (rc)
 				{
-					for(i=0;i<DIRSIZE-1;i++)
-						directory[i]=directory[i+1];
-					directory[DIRSIZE-1]=file;
+					for (i=0;i<DIRSIZE-1;i++)
+						directory[i] = directory[i+1];
+					directory[DIRSIZE-1] = file;
 				}
 			}
 			else/*just move pointer in window*/
 			{
 				dirptr++;
-				if(directory[dirptr].len==0)
+				if (directory[dirptr].len==0)
 					dirptr--;
 			}
 			break;
 			
 		/*scroll up*/
 		case 2:
-			if(dirptr==0)/*pointer is at top of directory window*/
+			if (dirptr==0)/*pointer is at top of directory window*/
 			{
-				file=directory[0];
+				file = directory[0];
 				
 				/*search previous file and check for filetype/wildcard and/or end of directory*/
 				do
-					r=FileSearch(&file,FILESEEK_PREV);
-				while((type[0]!='*')&&(strncmp(&file.name[8],type,3))&&r);
+					rc = FileSearch2(&file,FILESEEK_PREV);
+				while ((type[0]!='*') && (strncmp(&file.name[8],type,3)) && rc);
 				
 				/*update directory[] if file found*/
-				if(r)
+				if (rc)
 				{
-					for(i=DIRSIZE-1;i>0;i--)
-						directory[i]=directory[i-1];
-					directory[0]=file;
+					for (i=DIRSIZE-1;i>0;i--)
+						directory[i] = directory[i-1];
+					directory[0] = file;
 				}
 			}
 			else/*just move pointer in window*/
@@ -473,7 +1096,6 @@ void ScrollDir(const unsigned char *type, unsigned char mode)
 	}
 }
 
-
 /*insert floppy image pointed to to by global <file> into <drive>*/
 void InsertFloppy(struct adfTYPE *drive)
 {
@@ -481,22 +1103,22 @@ void InsertFloppy(struct adfTYPE *drive)
 
 	/*clear OSD and prepare progress bar*/
 	OsdClear();
-	OsdWrite(0,"  Inserting floppy");
-	OsdWrite(1,"       in DF0");
+	OsdWrite(0,"  Inserting floppy",0);
+	OsdWrite(1,"       in DF0",0);
 	strcpy(s,"[                  ]");
 
 	/*fill cache*/
 	for(i=0;i<160;i++)
 	{
-		if(i%9==0)
+		if (i%9==0)
 		{
 			s[(i/9)+1]='*';
-			OsdWrite(3,s);
+			OsdWrite(3,s,0);
 		}
 			
 		drive->cache[i]=file.cluster;
 		for(j=0;j<11;j++)
-			FileNextSector(&file);
+			FileNextSector2(&file);
 	}
 	
 	/*copy name*/
@@ -504,11 +1126,15 @@ void InsertFloppy(struct adfTYPE *drive)
 		drive->name[i]=file.name[i];
 	
 	/*initialize rest of struct*/
-	drive->status=DSK_INSERTED;
+	drive->status = DSK_INSERTED;
+	if (!(file.attributes&0x01))//read-only attribute
+		drive->status |= DSK_WRITABLE;
 	drive->clusteroffset=drive->cache[0];		
 	drive->sectoroffset=0;		
 	drive->track=0;				
-	drive->trackprev=0;					
+	drive->trackprev=-1;
+	printf("Inserting floppy: \"%s\", attributes: %02X\r",file.name,file.attributes);
+	printf("drive status: %02X\r",drive->status);
 }
 
 
@@ -537,7 +1163,9 @@ void HandleFpgaCmd(unsigned char c1, unsigned char c2)
 		c2 is track number*/
 		case CMD_WRTRCK:
 			df0.track=c2;
+			DISKLED=1;
 			WriteTrack(&df0);
+			DISKLED=0;
 			break;
 			
 		/*no command*/
@@ -557,151 +1185,62 @@ void CheckTrack(struct adfTYPE *drive)
 	DisableFpga();	
 }
 
-/********************************************************************************************************/
-/********************************************************************************************************/
-
 /*load kickstart rom*/
-void ReadRom(const unsigned char *fn)
+void SendFile(struct file2TYPE *file)
 {
-	unsigned char af;
-	unsigned short j,x;
+	unsigned char c1,c2;
+	unsigned char j;
+	unsigned short n;
+	unsigned char *p;
 
-	/*determine rom size and encryption*/
-	if(!Open(fn))
+	n = file->len/512;	//sector count (rounded up)
+	while (n--)
 	{
-		printf("kickstart file not found!\r\n");
-		ErrorFlash(ERR_NOROM);
-	}
-	directory[0]=file;
-	FileRead(&file);
-	printf("rom size:  %dKb\r\nencrypted: ",file.len/2);
-	if(strncmp("AMIROMTYPE1",secbuf,11))
-	{
-		printf("no\r\n");
-		af=0;
-	}
-	else
-	{
-		printf("yes\r\n");
-		af=1;
-	}
+		/*read sector from mmc*/
+		FileRead2(file);
 
-	/*open keyfile and remember start of file*/
-	if(af)
-	{	
-		if(!Open("ROM     KEY"))
+		do
 		{
-			printf("key file not found!\r\n");
-			ErrorFlash(ERR_NOKEY);
+			/*read command from FPGA*/
+			EnableFpga();
+			c1=SPI(0);
+			c2=SPI(0);
+			SPI(0);
+			SPI(1);	// disk present status
+			DisableFpga();
 		}
-		directory[1]=file;
-	}
-	
-	if(!af)/*send non-encrypted rom*/
-	{
-		/*open kickstart file and read first sector*/
-		file=directory[0];
-		FileRead(&file);
-		/*read full sectors*/
-		for(j=0;j<file.len;j++)
-		{
-			ReadRomSend(secbuf,512);
-			FileNextSector(&file);
-			FileRead(&file);
-			putchar('*');
-		}
+		while(!(c1&0x02));
+			
+		putchar('.');	
 
-		/*we must sent 512kb, if rom was 256kb, sent again*/
-		if(file.len==512)
-		{
-			/*open kickstart file and read first sector*/
-			file=directory[0];
-			FileRead(&file);
-			/*read full sectors*/
-			for(j=0;j<file.len;j++)
-			{
-				ReadRomSend(secbuf,512);
-				FileNextSector(&file);
-				FileRead(&file);
-				putchar('*');
-			}
-		}
-
-	}
-	else/*send Amiga forever encrypted rom + key*/
-	{
-		/*open kickstart file and read first sector*/
-		file=directory[0];
-		FileRead(&file);
-
-		/*determine number of FULL sectors to read*/
-		if(file.len<1024)
-			x=512;
-		else
-			x=1024;
-
-		/*read full sectors*/
-		for(j=0;j<x;j++)
-		{
-			ReadRomSend(secbuf,512);
-			FileNextSector(&file);
-			FileRead(&file);
-			putchar('*');
-		}
-		ReadRomSend(secbuf,12);/*remaining 12 bytes*/
-		
-		/*now send key*/
-		file=directory[1];
-		FileRead(&file);
-	
-		for(j=0;j<4;j++)
-		{
-			ReadRomSend(secbuf,512);
-			FileNextSector(&file);
-			FileRead(&file);
-			putchar('*');
-		}
-		ReadRomSend(secbuf,22);/*remaining 22 bytes*/
-	}
-
-	printf("\r\n");
-}
-
-/*send <n> bytes of data pointed to by <data> to FPGA*/
-void ReadRomSend(unsigned char *data, unsigned short n)
-{
-	unsigned char c1,c2;	
-
-	/*wait until FPGA requests data*/
-	do
-	{
-		/*read command from FPGA*/
+		/*send sector to fpga*/
 		EnableFpga();
-		c1=SPI(0);
+		c1=SPI(0); 
 		c2=SPI(0);
-		if(c1&0x04)
+		SPI(0);
+		SPI(1);
+		p=secbuf;
+		j=128;
+		do
 		{
-			SPI(0x00);
-			SPI(0x01);
+			SSPBUF=*(p++);
+			while(!BF);		
+			SSPBUF=*(p++);
+			while(!BF);		
+			SSPBUF=*(p++);
+			while(!BF);		
+			SSPBUF=*(p++);
+			while(!BF);		
 		}
-		if(c1&0x02)
-		{
-			SPI(*(data++));
-			SPI(*(data++));
-			n-=2;
-		}
+		while(--j);
 		DisableFpga();
+	
+		FileNextSector2(file);
 	}
-	while(n);
 }
-
-
-
-/********************************************************************************************************/
-/********************************************************************************************************/
 
 /*configure FPGA*/
-void ConfigureFpga(void)
+unsigned char ConfigureFpga(void)
 {
 	unsigned short t;
 	unsigned char *ptr;
@@ -713,32 +1252,41 @@ void ConfigureFpga(void)
 	/*now wait for INIT to go high*/
 	t=50000;
 	while(!INIT_B)
-		if(--t==0)
-		{	
-			printf("FPGA INIT pin not high!\r\n");
-			ErrorFlash(ERR_CONFIG);
+		if (--t==0)
+		{
+			printf("FPGA init is NOT high!\r");
+			FatalError(3);
+			//return(0);
 		}
-		
-	/*open bitstream file*/
-	if(!Open("MINIMIG1BIN"))
+			
+	printf("FPGA init is high\r");
+			
+	if (DONE)
 	{
-		printf("MINIMIG1.BIN not found!\r\n");
-		ErrorFlash(ERR_NOBIN);
+		printf("FPGA done is high before configuration!\r");
+		FatalError(3);
 	}
 
+	/*open bitstream file*/
+	if (Open("MINIMIG1BIN")==0)
+	{
+		printf("No FPGA configuration file found!\r");
+		FatalError(4);
+	}
+
+	printf("FPGA bitstream file opened\r");
+	
 	/*send all bytes to FPGA in loop*/
 	t=0;	
 	do
 	{
 		/*read sector if 512 (64*8) bytes done*/
-		if(t%64==0)
+		if (t%64==0)
 		{
+			DISKLED = !((t>>9)&1);
 			putchar('*');
-			if(!FileRead(&file))
-			{
-				printf(".BIN file read error\r\n");
-				ErrorFlash(ERR_NOBIN);	
-			}				
+			if (!FileRead2(&file))
+				return(0);				
 			ptr=secbuf;
 		}
 		
@@ -754,145 +1302,578 @@ void ConfigureFpga(void)
 		t++;	
 
 		/*read next sector if 512 (64*8) bytes done*/
-		if(t%64==0)
+		if (t%64==0)
 		{
-			FileNextSector(&file);
+			FileNextSector2(&file);
 		}
 	}
 	while(t<26549);
-
-	printf("\r\n");
+	
+	printf("\rFPGA bitstream loaded\r");
+	DISKLED = 0;
 	
 	/*check if DONE is high*/
-	if(!DONE)
+	if (DONE)
+		return(1);
+	else
 	{
-		printf("FPGA DONE pin not high!\r\n");
-		ErrorFlash(ERR_CONFIG);
+		printf("FPGA done is NOT high!\r");
+		FatalError(5);
 	}
+	return 0;
 }
-
-/********************************************************************************************************/
-/********************************************************************************************************/
 
 /*read a track from disk*/
 void ReadTrack(struct adfTYPE *drive)
-{
-	unsigned char sector,c1,c2;
+{	//track number is updated in drive struct before calling this function
 
-	/*search track*/
-	putchar((drive->track/10)+48);
-	putchar((drive->track%10)+48);
+	unsigned char sector;
+	unsigned char c,c1,c2,c3,c4;
+	unsigned short n;
 
-	/*check if we are accessing new track or first track*/
-	if((drive->track!=drive->trackprev) || (drive->track==0))
+	/*display track number: cylinder & head*/
+#ifdef DEBUG
+	printf("*%d:",drive->track);
+#endif
+
+	if (drive->track != drive->trackprev)
 	{/*track step or track 0, start at beginning of track*/
-		drive->trackprev=drive->track;
-
-		sector=0;
-		file.cluster=drive->cache[drive->track];
-		file.sec=drive->track*11;
-	}
-	else if(drive->clusteroffset!=0)
-	{/*same track, start at next sector in track*/
-		sector=drive->sectoroffset;
-		file.cluster=drive->clusteroffset;
-		file.sec=(drive->track*11)+sector;
+		drive->trackprev = drive->track;
+		sector           = 0;
+		file.cluster     = drive->cache[drive->track];
+		file.sec         = drive->track*11;
+		drive->sectoroffset = sector;
+		drive->clusteroffset = file.cluster;
 	}
 	else
-	{/*???? --> start at beginning of track*/
-		sector=0;
-		file.cluster=drive->cache[drive->track];
-		file.sec=drive->track*11;
+	{/*same track, start at next sector in track*/
+		sector       = drive->sectoroffset;
+		file.cluster = drive->clusteroffset;
+		file.sec     = (drive->track*11)+sector;
 	}
 	
-	drive->clusteroffset=0;
+	EnableFpga();
 
-	while(1)
+	c1 = SPI(0);		//read request signal
+	c2 = SPI(0);		//track number (cylinder & head)
+	c3 = 0x3F&SPI(0);	//msb of mfm words to transfer 
+	c4 = SPI(drive->status);		//lsb of mfm words to transfer
+
+	DisableFpga();
+
+	// if dma read count is bigger than 11 sectors then we start the transfer from the begining of current track
+	if ((c3>0x17) || (c3==0x17 && c4>=0x60))
 	{
-		/*read sector*/
-		SSPCON1=0x30;
-		if(!FileRead(&file))
-			ErrorFlash(ERR_FILE);
-		SSPCON1=0x31;
-		
-		/*we are now going to access FPGA*/
+		sector           = 0;
+		file.cluster     = drive->cache[drive->track];
+		file.sec         = drive->track*11;
+	}
+
+	while (1)
+	{
+		FileRead2(&file);
+
 		EnableFpga();
 
 		/*check if FPGA is still asking for data*/
-		c1=SPI(0);
-		c2=SPI(0);
-				
+		c1 = SPI(0);	//read request signal
+		c2 = SPI(0);	//track number (cylinder & head)
+		c3 = SPI(0);	//msb of mfm words to transfer 
+		c4 = SPI(drive->status);	//lsb of mfm words to transfer
+
+	#ifdef DEBUG
+		c = sector + '0';
+		if (c>'9')
+			c += 'A'-'9'-1;
+		putchar(c);
+		putchar(':');
+		c = ((c3>>4)&0xF) + '0';
+		if (c>'9')
+			c += 'A'-'9'-1;
+		putchar(c);
+		c = (c3&0xF) + '0';
+		if (c>'9')
+			c += 'A'-'9'-1;
+		putchar(c);
+
+		c = ((c4>>4)&0xF) + '0';
+		if (c>'9')
+			c += 'A'-'9'-1;
+		putchar(c);
+		c = (c4&0xF) + '0';
+		if (c>'9')
+			c += 'A'-'9'-1;
+		putchar(c);
+	#endif
+
+		c3 &= 0x3F;
+
+		//some loaders stop dma if sector header isn't what they expect
+		//we don't check dma transfer count after sending every word
+		//so the track can be changed while we are sending the rest of the previous sector
+		//in this case let's start transfer from the beginning
+		if (c2 == drive->track)				
 		/*send sector if fpga is still asking for data*/
-		if(c1&0x02)
+		if (c1&0x02)
 		{
-			SectorToFpga(sector,drive->track);
-			putchar('.');
+			if (c3==0 && c4<4)
+				SectorHeaderToFpga(c4);
+			else 
+			{
+				n = SectorToFpga(sector,drive->track);
+
+				
+			#ifdef DEBUG					// printing remaining dma count 
+				putchar('-');
+				c = ((n>>12)&0xF) + '0';
+				if (c>'9')
+					c += 'A'-'9'-1;
+				putchar(c);
+				c = ((n>>8)&0xF) + '0';
+				if (c>'9')
+					c += 'A'-'9'-1;
+				putchar(c);
+		
+				c = ((n>>4)&0xF) + '0';
+				if (c>'9')
+					c += 'A'-'9'-1;
+				putchar(c);
+				c = (n&0xF) + '0';
+				if (c>'9')
+					c += 'A'-'9'-1;
+				putchar(c);					
+			#endif
+
+				n--;
+				c3 = (n>>8)&0x3F;
+				c4 = n;
+
+				if (c3==0 && c4<4)
+				{
+					SectorHeaderToFpga(c4);
+				#ifdef DEBUG
+					putchar('+');
+					c4 += '0';
+					putchar(c4);	
+				#endif
+				}
+				else 
+				if (sector==10)
+				{
+					SectorGapToFpga();
+				#ifdef DEBUG
+					putchar('+');
+					putchar('+');
+					putchar('+');
+				#endif
+				}
+			}	
 		}
 		
 		/*we are done accessing FPGA*/
 		DisableFpga();
-		
-		/*point to next sector*/
-		if(++sector>=11)
-		{
-			sector=0;
-			file.cluster=drive->cache[drive->track];
-			file.sec=drive->track*11;
-		}
-		else
-		{			
-			SSPCON1=0x30;
-			if(!FileNextSector(&file))
-				ErrorFlash(ERR_FILE);
-			SSPCON1=0x31;
-		}
-		
-		/*remember second cluster of this track read, skip last sector*/
-		/*if(drive->clusteroffset==0 && sector!=10)*/
-		if(drive->clusteroffset==0)
-		{
-			drive->sectoroffset=sector;
-			drive->clusteroffset=file.cluster;
-		}
-		
-		/*if track done, exit*/
-		if(!(c1&0x02))
-			break;
-	}		
 
+		//track has changed
+		if (c2 != drive->track)
+			break;
+
+		//read dma request
+		if (!(c1&0x02))
+			break;
+
+
+		//don't go to the next sector if there is not enough data in the fifo
+		if (c3==0 && c4<4)
+			break;
+
+		// go to the next sector
+		sector++;
+		if (sector<11)
+		{			
+			FileNextSector2(&file);
+		}
+		else	//go to the start of current track
+		{
+			sector       = 0;
+			file.cluster = drive->cache[drive->track];
+			file.sec     = drive->track*11;
+		}
+		
+		//remember current sector and cluster
+		drive->sectoroffset  = sector;
+		drive->clusteroffset = file.cluster;
+
+	#ifdef DEBUG
+		putchar('-');
+		putchar('>');
+	#endif
+
+	}
+
+#ifdef DEBUG
+	putchar(':');
 	putchar('O');
 	putchar('K');
-	putchar(0x0d);
+	putchar('\r');
+#endif
+
 }
 
 void WriteTrack(struct adfTYPE *drive)
 {
-	printf("Write track not supported yet\r\n");
+	unsigned char sector;
+	unsigned char Track;
+	unsigned char Sector;
+	
+	//setting file pointer to begining of current track
+	file.cluster = drive->cache[drive->track];
+	file.sec     = drive->track*11;
+	sector = 0;
+
+	drive->trackprev = drive->track+1;	//just to force next read from the start of current track
+
+#ifdef DEBUG
+	printf("*%d:\r",drive->track);
+#endif
+
+	while (FindSync(drive))
+	{
+		if (GetHeader(&Track,&Sector))
+		{
+			if (Track == drive->track)
+			{
+				while (sector != Sector)
+				{
+					if (sector < Sector)
+					{
+						FileNextSector2(&file);
+						sector++;
+					}
+					else
+					{
+						file.cluster = drive->cache[drive->track];
+						file.sec     = drive->track*11;
+						sector = 0;
+					}
+				}				
+	
+				if (GetData())
+				{
+					if (drive->status&DSK_WRITABLE)
+						FileWrite2(&file);
+					else
+					{
+						Error = 30;
+						printf("Write attempt to protected disk!\r");
+					}
+				}
+			}
+			else
+				Error = 27;		//track number reported in sector header is not the same as current drive track
+		}
+		if (Error)
+		{
+			printf("WriteTrack: error %d\r",Error);
+			ErrorMessage("  WriteTrack",Error);
+		}
+	}
+
 }
 
+unsigned char FindSync(struct adfTYPE *drive)
+//this function reads data from fifo till it finds sync word
+// or fifo is empty and dma inactive (so no more data is expected)
+{
+	unsigned char c1,c2,c3,c4;
+	unsigned short n;
 
-/*find and open a file*/
+	while (1)
+	{
+		EnableFpga();
+		c1 = SPI(0);			//write request signal
+		c2 = SPI(0);			//track number (cylinder & head)
+		if (!(c1&CMD_WRTRCK))
+			break;
+		if (c2 != drive->track)
+			break;
+		c3 = SPI(0)&0xBF;		//msb of mfm words to transfer 
+		c4 = SPI(0);			//lsb of mfm words to transfer
+
+		if (c3==0 && c4==0)
+			break;
+
+		n = ((c3&0x3F)<<8) + c4;
+
+		while (n--)
+		{
+			c3 = SPI(0);
+			c4 = SPI(0);
+			if (c3==0x44 && c4==0x89)
+			{
+				DisableFpga();
+			#ifdef DEBUG
+				printf("#SYNC:");
+			#endif
+				return 1;
+			}
+		}
+		DisableFpga();
+	}
+	DisableFpga();
+	return 0;
+}
+
+unsigned char GetHeader(unsigned char *pTrack, unsigned char *pSector)
+//this function reads data from fifo till it finds sync word or dma is inactive
+{
+	unsigned char c,c1,c2,c3,c4;
+	unsigned char i;
+	unsigned char checksum[4];
+
+	Error = 0;
+	while (1)
+	{
+		EnableFpga();
+		c1 = SPI(0);			//write request signal
+		c2 = SPI(0);			//track number (cylinder & head)
+		if (!(c1&CMD_WRTRCK))
+			break;
+		c3 = SPI(0);			//msb of mfm words to transfer 
+		c4 = SPI(0);			//lsb of mfm words to transfer
+
+		if ((c3&0x3F)!=0 || c4>24)	//remaining header data is 25 mfm words
+		{
+			c1 = SPI(0);		//second sync lsb
+			c2 = SPI(0);		//second sync msb
+			if (c1!=0x44 || c2!=0x89)
+			{
+				Error = 21;
+				printf("\rSecond sync word missing...\r",c1,c2,c3,c4);
+				break;
+			}
+
+			c = SPI(0);
+			checksum[0] = c;
+			c1 = (c&0x55)<<1;
+			c = SPI(0);
+			checksum[1] = c;
+			c2 = (c&0x55)<<1;
+			c = SPI(0);
+			checksum[2] = c;
+			c3 = (c&0x55)<<1;
+			c = SPI(0);
+			checksum[3] = c;
+			c4 = (c&0x55)<<1;
+
+			c = SPI(0);
+			checksum[0] ^= c;
+			c1 |= c&0x55;
+			c = SPI(0);
+			checksum[1] ^= c;
+			c2 |= c&0x55;
+			c = SPI(0);
+			checksum[2] ^= c;
+			c3 |= c&0x55;
+			c = SPI(0);
+			checksum[3] ^= c;
+			c4 |= c&0x55;
+
+			if (c1 != 0xFF)		//always 0xFF
+				Error = 22;
+			else if (c2 > 159)		//Track number (0-159)
+				Error = 23;
+			else if (c3 > 10)		//Sector number (0-10)
+				Error = 24;
+			else if (c4>11 || c4==0)	//Number of sectors to gap (1-11)
+				Error = 25;
+
+			if (Error)
+			{
+				printf("\rWrong header: %d.%d.%d.%d\r",c1,c2,c3,c4);
+				break;
+			}
+
+		#ifdef DEBUG
+			printf("T%dS%d\r",c2,c3);
+		#endif
+
+			*pTrack = c2;
+			*pSector = c3;
+
+			for (i=0;i<8;i++)
+			{
+				checksum[0] ^= SPI(0);
+				checksum[1] ^= SPI(0);
+				checksum[2] ^= SPI(0);
+				checksum[3] ^= SPI(0);
+			}
+
+			checksum[0] &= 0x55;
+			checksum[1] &= 0x55;
+			checksum[2] &= 0x55;
+			checksum[3] &= 0x55;
+
+			c1 = (SPI(0)&0x55)<<1;
+			c2 = (SPI(0)&0x55)<<1;
+			c3 = (SPI(0)&0x55)<<1;
+			c4 = (SPI(0)&0x55)<<1;
+
+			c1 |= SPI(0)&0x55;
+			c2 |= SPI(0)&0x55;
+			c3 |= SPI(0)&0x55;
+			c4 |= SPI(0)&0x55;
+
+			if (c1!=checksum[0] || c2!=checksum[1] || c3!=checksum[2] || c4!=checksum[3])
+			{
+				Error = 26;
+				break;
+			}
+
+			DisableFpga();
+			return 1;
+		}
+		else				//not enough data for header
+		if ((c3&0x80)==0)	//write dma is not active
+		{
+			Error = 20;
+			break;
+		}
+
+		DisableFpga();
+	}
+
+	DisableFpga();
+	return 0;
+}
+
+unsigned char GetData()
+{
+	unsigned char c,c1,c2,c3,c4;
+	unsigned char i;
+	unsigned char *p;
+	unsigned short n;
+	unsigned char checksum[4];
+
+	Error = 0;
+	while (1)
+	{
+		EnableFpga();
+		c1 = SPI(0);			//write request signal
+		c2 = SPI(0);			//track number (cylinder & head)
+		if (!(c1&CMD_WRTRCK))
+			break;
+		c3 = SPI(0);			//msb of mfm words to transfer 
+		c4 = SPI(0);			//lsb of mfm words to transfer
+
+		n = ((c3&0x3F)<<8) + c4;
+
+		if (n >= 0x204)
+		{
+			c1 = (SPI(0)&0x55)<<1;
+			c2 = (SPI(0)&0x55)<<1;
+			c3 = (SPI(0)&0x55)<<1;
+			c4 = (SPI(0)&0x55)<<1;
+
+			c1 |= SPI(0)&0x55;
+			c2 |= SPI(0)&0x55;
+			c3 |= SPI(0)&0x55;
+			c4 |= SPI(0)&0x55;
+
+			checksum[0] = 0;
+			checksum[1] = 0;
+			checksum[2] = 0;
+			checksum[3] = 0;
+
+			/*odd bits of data field*/	
+			i = 128;
+			p = secbuf;
+			do
+			{
+				c = SPI(0);
+				checksum[0] ^= c;
+				*p++ = (c&0x55)<<1;
+				c = SPI(0);
+				checksum[1] ^= c;
+				*p++ = (c&0x55)<<1;
+				c = SPI(0);
+				checksum[2] ^= c;
+				*p++ = (c&0x55)<<1;
+				c = SPI(0);
+				checksum[3] ^= c;
+				*p++ = (c&0x55)<<1;
+			}
+			while(--i);
+
+			/*even bits of data field*/	
+			i = 128;
+			p = secbuf;
+			do
+			{
+				c = SPI(0);
+				checksum[0] ^= c;
+				*p++ |= c&0x55;
+				c = SPI(0);
+				checksum[1] ^= c;
+				*p++ |= c&0x55;
+				c = SPI(0);
+				checksum[2] ^= c;
+				*p++ |= c&0x55;
+				c = SPI(0);
+				checksum[3] ^= c;
+				*p++ |= c&0x55;
+			}
+			while(--i);
+
+			checksum[0] &= 0x55;
+			checksum[1] &= 0x55;
+			checksum[2] &= 0x55;
+			checksum[3] &= 0x55;
+
+			if (c1!=checksum[0] || c2!=checksum[1] || c3!=checksum[2] || c4!=checksum[3])
+			{
+				Error = 29;
+				break;
+			}
+
+			DisableFpga();
+			return 1;
+		}
+		else				//not enough data in fifo
+		if ((c3&0x80)==0)	//write dma is not active
+		{
+			Error = 28;
+			break;
+		}	
+
+		DisableFpga();
+	}
+	DisableFpga();
+	return 0;
+}
+
 unsigned char Open(const unsigned char *name)
 {
 	unsigned char i,j;
 	
-	if(FileSearch(&file,FILESEEK_START))
+	if (FileSearch2(&file,0))
 	{
 		do
 		{
 			i=0;
 			for(j=0;j<11;j++)
-				if(file.name[j]==name[j])
+				if (file.name[j]==name[j])
 					i++;
-			if(i==11)
-				return(1);	
+			if (i==11)
+			{
+				printf("file \"%s\" found\r",name);
+				return 1;	
+			}
 		}
-		while(FileSearch(&file,FILESEEK_NEXT));
+		while(FileSearch2(&file,1));
 	}
-	return(0);
+	printf("file \"%s\" not found\r",name);
+	return 0;
 }
-
-
 
 /*this function sends the data in the sector buffer to the FPGA, translated
 into an Amiga floppy format sector
@@ -900,11 +1881,12 @@ sector is the sector number in the track
 track is the track number
 note that we do not insert clock bits because they will be stripped
 by the Amiga software anyway*/
-void SectorToFpga(unsigned char sector,unsigned char track)
+unsigned short SectorToFpga(unsigned char sector,unsigned char track)
 {
 	unsigned char c,i;
 	unsigned char csum[4];
 	unsigned char *p;
+	unsigned char c3,c4;
 	
 	/*preamble*/
 	SPI(0xaa);		
@@ -1049,43 +2031,49 @@ void SectorToFpga(unsigned char sector,unsigned char track)
 		while(!BF);		
 		c=*(p++);
 		SSPBUF=c|0xaa;
-		while(!BF);		
+		while(!BF);
+		c3 = SSPBUF;
 		c=*(p++);
 		SSPBUF=c|0xaa;
 		while(!BF);
+		c4 = SSPBUF;
 	}
 	while(--i);
 	
+	return((c3<<8)|c4);
 }
+	
 
-/********************************************************************************************************/
-/********************************************************************************************************/
-
-/*Error posting*/
-void ErrorFlash(unsigned char error)
+void SectorGapToFpga()
 {
-	unsigned char x;
-	unsigned short t;
-
-	printf("Critical error #%u\r\nSystem Halted",error);
-
-	while(1)
+	unsigned char i;
+	i = 190;
+	do
 	{
-		/*flash led <error> times, period=400ms*/
-		for(x=0;x<error;x++)
-		{
-			DISKLED=1;
-			t=GetTimer(40);
-			while(!CheckTimer(t));
-			DISKLED=0;
-			t=GetTimer(40);
-			while(!CheckTimer(t));
-		}
-	
-		/*pause for 2000ms*/
-		t=GetTimer(200);
-		while(!CheckTimer(t));
-	}
-	
+		SPI(0xAA);
+		SPI(0xAA);
+	}	
+	while (--i);
 }
 	
+void SectorHeaderToFpga(unsigned char n)
+{
+	if (n)
+	{
+		SPI(0xAA);
+		SPI(0xAA);
+		
+		if (--n)
+		{
+			SPI(0xAA);
+			SPI(0xAA);
+	
+			if (--n)
+			{
+				SPI(0x44);
+				SPI(0x89);
+			}
+		}
+	}
+}
+

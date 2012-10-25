@@ -23,8 +23,8 @@ images.
 */
 				
 #include <stdio.h>
-#include <ata18.h>
-#include <fat1618_2.h> 
+#include "ata18.h"
+#include "fat1618_2.h"
 
 /*internal global variables*/
 static unsigned long fatstart;					/*start LBA of first FAT table*/
@@ -45,7 +45,7 @@ unsigned char FindDrive2(void)
 	if(!AtaReadSector(0,secbuf))		/*read partition sector*/
 		return(0);
 	
-	if(secbuf[450]!=0x04 && secbuf[450]!=0x06)
+	if(secbuf[450]!=0x04 && secbuf[450]!=0x06) /*first partition filesystem type: FAT16*/
 		return(0);
 	                  					/*check signature*/		
 	if(secbuf[510]!=0x55 || secbuf[511]!=0xaa)
@@ -111,44 +111,44 @@ unsigned char FileSearch2(struct file2TYPE *file, unsigned char mode)
 	unsigned char j;
 	
 	sb=0;/*buffer is empty*/
-	if(mode==0)
+	file->len=0;
+
+	if (mode==0)
 		file->entry=0;
-	else if(mode==1)
+	else if (mode==1)
 		file->entry++;
 	else
 		file->entry--;
 
-	while(file->entry<direntrys)
+	while(file->entry < direntrys)
 	{	
 		/*calculate sector and offset*/
-		sf=dirstart;
-		sf+=(file->entry)/16;
-	   	i=(file->entry%16)*32;			
+		sf = dirstart;
+		sf += (file->entry)/16;
+	   	i = (file->entry%16)*32;			
 	
 		/*load sector if not in buffer*/
-		if(sb!=sf)
+		if (sb != sf)
 		{
-			sb=sf;
-			if(!AtaReadSector(sb,secbuf))
+			sb = sf;
+			if (!AtaReadSector(sb,secbuf))
 				return(0);	
 		}	
 		
 		/*check if valid file entry*/
-		if(secbuf[i]!=0x00 && secbuf[i]!=0xe5 && secbuf[i]!=0x2e)
+		if (secbuf[i]!=0x00 && secbuf[i]!=0xe5 && secbuf[i]!=0x2e)
 	    	/*and valid attributes*/
-	    	if((secbuf[i+11]&0x1a)==0x00)
+	    	if ((secbuf[i+11]&0x1a)==0x00)
 			{
 				/*copy name*/
-				for(j=0;j<11;j++)           	
-					file->name[j]=secbuf[i+j];
-				file->name[j]=0x00;
+				for (j=0;j<11;j++)           	
+					file->name[j] = secbuf[i+j];
+				file->name[j] = 0x00;
 				
-				/*get length of file in sectors, maximum is 16Mbytes*/
-				file->len=(unsigned long)secbuf[j+28];
-				file->len+=(unsigned short)secbuf[i+29]*256;
-				file->len+=511;
-				file->len/=512;
-				file->len+=(unsigned long)secbuf[i+30]*128;
+				file->attributes = secbuf[i+11];
+
+				/*get length of file*/
+				file->len = *((unsigned long*)&secbuf[i+28]);	//it only works when using little endian long representation
 						
 				/*get first cluster of file*/
 				file->cluster=(unsigned long)secbuf[i+26]+((unsigned long)secbuf[i+27]*256);
@@ -162,8 +162,7 @@ unsigned char FileSearch2(struct file2TYPE *file, unsigned char mode)
 			file->entry++;
 		else
 			file->entry--;
-	}
-	file->len=0;		
+	}		
 	return(0);
 }
 
@@ -212,6 +211,20 @@ unsigned char FileRead2(struct file2TYPE *file)
 		return(1);
 }
 
+/*write buffer to sector*/
+unsigned char FileWrite2(struct file2TYPE *file)
+{
+	unsigned long sb;
+	
+	sb=datastart;						/*start of data in partition*/
+	sb+=clustersize*(file->cluster-2);	/*cluster offset*/
+	sb+=(file->sec%clustersize); 		/*sector offset in cluster*/
+										/*write sector from drive*/
+	if(!AtaWriteSector(sb,secbuf))
+		return(0);
+	else
+		return(1);
+}
 
 
 

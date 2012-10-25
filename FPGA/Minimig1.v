@@ -75,96 +75,129 @@
 //
 // TODO: 			-fixs bug and implement things I forgot.....
 
-module Minimig1(	cpudata,cpuaddress,_ipl,_as,_uds,_lds,r_w,_dtack,_cpureset,cpuclk,
-				ramdata,ramaddress,_ramsel0,_ramsel1,_ub,_lb,_we,_oe,
-				mclk,
-				txd,rxd,cts,rts,
-				_joy1,_joy2,_15khz,pwrled,msdat,msclk,kbddat,kbdclk,
-				_spisel0,_spisel1,_spisel2,spidin,spidout,spiclk,
-				_hsyncout,_vsyncout,redout,greenout,blueout,
-				left,right);
-//m68k pins
-inout 	[15:0]cpudata;		//m68k data bus
-input	[23:1]cpuaddress;	//m68k address bus
-output	[2:0]_ipl;		//m68k interrupt request
-input	_as;				//m68k address strobe
-input	_uds;			//m68k upper data strobe
-input	_lds;			//m68k lower data strobe
-input	r_w;				//m68k read / write
-output	_dtack;			//m68k data acknowledge
-output	_cpureset;		//m68k reset
-output	cpuclk;			//m68k clock
-//sram pins
-inout	[15:0]ramdata;		//sram data bus
-output	[19:1]ramaddress;	//sram address bus
-output	_ramsel0;			//sram enable bank 0
-output	_ramsel1;			//sram enable bank 1
-output	_ub;				//sram upper byte select
-output	_lb;				//sram lower byte select
-output	_we;				//sram write enable
-output	_oe;				//sram output enable
-//system	pins
-input	mclk;			//master system clock (4.433619MHz)
-//rs232 pins
-input	rxd;				//rs232 receive
-output	txd;				//rs232 send
-input	cts;				//rs232 clear to send
-output	rts;				//rs232 request to send
-//I/O
-input	[5:0]_joy1;		//joystick 1 [fire2,fire,up,down,left,right] (default mouse port)
-input	[5:0]_joy2;		//joystick 2 [fire2,fire,up,down,left,right] (default joystick port)
-input	_15khz;			//scandoubler disable
-output	pwrled;			//power led
-inout	msdat;			//PS2 mouse data
-inout	msclk;			//PS2 mouse clk
-inout	kbddat;			//PS2 keyboard data
-inout	kbdclk;			//PS2 keyboard clk
-//host controller interface (SPI)
-input	_spisel0;			//SPI enable 0
-input	_spisel1;			//SPI enable 1
-input	_spisel2;			//SPI enable 2
-input	spidin;			//SPI data input
-output	spidout;			//SPI data output
-input	spiclk;			//SPI clock
-//video
-output	_hsyncout;		//horizontal sync
-output	_vsyncout;		//vertical sync
-output	[3:0]redout;		//red
-output	[3:0]greenout;		//green
-output	[3:0]blueout;		//blue
-//audio
-output	left;			//audio bitstream left
-output	right;			//audio bitstream right
+//JB:
+// Important: if you are making any own fpga core builds please change fpga core id in BootRom.v
+//
+// 2008-07-17
+//	- scan doubler with vertical and horizontal interpolation
+//	- transparent osd window
+//	- selected osd line highlight
+//	- osd control by joystick (up and down pressed simultaneously invoke menu) 
+//	- memory configuration from osd (512KB chip, 1MB chip, 512KB chip/512KB slow, 1MB chip/512KB slow)
+//	- video interpolation filter configuration from osd (vertical and horizontal)
+//	- user reset accessible from osd
+//	- user reset to bootloader (kickstart reloading)
+//	- new bootloader (text messages during kickstart loading)
+//	- ECS blitter
+//	- PAL/NTSC selection
+//	- modified display dma engine (better compatibility)
+//	- modified sprite dma engine (better compatibility)
+//	- modified copper timing (better compatibility) 
+//	- modified floppy interface (better read and write support)
+//	- Action Replay III module for debugging (takes 512KB memory bank)
+//
+// Thanks to:
+// Dennis for his great Minimig
+// Loriano for impressive enclosure 
+// Darrin and Oscar for their ideas, support and help
+// Toni for his indispensable help and logic analyzer (and WinUAE :-)
+//
+
+module Minimig1
+(
+	//m68k pins
+	inout 	[15:0]cpudata,	//m68k data bus
+	input	[23:1]cpuaddress,	//m68k address bus
+	output	[2:0]_ipl,		//m68k interrupt request
+	input	_as,				//m68k address strobe
+	input	_uds,				//m68k upper data strobe
+	input	_lds,				//m68k lower data strobe
+	input	r_w,				//m68k read / write
+	output	_dtack,				//m68k data acknowledge
+	output	_cpureset,			//m68k reset
+	output	cpuclk,				//m68k clock
+	//sram pins
+	inout	[15:0]ramdata,	//sram data bus
+	output	[19:1]ramaddress,	//sram address bus
+	output	_ramsel0,			//sram enable bank 0
+	output	_ramsel1,			//sram enable bank 1
+	output	_ub,				//sram upper byte select
+	output	_lb,				//sram lower byte select
+	output	_we,				//sram write enable
+	output	_oe,				//sram output enable
+	//system	pins
+	input	mclk,				//master system clock (4.433619MHz)
+	//rs232 pins
+	input	rxd,				//rs232 receive
+	output	txd,				//rs232 send
+	input	cts,				//rs232 clear to send
+	output	rts,				//rs232 request to send
+	//I/O
+	input	[5:0]_joy1,		//joystick 1 [fire2,fire,up,down,left,right] (default mouse port)
+	input	[5:0]_joy2,		//joystick 2 [fire2,fire,up,down,left,right] (default joystick port)
+	input	_15khz,				//scandoubler disable
+	output	pwrled,				//power led
+	inout	msdat,				//PS2 mouse data
+	inout	msclk,				//PS2 mouse clk
+	inout	kbddat,				//PS2 keyboard data
+	inout	kbdclk,				//PS2 keyboard clk
+	//host controller interface (SPI)
+	input	_spisel0,			//SPI enable 0
+	input	_spisel1,			//SPI enable 1
+	input	_spisel2,			//SPI enable 2
+	input	spidin,				//SPI data input
+	output	spidout,			//SPI data output
+	input	spiclk,				//SPI clock
+	//video
+	output	_hsyncout,			//horizontal sync
+	output	_vsyncout,			//vertical sync
+	output	[3:0]redout,		//red
+	output	[3:0]greenout,	//green
+	output	[3:0]blueout,		//blue
+	//audio
+	output	left,				//audio bitstream left
+	output	right,				//audio bitstream right
+	//user i/o
+	output	gpio0,
+	output	gpio1,
+	output	gpio2
+);
+
+//--------------------------------------------------------------------------------------
+
+	parameter NTSC = 0;	//Agnus type (PAL/NTSC)
 
 //--------------------------------------------------------------------------------------
 
 //local signals for data bus
-wire		[15:0]data;		//main databus
+wire		[15:0]data;			//main databus
 wire		[15:0]pauladataout;	//paula databus out
 wire		[15:0]userdataout;	//user IO data out
-wire		[15:0]denisedataout;//denise databus out
-wire		[15:0]cpudataout;	//cpu databus out
-wire		[15:0]ramdataout;	//ram databus out
+wire		[15:0]denisedataout;	//denise databus out
+wire		[15:0]cpudataout;		//cpu databus out
+wire		[15:0]ramdataout;		//ram databus out
 wire		[15:0]bootdataout;	//boot rom databus out
-wire		[15:0]ciadataout;	//cia A+B databus out
+wire		[15:0]ciadataout;		//cia A+B databus out
 wire		[15:0]agnusdataout;	//agnus data out
+wire		[15:0]cartdataout;	//Action Replay data out
+
 
 //local signals for spi bus
 wire		paulaspidout; 		//paula spi data out
 wire		userspidout;		//userio spi data out
 
 //local signals for address bus
-reg		[23:1]address;		//main address bus
+reg			[23:1]address;		//main address bus
 wire		[20:1]address_agnus;//agnus address out
 
 //local signals for control bus
-wire		hwr;				//main high write enable 
-wire		lwr;				//main low write enable 
+wire		hwr;			//main high write enable 
+wire		lwr;			//main low write enable 
 wire		rd;				//main read enable
 wire		cpurd; 			//cpu read enable
 wire		cpuhwr;			//cpu high write enable
 wire		cpulwr;			//cpu low write enable
-wire		dma;				//agnus gets bus
+wire		dma;			//agnus gets bus
 wire		dmawr;			//agnus write
 wire		dmapri;			//agnus has priority	
 
@@ -174,40 +207,41 @@ wire		[8:1]regaddress; 	//main register address bus
 //rest of local signals
 wire		kbdrst;			//keyboard reset
 wire		reset;			//global reset
-wire		clk;				//bus clock
+wire		clk;			//bus clock
+wire		clk28m;			//28MHz clock for Amber (and ECS Denise in future)
 wire		qclk;			//qudrature bus clock
-wire		vgaclk;			//scandoubler clock
 wire		e;				//e clock enable
-wire		ovl;				//kickstart overlay enable
+wire		ovl;			//kickstart overlay enable
 wire		_led;			//power led
-wire		boot;    			//bootrom overlay enable
-wire		selchip;			//chip ram select
-wire		selslow;			//slow ram select
-wire		selkick;			//rom select
+wire		boot;    		//bootrom overlay enable
+wire		selchip;		//chip ram select
+wire		selslow;		//slow ram select
+wire		selkick;		//rom select
 wire		selreg;			//chip register select
-wire		selciaa;			//cia A select
-wire		selciab;			//cia B select
-wire		selboot;			//boot rom select
+wire		selciaa;		//cia A select
+wire		selciab;		//cia B select
+wire		selboot;		//boot rom select
 wire		int2;			//intterrupt 2
 wire		int3;			//intterrupt 3 
 wire		int6;			//intterrupt 6
-wire		[3:0]osdctrl;		//OSD control (minimig->host, [menu,select,down,up])
+wire		[5:0]osdctrl;	//OSD control (minimig->host, [menu,select,down,up])
 wire		_fire0;			//joystick 1 fire signal	to cia A
 wire		_fire1;			//joystick 2 fire signal to cia A
-wire		[2:0]user;		//user control signals
+wire		[2:0]user;	//user control signals
 wire		dmal;			//dma request from Paula to Agnus
 wire		dmas;			//dma special from Paula to Agnus
 wire		indx;			//disk index interrupt
 
 //local video signals
 wire		blank;			//blanking signal
-wire		sol;				//start of video line
-wire		sof;				//start of video frame
-wire		[3:0]nred;		//denise (pal) red
-wire		[3:0]ngreen;		//denise (pal) green
-wire		[3:0]nblue;		//denise (pal) blue
-wire		osdblank;			//osd blanking 
-wire		osdpixel;			//osd pixel(video) data
+wire		sol;			//start of video line
+wire		sof;			//start of video frame
+wire		strhor;			//horizontal strobe for Denise
+wire		[3:0]nred;	//denise (pal) red
+wire		[3:0]ngreen;	//denise (pal) green
+wire		[3:0]nblue;	//denise (pal) blue
+wire		osdblank;		//osd blanking 
+wire		osdpixel;		//osd pixel(video) data
 wire		_hsync;			//horizontal sync
 wire		_vsync;			//vertical sync
 
@@ -220,16 +254,40 @@ wire		_sel2;			//disk2 select
 wire		_sel3;			//disk3 select 	
 wire		side;			//upper/lower disk head
 wire		_motor;			//disk motor control
-wire		_track0;			//track zero detect
-wire		_change;			//disk has been removed from drive
+wire		_track0;		//track zero detect
+wire		_change;		//disk has been removed from drive
 wire		_ready;			//disk is ready
+wire		_wprot;			//disk is write-protected
 
+
+//--------------------------------------------------------------------------------------
+//JB:
+
+wire	int7;				//int7 interrupt request from Action Replay
+wire	[2:0]_iplx;		//interrupt request lines from paula
+wire	selcart;			//Action Replay RAM select
+wire	ovr;				//overide chip memmory decoding
+
+wire	usrrst;				//user reset from osd interface
+wire	bootrst;			//user reset to bootloader
+wire	[1:0]lr_filter;	//bit #0: horizontal, bit #1: vertical
+wire	[1:0]hr_filter;
+wire	hires;				//hires signal from denise
+wire	[1:0]memcfg;		//memory configuration (0: only 512KB chip, 1: 1MB chip, 2: 512KB chip / 512KB slow, 3: 1MB chip / 512KB slow)
+reg		extra_chip;			//extra chip ram is activated
+reg		extra_slow;			//extra slow ram is activated
+wire	aron;				//Action Replay is enabled
+
+//--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 
 //power led control
 //when _led=0, pwrled=on
 //when _led=1, pwrled=powered by weak pullup
 assign pwrled=(_led)?1'bz:1'b1;
+
+
+assign {gpio2,gpio1,gpio0} = 3'b000;
 
 //--------------------------------------------------------------------------------------
 
@@ -242,6 +300,7 @@ always @(posedge clk)
 		indxcnt[3:0]<=0;
 	else if(sof)
 		indxcnt[3:0]<=indxcnt[3:0]+1;
+		
 assign indx=(indxcnt[3:0]==9)?1:0;
 
 //--------------------------------------------------------------------------------------
@@ -253,242 +312,325 @@ always @(dma or cpuaddress or address_agnus)
 	else//address bus and control bus belongs to agnus
 		address[23:1]={cpuaddress[23:21],address_agnus[20:1]};
 
-assign ramaddress[18:1]=address[18:1];
-
 //--------------------------------------------------------------------------------------
 
 //instantiate agnus
-Agnus A1 (		.clk(clk),
-				.reset(reset),
-				.aen(selreg),
-				.rd(rd),
-				.hwr(hwr),
-				.lwr(lwr),
-				.datain(data),
-				.dataout(agnusdataout),
-				.addressin(address[8:1]),
-				.addressout(address_agnus),
-				.regaddress(regaddress),
-				.bus(dma),
-				.buswr(dmawr),
-				.buspri(dmapri),
-				._hsync(_hsync),
-				._vsync(_vsync),
-				.blank(blank),
-				.sol(sol),
-				.sof(sof),
-				.int3(int3),
-				.dmal(dmal),
-				.dmas(dmas),
-				.fastchip(1'b0)		);
+Agnus A1
+(
+	.clk(clk),
+	.clk28m(clk28m),
+	.reset(reset),
+	.aen(selreg),
+	.rd(rd),
+	.hwr(hwr),
+	.lwr(lwr),
+	.datain(data),
+	.dataout(agnusdataout),
+	.addressin(address[8:1]),
+	.addressout(address_agnus),
+	.regaddress(regaddress),
+	.bus(dma),
+	.buswr(dmawr),
+	.buspri(dmapri),
+	._hsync(_hsync),
+	._vsync(_vsync),
+	.blank(blank),
+	.sol(sol),
+	.sof(sof),
+	.strhor(strhor),
+	.int3(int3),
+	.dmal(dmal),
+	.dmas(dmas),
+	.ntsc(NTSC),
+	.fastchip(1'b0)
+);
 
 //instantiate paula
-Paula P1 (		.clk(clk),
-				.reset(reset),
-				.regaddress(regaddress),
-				.datain(data),
-				.dataout(pauladataout),
-				.txd(txd),
-				.rxd(rxd),
-				.sol(sol),
-				.sof(sof),
-				.int2(int2),
-				.int3(int3),
-				.int6(int6),
-				._ipl(_ipl),
-				.dmal(dmal),
-				.dmas(dmas),
-				._step(_step),
-				.direc(direc),
-				._sel(_sel0),
-				.side(side),
-				._motor(_motor),
-				._track0(_track0),
-				._change(_change),
-				._ready(_ready),
-				._den(_spisel0),
-				.din(spidin),
-				.dout(paulaspidout),
-				.dclk(spiclk),
-				.user(user),
-				.left(left),
-				.right(right)			);
+Paula P1
+(
+	.clk(clk),
+	.reset(reset),
+	.regaddress(regaddress),
+	.datain(data),
+	.dataout(pauladataout),
+	.txd(txd),
+	.rxd(rxd),
+	.sol(sol),
+	.sof(sof),
+	.int2(int2),
+	.int3(int3),
+	.int6(int6),
+	._ipl(_iplx),
+	.dmal(dmal),
+	.dmas(dmas),
+	._step(_step),
+	.direc(direc),
+	._sel(_sel0),
+	.side(side),
+	._motor(_motor),
+	._track0(_track0),
+	._change(_change),
+	._ready(_ready),
+	._wprot(_wprot), //JB: disk is write-protected
+	._den(_spisel0),
+	.din(spidin),
+	.dout(paulaspidout),
+	.dclk(spiclk),
+	.user(user),
+	.left(left),
+	.right(right)
+);
 
 //instantiate user IO
-userio UI1 (		.clk(clk),
-				.reset(reset),
-				.sol(sol),
-				.sof(sof),
-				.regaddress(regaddress),
-				.datain(data),
-				.dataout(userdataout),
-				.ps2mdat(msdat),
-				.ps2mclk(msclk),
-				._fire0(_fire0),
-				._fire1(_fire1),
-				.user(user),
-				._joy1(_joy1),
-				._joy2(_joy2),
-				.osdctrl(osdctrl),
-				._den(_spisel1),
-				.din(spidin),
-				.dout(userspidout),
-				.dclk(spiclk),
-				.osdblank(osdblank),
-				.osdpixel(osdpixel)		);
+userio UI1 
+(	
+	.clk(clk),
+	.reset(reset),
+	.sol(sol),
+	.sof(sof),
+	.regaddress(regaddress),
+	.datain(data),
+	.dataout(userdataout),
+	.ps2mdat(msdat),
+	.ps2mclk(msclk),
+	._fire0(_fire0),
+	._fire1(_fire1),
+	.user(user),
+	._joy1(_joy1),
+	._joy2(_joy2),
+	.osdctrl(osdctrl[3:0]),
+	._den(_spisel1),
+	.din(spidin),
+	.dout(userspidout),
+	.dclk(spiclk),
+	.osdblank(osdblank),
+	.osdpixel(osdpixel),
+	.lr_filter(lr_filter),
+	.hr_filter(hr_filter),
+	.memcfg(memcfg),
+	.usrrst(usrrst),
+	.bootrst(bootrst)
+);
+
+//memory configuration changed during reset
+always @(posedge clk)
+	if (reset)
+		{extra_slow,extra_chip} <= memcfg;
 
 //instantiate Denise
-Denise DN1 (		.clk(clk),
-				.reset(reset),
-				.sol(sol),
-				.sof(sof),
-				.regaddress(regaddress),
-				.datain(data),
-				.dataout(denisedataout),
-				.blank(blank),
-				.red(nred),
-				.green(ngreen),
-				.blue(nblue)			);
+Denise DN1
+(		
+	.clk(clk),
+	.reset(reset),
+	.sol(sol),
+	.sof(sof),
+	.strhor(strhor),
+	.regaddress(regaddress),
+	.datain(data),
+	.dataout(denisedataout),
+	.blank(blank),
+	.red(nred),
+	.green(ngreen),
+	.blue(nblue),
+	.hires(hires)
+);
 
 //instantiate Amber
-amber B1 (		.clk(clk),
-				.vgaclk(vgaclk),
-				.dblscan(_15khz),
-				.osdblank(osdblank),
-				.osdpixel(osdpixel),
-				.redin(nred),
-				.bluein(nblue),
-				.greenin(ngreen),
-				._hsyncin(_hsync),
-				._vsyncin(_vsync),
-				.redout(redout),
-				.blueout(blueout),
-				.greenout(greenout),
-				._hsyncout(_hsyncout),
-				._vsyncout(_vsyncout)	);
+Amber AMB1
+(		
+	.clk(clk),
+	.clk28m(clk28m),
+	.dblscan(_15khz),
+	.lr_filter(lr_filter),
+	.hr_filter(hr_filter),
+	.hires(hires),
+	.osdblank(osdblank),
+	.osdpixel(osdpixel),
+	.redin(nred),
+	.bluein(nblue),
+	.greenin(ngreen),
+	._hsyncin(_hsync),
+	._vsyncin(_vsync),
+	.redout(redout),
+	.blueout(blueout),
+	.greenout(greenout),
+	._hsyncout(_hsyncout),
+	._vsyncout(_vsyncout)
+);
 
 //instantiate cia A
-ciaa	ciaa (		.clk(clk),
-				.aen(selciaa),
-				.rd(rd),
-				.wr(lwr),
-				.reset(reset),
-				.rs(address[11:8]),
-				.datain(data[7:0]),
-				.dataout(ciadataout[7:0]),
-				.tick(sof),//vsync count
-				.e(e),
-				.irq(int2),
-				.portain({_fire1,_fire0,_ready,_track0,_sel0,_change}),
-				.portaout({_led,ovl}),
-				.kbdrst(kbdrst),
-				.kbddat(kbddat),
-				.kbdclk(kbdclk),
-				.osdctrl(osdctrl)		);
+ciaa ciaa
+(
+	.clk(clk),
+	.aen(selciaa),
+	.rd(rd),
+	.wr(lwr),
+	.reset(reset),
+	.rs(address[11:8]),
+	.datain(data[7:0]),
+	.dataout(ciadataout[7:0]),
+	.tick(sof),//vsync count
+	.e(e),
+	.irq(int2),
+	.portain({_fire1,_fire0,_ready,_track0,_wprot,_change}),
+	.portaout({_led,ovl}),
+	.kbdrst(kbdrst),
+	.kbddat(kbddat),
+	.kbdclk(kbdclk),
+	.osdctrl(osdctrl)
+);
 
 //instantiate cia B
-ciab	ciab (		.clk(clk),
-				.aen(selciab),
-				.rd(rd),
-				.wr(hwr),
-				.reset(reset),
-				.rs(address[11:8]),
-				.datain(data[15:8]),
-				.dataout(ciadataout[15:8]),
-				.tick(sol),//hsync count
-				.e(e),
-				.flag(indx),
-				.irq(int6),
-				.portain({1'b0,cts,1'b0}),
-				.portaout({dtr,rts}),
-				.portbout({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})		);
+ciab ciab 
+(
+	.clk(clk),
+	.aen(selciab),
+	.rd(rd),
+	.wr(hwr),
+	.reset(reset),
+	.rs(address[11:8]),
+	.datain(data[15:8]),
+	.dataout(ciadataout[15:8]),
+	.tick(sol),//hsync count
+	.e(e),
+	.flag(indx),
+	.irq(int6),
+	.portain({1'b0,cts,1'b0}),
+	.portaout({dtr,rts}),
+	.portbout({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
+);
 
 
 //instantiate cpu bridge
-m68k_bridge M1 (	.clk(clk),
-				.qclk(qclk),
-				.cen(cpuok),
-				._as(_as),
-				._lds(_lds),
-				._uds(_uds),
-				.r_w(r_w),
-				._dtack(_dtack),
-				.rd(cpurd),
-				.hwr(cpuhwr),
-				.lwr(cpulwr),
-				.data(cpudata),
-				.dataout(cpudataout),
-				.datain(data)			);
+m68k_bridge M1 
+(	
+	.clk(clk),
+	.qclk(qclk),
+	.cen(cpuok),
+	._as(_as),
+	._lds(_lds),
+	._uds(_uds),
+	.r_w(r_w),
+	._dtack(_dtack),
+	.rd(cpurd),
+	.hwr(cpuhwr),
+	.lwr(cpulwr),
+	.data(cpudata),
+	.dataout(cpudataout),
+	.datain(data)
+);
 
 //instantiate sram bridge
-sram_bridge S1 (	.clk(clk),
-				.qclk(qclk),
-				.aen1(selchip&(~address[19])),//first 512Kbyte of chipram
-				.aen2(selchip&address[19]),//second 512Kbyte of chipram
-				.aen3(selslow),//512Kbyte of slow ram
-				.aen4(selkick&(boot|rd)),//512Kbyte of kickstart rom (write enabled when boot asserted)
-				.datain(data),
-				.dataout(ramdataout),
-				.rd(rd),
-				.hwr(hwr),
-				.lwr(lwr),
-				._ub(_ub),
-				._lb(_lb),
-				._we(_we),
-				._oe(_oe),
-				._sel0(_ramsel0),
-				._sel1(_ramsel1),
-				.data(ramdata),
-				.address19(ramaddress[19])	);
+sram_bridge S1 
+(
+	.clk(clk),
+	.qclk(qclk),
+	.aen1((~ovr|~cpurd)&selchip&(~address[19])),//first 512Kbyte of chipram
+	.aen2(selchip&address[19]&extra_chip | selslow&~extra_chip&extra_slow),//second 512Kbyte of chipram
+	.aen3((selcart&aron) | (selslow&~aron&extra_chip&extra_slow)),//512Kbyte of slow ram or Action Replay ROM
+	.aen4(selkick&(boot|rd)),//512Kbyte of kickstart rom (write enabled when boot asserted)
+	.datain(data),
+	.dataout(ramdataout),
+	.rd(rd),
+	.hwr(hwr),
+	.lwr(lwr),
+	._ub(_ub),
+	._lb(_lb),
+	._we(_we),
+	._oe(_oe),
+	._sel0(_ramsel0),
+	._sel1(_ramsel1),
+	.data(ramdata),
+	.address19(ramaddress[19])
+);
+
+assign ramaddress[18:1] = address[18:1];
+
+ActionReplay AR1
+(	
+	.clk(clk),
+	.reset(reset),
+	.cpuaddress(cpuaddress[23:1]),
+	.regaddress(regaddress),
+	.datain(data),
+	.dataout(cartdataout),
+	.cpurd(cpurd),
+	.cpuhwr(cpuhwr),
+	.cpulwr(cpulwr),
+	.dma(dma),
+	.boot(boot),
+	.freeze(osdctrl[4]),
+	.int7(int7),
+	.ovr(ovr),
+	.selmem(selcart),
+	.aron(aron)
+);
+
+//level 7 interrupt for CPU
+assign _ipl = int7 ? 3'b000 : _iplx;	//m68k interrupt request
+
 //instantiate gary
-gary	G1 (			.clk(clk),
-				.e(e),
-				.cpuaddress(cpuaddress[23:12]),
-				.cpurd(cpurd),
-				.cpuhwr(cpuhwr),
-				.cpulwr(cpulwr),
-				.cpuok(cpuok),
-				.dma(dma),
-				.dmawr(dmawr),
-				.dmapri(dmapri),
-				.ovl(ovl),
-				.boot(boot),
-				.rd(rd),
-				.hwr(hwr),
-				.lwr(lwr),
-				.selreg(selreg),
-				.selchip(selchip),
-				.selslow(selslow),
-				.selciaa(selciaa),
-				.selciab(selciab),
-				.selkick(selkick),
-				.selboot(selboot)		);
+gary G1 
+(
+	.clk(clk),
+	.e(e),
+	.cpuaddress(cpuaddress[23:12]),
+	.cpurd(cpurd),
+	.cpuhwr(cpuhwr),
+	.cpulwr(cpulwr),
+	.cpuok(cpuok),
+	.dma(dma),
+	.dmawr(dmawr),
+	.dmapri(dmapri),
+	.ovl(ovl),
+	.boot(boot),
+	.rd(rd),
+	.hwr(hwr),
+	.lwr(lwr),
+	.selreg(selreg),
+	.selchip(selchip),
+	.selslow(selslow),
+	.selciaa(selciaa),
+	.selciab(selciab),
+	.selkick(selkick),
+	.selboot(selboot)	
+);
 
 //instantiate boot rom
-bootrom R1 (		.clk(clk),
-				.aen(selboot),
-				.rd(rd),
-				.address(cpuaddress[10:1]),
-				.dataout(bootdataout)	);
+bootrom R1 
+(	
+	.clk(clk),
+	.aen(selboot),
+	.rd(rd),
+	.address(cpuaddress[10:1]),
+	.dataout(bootdataout)	
+);
 
 //instantiate system control
-syscontrol L1 (	.clk(clk),
-				.mrst(kbdrst),
-				.bootdone(selciaa&selciab),
-				.reset(reset),
-				.boot(boot)			);
+syscontrol L1 
+(	
+	.clk(clk),
+	.mrst(kbdrst|usrrst),
+	.bootdone(selciaa&selciab),
+	.reset(reset),
+	.boot(boot),
+	.bootrst(bootrst)
+);
 
 //instantiate clock generator
-clock_generator C1(	.mclk(mclk),
-				.c_28m(vgaclk),
-				.c_7m(clk),
-				.cq_7m(qclk),
-				.e(e)	);
-				
-//--------------------------------------------------------------------------------------
+clock_generator C1
+(	
+	.mclk(mclk),
+	.clk28m(clk28m),	//28.37516 MHz clock output
+	.clk(clk),			//7.09379  MHz clock output
+	.clk90(qclk),
+	.e(e)
+);
+
+//-------------------------------------------------------------------------------------
 
 //data multiplexer
-assign data[15:0]=ramdataout[15:0]|cpudataout[15:0]|pauladataout[15:0]|userdataout|denisedataout[15:0]|bootdataout[15:0]|ciadataout[15:0]|agnusdataout[15:0];
+assign data[15:0]=ramdataout[15:0]|cpudataout[15:0]|pauladataout[15:0]|userdataout|denisedataout[15:0]|bootdataout[15:0]|ciadataout[15:0]|agnusdataout[15:0]|cartdataout[15:0];
 
 //--------------------------------------------------------------------------------------
 
@@ -500,72 +642,10 @@ assign spidout=(!_spisel0 || !_spisel1) ? (paulaspidout|userspidout) : 1'bz;
 
 //cpu reset and clock
 assign _cpureset=~reset;
-//assign cpuclk=~clk;
+assign cpuclk=~clk;
 
-//cpu turbo clock
-reg cpuclk;
-always @(posedge vgaclk)
-	cpuclk<=~cpuclk;
 
 //--------------------------------------------------------------------------------------
-
-endmodule
-
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-
-//Master clock generator for minimig
-//This module generates all necessary clock from the 4.433619 PAL clock
-module clock_generator(mclk,c_28m,c_7m,cq_7m,e);
-input mclk;			//4.433619 MHz master oscillator input
-output c_28m;	 		//28.37516 MHz clock out
-output c_7m; 			//7.09379  MHz	clock out
-output cq_7m; 			//7.09379  MHz	qudrature clock out
-output e;		  		//0.709379 MHz clock enable out
-
-reg ic_14m;			//14.18758 MHz intermediate frequency			
-reg ic_7m;			
-reg icq_7m;			
-
-reg	[3:0]ediv;		//used to generate e clock enable
-
-// Instantiate the DCM module
-// the DCM is configured to generator c_28m from mclk (multiply by 32, divide by 5)
-clock_dcm dcm1(
-    .CLKIN_IN(mclk), 
-    .RST_IN(1'b0), 
-    .CLKFX_OUT(c_28m), 
-    .CLKIN_IBUFG_OUT(), 
-    .LOCKED_OUT()
-    );
-
-//generator ic_14m
-always @(posedge c_28m)
-	ic_14m<=~ic_14m;
-
-//generate ic_7m
-always @(posedge ic_14m)
-	ic_7m<=~ic_7m;
-
-//generate icq_7m
-always @(negedge ic_14m)
-	icq_7m<=ic_7m;
-
-//generate e
-always @(posedge c_7m)
-	if(e)
-		ediv<=9;
-	else
-		ediv<=ediv-1;
-assign e=(ediv==4'b0000)?1:0;
-
-
-//clock buffers
-BUFG buf1 (	.I(ic_7m), 
-               .O(c_7m)	);
-BUFG buf2 (	.I(icq_7m), 
-               .O(cq_7m));
 
 endmodule
 
@@ -582,43 +662,49 @@ endmodule
 //This resets the system for a second time but it also de-asserts boot.
 //Thus, the system now boots as a regular amiga.
 //Subsequent resets by asserting mrst will not assert boot again.
-module syscontrol(clk,mrst,bootdone,reset,boot);
-input	clk;				//bus clock
-input	mrst;			//master/user reset input
-input	bootdone;			//bootrom program finished input
-output	reset;			//global synchronous system reset
-output	boot;			//bootrom overlay enable output
+//JB:
+//2008-07-11	- reset to bootloader
+
+module syscontrol
+(
+	input	clk,			//bus clock
+	input	mrst,			//master/user reset input
+	input	bootdone,		//bootrom program finished input
+	output	reg reset,		//global synchronous system reset
+	output	reg boot,		//bootrom overlay enable output
+	input	bootrst			//reset to bootloader
+);
 
 //local signals
-reg		reset;			//registered output
-reg		smrst;			//registered input
-reg		boot;			//registered output
-reg		bootff=0;			//boot control SHOULD BE CLEARED BY CONFIG
+reg		smrst;					//registered input
+reg		bootff=0;				//boot control SHOULD BE CLEARED BY CONFIG
 reg		[23:0]rstcnt=24'h0;	//reset timer SHOULD BE CLEARED BY CONFIG
 
-//asynchronous mrst input synchronizer
+//asynchronous mrst input synchronizer (JB: hmmm, it seems that all reset inputs are synchronous)
 always @(posedge clk)
-	smrst<=mrst;
+	smrst <= mrst;
 
 //reset timer and mrst control
 always @(posedge clk)
 	if(smrst || (boot && bootdone && rstcnt[23]))
-		rstcnt<=0;
-	else if(!rstcnt[23])
-		rstcnt<=rstcnt+1;
+		rstcnt <= 0;
+	else if (!rstcnt[23])
+		rstcnt <= rstcnt+1;
 
 //boot control
 always @(posedge clk)
-	if(bootdone && rstcnt[23])
-		bootff<=1;
+	if (bootrst)
+		bootff <= 0;
+	else if (bootdone && rstcnt[23])
+		bootff <= 1;
 
 //global reset output
 always @(posedge clk)
-	reset<=~rstcnt[23];
+	reset <= ~rstcnt[23];
 
 //boot output
 always @(posedge clk)
-	boot<=~bootff;
+	boot <= ~bootff;
 
 endmodule
 

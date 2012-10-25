@@ -125,91 +125,94 @@
 //14-02-2006		-again improved blitter timing, this seems the most compatible solution for now..
 //19-02-2006		-again improved blitter timing, this is an even more compatible solution
 
-module Agnus(	clk,reset,aen,rd,hwr,lwr,
-			datain,dataout,addressin,addressout,regaddress,
-			bus,buswr,buspri,_hsync,_vsync,blank,sol,sof,int3,dmal,dmas,
-			fastchip);
-input 	clk;				//clock
-input	reset;			//reset
-input 	aen;				//bus adress enable (register bank)
-input	rd;				//bus read
-input	hwr;				//bus high write
-input	lwr;				//bus low write
-input	[15:0]datain;		//data bus in
-output	[15:0]dataout;		//data bus out
-input 	[8:1]addressin;	//256 words (512 bytes) adress input;
-output	[20:1]addressout;	//chip address output;
-output 	[8:1]regaddress;	//256 words (512 bytes) register address out;
-output	bus;				//agnus needs bus
-output	buswr;			//agnus does a write cycle
-output	buspri;			//agnus blitter has priority in chipram
-output	_hsync;			//horizontal sync
-output	_vsync;			//vertical sync
-output	blank;			//video blanking
-output	sol;				//start of video line (active during last pixel of previous line) 
-output	sof;				//start of video frame (active during last pixel of previous frame)
-output	int3;			//blitter finished interrupt (to Paula)
-input	dmal;			//dma request (from Paula)
-input	dmas;			//dma special (from Paula)
-input	fastchip;			//DEBUG fast chipram access enable
+//JB:
+//2008-07-17		- modified display dma engine to be more compatible
+//					- moved beamcounters to separate module
+//					- heavily modified sprite dma engine
 
+module Agnus
+(
+	input 	clk,					//clock
+	input	clk28m,					//28MHz clock
+	input	reset,					//reset
+	input 	aen,					//bus adress enable (register bank)
+	input	rd,						//bus read
+	input	hwr,					//bus high write
+	input	lwr,					//bus low write
+	input	[15:0]datain,			//data bus in
+	output	[15:0]dataout,		//data bus out
+	input 	[8:1]addressin,		//256 words (512 bytes) adress input,
+	output	reg [20:1]addressout,	//chip address output,
+	output 	reg [8:1]regaddress,	//256 words (512 bytes) register address out,
+	output	reg bus,				//agnus needs bus
+	output	reg buswr,				//agnus does a write cycle
+	output	buspri,					//agnus blitter has priority in chipram
+	output	_hsync,					//horizontal sync
+	output	_vsync,					//vertical sync
+	output	blank,					//video blanking
+	output	sol,					//start of video line (active during last pixel of previous line) 
+	output	sof,					//start of video frame (active during last pixel of previous frame)
+	output	strhor,					//horizontal strobe for Denise (helps to solve some extreme overscan isues)
+	output	int3,					//blitter finished interrupt (to Paula)
+	input	dmal,					//dma request (from Paula)
+	input	dmas,					//dma special (from Paula)
+	input	ntsc,					//chip is NTSC
+	input	fastchip				//DEBUG fast chipram access enable
+);
 
 //register names and adresses		
-parameter DMACON=9'h096;
-parameter	DMACONR=9'h002;
-parameter DIWSTRT=9'h08e;
-parameter DIWSTOP=9'h090;
-
+parameter DMACON  = 9'h096;
+parameter DMACONR = 9'h002;
+parameter DIWSTRT = 9'h08e;
+parameter DIWSTOP = 9'h090;
 
 //local signals
-reg		[8:1]regaddress;		//see above
-reg		[20:1]addressout;	    	//see above
-reg		bus;					//see above
-reg		buswr;				//see above
+reg		[15:0]dmaconr;		//dma control read register
 
-reg		[15:0]dmaconr;			//dma control read register
+wire	[8:0]horbeam;			//horizontal beam counter
+wire	[10:0]verbeam;		//vertical beam counter
+wire	interlace;				//interlace enable
 
-wire		[8:0]horbeam;			//horizontal beam counter
-wire		[8:0]verbeam;			//vertical beam counter
-wire		interlace;			//interlace enable
+wire	vbl;					///JB: vertical blanking
+wire	vblend;					///JB: last line of vertical blanking
 
-wire		bbusy;				//blitter busy status
-wire		bzero;				//blitter zero status
-wire		bblck;				//blitter blocks cpu
-wire		bltpri;				//blitter nasty
-wire		bplen;				//bitplane dma enable
-wire		copen;				//copper dma enable
-wire		blten;				//blitter dma enable
-wire		spren;				//sprite dma enable
+wire	bbusy;					//blitter busy status
+wire	bzero;					//blitter zero status
+wire	bblck;					//blitter blocks cpu
+wire	bltpri;					//blitter nasty
+wire	bplen;					//bitplane dma enable
+wire	copen;					//copper dma enable
+wire	blten;					//blitter dma enable
+wire	spren;					//sprite dma enable
 
 reg		[15:8]vdiwstrt;		//vertical window start position
 reg		[15:8]vdiwstop;		//vertical window stop position
 
-wire		dma_bpl;				//bitplane dma engine uses it's slot
-wire		dma_dsk;				//disk dma uses it's slot
-wire		dma_aud;				//audio dma uses it's slot
+wire	dma_bpl;				//bitplane dma engine uses it's slot
+wire	dma_dsk;				//disk dma uses it's slot
+wire	dma_aud;				//audio dma uses it's slot
 reg		ack_cop;				//copper dma acknowledge
-wire		req_cop; 				//copper dma request
+wire	req_cop; 				//copper dma request
 reg		ack_blt;				//blitter dma acknowledge
-wire		req_blt; 				//blitter dma request
+wire	req_blt; 				//blitter dma request
 reg		ack_spr;				//sprite dma acknowledge
-wire		req_spr; 				//sprite dma request
-wire		[15:0]data_bmc;		//beam counter data out
-wire		[20:1]address_dsk;		//disk dma engine chip address out
-wire		[8:1]regaddress_dsk; 	//disk dma engine register address out
-wire		wr_dsk;				//disk dma engine write enable out
-wire		[20:1]address_aud;		//audio dma engine chip address out
-wire		[8:1]regaddress_aud; 	//audio dma engine register address out
-wire		[20:1]address_bpl;		//bitplane dma engine chip address out
-wire		[8:1]regaddress_bpl; 	//bitplane dma engine register address out
-wire		[20:1]address_spr;		//sprite dma engine chip address out
-wire		[8:1]regaddress_spr; 	//sprite dma engine register address out
-wire		[20:1]address_cop;		//copper dma engine chip address out
-wire		[8:1]regaddress_cop; 	//copper dma engine register address out
-wire		[20:1]address_blt;		//blitter dma engine chip address out
-wire		[15:0]data_blt;		//blitter dma engine data out
-wire		wr_blt;				//blitter dma engine write enable out
-wire		[8:1]regaddress_cpu;	//cpu register address
+wire	req_spr; 				//sprite dma request
+wire	[15:0]data_bmc;		//beam counter data out
+wire	[20:1]address_dsk;	//disk dma engine chip address out
+wire	[8:1]regaddress_dsk; 	//disk dma engine register address out
+wire	wr_dsk;					//disk dma engine write enable out
+wire	[20:1]address_aud;	//audio dma engine chip address out
+wire	[8:1]regaddress_aud; 	//audio dma engine register address out
+wire	[20:1]address_bpl;	//bitplane dma engine chip address out
+wire	[8:1]regaddress_bpl; 	//bitplane dma engine register address out
+wire	[20:1]address_spr;	//sprite dma engine chip address out
+wire	[8:1]regaddress_spr; 	//sprite dma engine register address out
+wire	[20:1]address_cop;	//copper dma engine chip address out
+wire	[8:1]regaddress_cop; 	//copper dma engine register address out
+wire	[20:1]address_blt;	//blitter dma engine chip address out
+wire	[15:0]data_blt;		//blitter dma engine data out
+wire	wr_blt;					//blitter dma engine write enable out
+wire	[8:1]regaddress_cpu;	//cpu register address
 
 //--------------------------------------------------------------------------------------
 
@@ -351,30 +354,35 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //instantiate disk dma engine
-dskdma_engine	dsk1(.clk(clk),
-				.dma(dma_dsk),
-				.dmal(dmal),
-				.dmas(dmas),
-				.horbeam(horbeam),
-				.wr(wr_dsk),
-				.regaddressin(regaddress),
-				.regaddressout(regaddress_dsk),
-				.datain(datain),
-				.addressout(address_dsk)	);
+dskdma_engine dsk1
+(
+	.clk(clk),
+	.dma(dma_dsk),
+	.dmal(dmal),
+	.dmas(dmas),
+	.horbeam(horbeam),
+	.wr(wr_dsk),
+	.regaddressin(regaddress),
+	.regaddressout(regaddress_dsk),
+	.datain(datain),
+	.addressout(address_dsk)	
+);
 
 //--------------------------------------------------------------------------------------
 
 //instantiate audio dma engine
-auddma_engine	aud1(.clk(clk),
-				.dma(dma_aud),
-				.dmal(dmal),
-				.dmas(dmas),
-				.horbeam(horbeam),
-				.regaddressin(regaddress),
-				.regaddressout(regaddress_aud),
-				.datain(datain),
-				.addressout(address_aud)	);
-
+auddma_engine aud1
+(
+	.clk(clk),
+	.dma(dma_aud),
+	.dmal(dmal),
+	.dmas(dmas),
+	.horbeam(horbeam),
+	.regaddressin(regaddress),
+	.regaddressout(regaddress_aud),
+	.datain(datain),
+	.addressout(address_aud)
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -385,62 +393,78 @@ always @(bplen or verbeam or vdiwstrt or vdiwstop)//bitplane dma enabled if vert
 		bplenable=1;
 	else
 		bplenable=0;
-bpldma_engine	bpd1(.clk(clk),
-				.reset(reset),
-				.enable(bplenable),
-				.horbeam(horbeam),
-				.dma(dma_bpl),
-				.interlace(interlace),
-				.regaddressin(regaddress),
-				.regaddressout(regaddress_bpl),
-				.datain(datain),
-				.addressout(address_bpl)	);
+		
+bpldma_engine bpd1
+(
+	.clk(clk),
+	.reset(reset),
+	.enable(bplenable),
+	.horbeam(horbeam),
+	.dma(dma_bpl),
+	.interlace(interlace),
+	.regaddressin(regaddress),
+	.regaddressout(regaddress_bpl),
+	.datain(datain),
+	.addressout(address_bpl)	
+);
 
 //--------------------------------------------------------------------------------------
 
 //instantiate sprite dma engine
-sprdma_engine	spr1(.clk(clk),
-				.reqdma(req_spr),
-				.ackdma(ack_spr),
-				.horbeam(horbeam),
-				.verbeam(verbeam),
-				.regaddressin(regaddress),
-				.regaddressout(regaddress_spr),
-				.datain(datain),
-				.addressout(address_spr)	);
+sprdma_engine spr1
+(
+	.clk(clk),
+	.clk28m(clk28m),
+	.reqdma(req_spr),
+	.ackdma(ack_spr),
+	.hpos(horbeam),
+	.vpos(verbeam),
+	.vbl(vbl),
+	.vblend(vblend),
+	.regaddressin(regaddress),
+	.regaddressout(regaddress_spr),
+	.datain(datain),
+	.addressout(address_spr)	
+);
 
 //--------------------------------------------------------------------------------------
 
 //instantiate copper
-copper		cp1(	.clk(clk),
-				.reset(reset),
-				.reqdma(req_cop),
-				.ackdma(ack_cop),
-				.sof(sof),
-				.bbusy(bbusy),
-				.horbeam(horbeam),
-				.verbeam(verbeam[7:0]),
-				.datain(datain),
-				.regaddressin(regaddress),
-				.regaddressout(regaddress_cop),
-				.addressout(address_cop)	);
+copper cp1
+(
+	.clk(clk),
+	.reset(reset),
+	.reqdma(req_cop),
+	.ackdma(ack_cop),
+	.sof(sof),
+	.eol(sol),
+	.bbusy(bbusy),
+	.vpos(verbeam[7:0]),
+	.datain(datain),
+	.regaddressin(regaddress),
+	.regaddressout(regaddress_cop),
+	.addressout(address_cop)	
+);
 
 //--------------------------------------------------------------------------------------
 
 //instantiate blitter
-blitter		bl1( .clk(clk),
-				.reset(reset),
-				.reqdma(req_blt),
-				.ackdma(ack_blt),
-				.bzero(bzero),
-				.bbusy(bbusy),
-				.bblck(bblck),
-				.horbeam(horbeam[0]^horbeam[1]),//HACK, avoid dma contention a bit
-				.wr(wr_blt),
-				.datain(datain),
-				.dataout(data_blt),
-				.regaddressin(regaddress),
-				.addressout(address_blt)	);
+blitter bl1
+(
+	.clk(clk),
+	.reset(reset),
+	.reqdma(req_blt),
+	.ackdma(ack_blt),
+	.bzero(bzero),
+	.bbusy(bbusy),
+	.bblck(bblck),
+	.horbeam(horbeam[0]^horbeam[1]),//HACK, avoid dma contention a bit
+	.wr(wr_blt),
+	.datain(datain),
+	.dataout(data_blt),
+	.regaddressin(regaddress),
+	.addressout(address_blt)	
+);
 
 //generate blitter finished intterupt (int3)
 reg bbusyd;
@@ -451,137 +475,28 @@ assign int3=(~bbusy)&bbusyd;
 //--------------------------------------------------------------------------------------
 
 //instantiate beam counters
-beamcounter	bc1(	.clk(clk),
-				.interlace(interlace),
-				.dataout(data_bmc),
-				.regaddressin(regaddress),
-				.horbeam(horbeam),
-				.verbeam(verbeam),
-				._hsync(_hsync),
-				._vsync(_vsync),
-				.blank(blank),
-				.sol(sol),
-				.sof(sof)	);
+beamcounter	bc1
+(	
+	.clk(clk),
+	.reset(reset),
+	.interlace(interlace),
+	.ntsc(ntsc),
+	.datain(datain),
+	.dataout(data_bmc),
+	.regaddressin(regaddress),
+	.hpos(horbeam),
+	.vpos(verbeam),
+	._hsync(_hsync),
+	._vsync(_vsync),
+	.blank(blank),
+	.vbl(vbl),
+	.vblend(vblend),
+	.eol(sol),
+	.eof(sof)
+);
 
-//--------------------------------------------------------------------------------------
-
-endmodule
-
-
-
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-
-//beam counters and sync generator
-module beamcounter(clk,interlace,dataout,regaddressin,horbeam,verbeam,_hsync,_vsync,blank,sol,sof);
-input	clk;				//bus clock
-input	interlace;		//interlace enable
-output	[15:0]dataout;		//bus data out
-input 	[8:1]regaddressin;	//register address inputs
-output	[8:0]horbeam;		//horizontal (low resolution) beam counter
-output	[8:0]verbeam;		//vertical beam counter
-output	_hsync;			//horizontal sync
-output	_vsync;			//vertical sync
-output	blank;			//video blanking
-output	sol;				//start of video line (active during last pixel of previous line) 
-output	sof;				//start of video frame (active during last pixel of previous frame)
-
-//local signals for beam counters and sync generator
-reg		sof;				//see above
-reg		[15:0]dataout;		//see above
-reg		[8:0]horbeam;		//horizontal beam counter
-reg		hblank;			//horizontal blanking
-reg		_hsync;			//see above
-reg		[8:0]verbeam;		//vertical beam counter
-reg		[10:0]_vsynccount;	//vertical sync pulse counter
-reg		lof;				//1=long frame (313 lines), 0=normal frame (312 lines)
-reg		vblank;			//vertical blanking
-
-//register names and adresses		
-parameter VPOSR=9'h004;
-parameter VHPOSR=9'h006;
-
-//--------------------------------------------------------------------------------------
-
-//beamcounter read registers VPOSR and VHPOSR
-always @(regaddressin or lof or verbeam or horbeam)
-	if(regaddressin[8:1]==VPOSR[8:1])
-		dataout[15:0]={lof,14'b0,verbeam[8]};
-	else	if(regaddressin[8:1]==VHPOSR[8:1])
-		dataout[15:0]={verbeam[7:0],horbeam[8:1]};
-	else
-		dataout[15:0]=0;
-
-//--------------------------------------------------------------------------------------
-
-//horizontal beamcounter (runs @ clk frequency!)
-always @(posedge clk)
-	if(sol)
-		horbeam<=0;
-	else
-		horbeam<=horbeam+1;
-
-//generate start of line signal
-assign sol=(horbeam==453)?1:0;
-
-//horizontal sync and horizontal blanking
-always @(posedge clk)//sync
-	if(horbeam==29)//start of sync pulse (front porch = 1.69us)
-		_hsync<=0;
-	else if(horbeam==62)//end of sync pulse	(sync pulse = 4.65us)
-		_hsync<=1;
-always @(posedge clk)//blank
-	if(horbeam==17)//start of blanking (active line=51.88us)
-		hblank<=1;
-	else if(horbeam==103)//end of blanking (back porch=5.78us)
-		hblank<=0;
-
-//--------------------------------------------------------------------------------------
-
-//vertical beamcounter (triggered by sol signal from horizontal beamcounter)
-always @(posedge clk)
-	if(sof && interlace)//interlace 
-	begin
-		verbeam<=0;
-		lof<=~lof;
-	end
-	else if(sof && !interlace)//non-interlaced
-	begin
-		verbeam<=0;
-		lof<=1;
-	end
-	else	if(sol)
-		verbeam<=verbeam+1;
-
-//generate start of frame signal
-always @(verbeam or lof or sol)
-	if((verbeam==311) && !lof && sol)//end of short frame 
-		sof=1;
-	else if((verbeam==312) && lof && sol)//end of long frame 
-		sof=1;
-	else
-		sof=0;
-
-//vertical sync and vertical blanking
-always @(posedge clk)
-	if(!lof && (verbeam==3) && (horbeam==27))
-		_vsynccount<=1135;
-	else if(lof && (verbeam==3) && (horbeam==254))
-		_vsynccount<=1135;
-	else	if (!_vsync)
-		_vsynccount<=_vsynccount-1;		
-assign _vsync=(_vsynccount==0)?1:0;
-always @(posedge clk)//blank
-	if(verbeam==0)//start of vertical blanking
-		vblank<=1;
-	else if(verbeam==29)//end of vertical blanking
-		vblank<=0;		
-
-//--------------------------------------------------------------------------------------
-
-//composite blanking
-assign blank=hblank|vblank;
+//horizontal strobe for Denise
+assign strhor = horbeam==15 ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -592,43 +507,45 @@ endmodule
 //--------------------------------------------------------------------------------------
 
 //bit plane dma engine
-module bpldma_engine(clk,reset,enable,horbeam,dma,interlace,regaddressin,regaddressout,datain,addressout);
-input 	clk;		    			//bus clock
-input	reset;				//reset
-input	enable;				//enable dma input
-input	[8:0]horbeam;			//horizontal beam counter
-output	dma;					//true if bitplane dma engine uses it's cycle
-output	interlace;			//interlace mode is selected through bplcon0
-input 	[8:1]regaddressin;		//register address inputs
-output 	[8:1]regaddressout;		//register address outputs
-input	[15:0]datain;			//bus data in
-output	[20:1]addressout;		//chip address out
+module bpldma_engine
+(
+	input 	clk,		    			//bus clock
+	input	reset,						//reset
+	input	enable,						//enable dma input
+	input	[8:0]horbeam,				//horizontal beam counter
+	output	reg dma,					//true if bitplane dma engine uses it's cycle
+	output	reg interlace,				//interlace mode is selected through bplcon0
+	input 	[8:1]regaddressin,		//register address inputs
+	output 	reg [8:1]regaddressout,	//register address outputs
+	input	[15:0]datain,				//bus data in
+	output	[20:1]addressout			//chip address out
+);
 
 //register names and adresses		
-parameter BPLPTBASE=9'h0e0;		//bitplane pointers base address
+parameter BPLPTBASE=9'h0e0;	//bitplane pointers base address
 parameter DDFSTRT=9'h092;		
 parameter DDFSTOP=9'h094;
 parameter BPL1MOD=9'h108;
 parameter BPL2MOD=9'h10a;
 parameter BPLCON0=9'h100;
-
+parameter BPLCON1=9'h102;		//JB: needed for better ddfstrt/ddfstop handling
 
 //local signals
-reg		[8:3]ddfstrt;			//display data fetch start
-reg 		[8:3]ddfstop; 			//display data fetch stop
-reg		[15:1]bpl1mod;			//modulo for odd bitplanes
-reg		[15:1]bpl2mod;			//modulo for even bitplanes
+reg		[8:2]ddfstrt;			//display data fetch start //JB: added bit #2
+reg 	[8:2]ddfstop; 		//display data fetch stop //JB: added bit #2
+reg		[15:1]bpl1mod;		//modulo for odd bitplanes
+reg		[15:1]bpl2mod;		//modulo for even bitplanes
 reg		[15:12]bplcon0;		//bitplane control (HIRES and BPU bits)
-reg		interlace;			//interlace enable (bplcon0[2])
+reg		[7:0]bplcon1;	 		//JB:
+reg 	hires;				 	//JB:
+reg		shres;				 	//JB:
 
 reg		[20:1]newpt;			//new pointer				
-reg 		[20:16]bplpth[7:0];		//upper 5 bits bitplane pointers
-reg 		[15:1]bplptl[7:0];		//lower 16 bits bitplane pointers
+reg 	[20:16]bplpth[7:0];	//upper 5 bits bitplane pointers
+reg 	[15:1]bplptl[7:0];	//lower 16 bits bitplane pointers
 reg		[2:0]plane;			//plane pointer select
 
-reg		mod;					//end of data fetch, add modulo
-reg		dma;					//see above
-reg		[8:1]regaddressout;		//see above
+wire	mod;					//end of data fetch, add modulo	//JB: changed reg to wire
 
 //--------------------------------------------------------------------------------------
 
@@ -657,10 +574,17 @@ assign addressout[15:1]=bplptl[plane];
 //write ddfstrt and ddfstop registers
 always @(posedge clk)
 	if(regaddressin[8:1]==DDFSTRT[8:1])
-		ddfstrt[8:3]<=datain[7:2];
+		if (datain[7:1] < 7'b0001_100)
+			ddfstrt[8:2] <= 7'b0001_100;
+		else
+			ddfstrt[8:2]<=datain[7:1];			//JB: added LSB
+		
 always @(posedge clk)
 	if(regaddressin[8:1]==DDFSTOP[8:1])
-		ddfstop[8:3]<=datain[7:2];
+		if (datain[7:1] > 7'b1101_100)
+			ddfstop[8:2] <= 7'b1101_100;
+		else
+			ddfstop[8:2] <= datain[7:1];		//JB: added LSB
 
 //write modulo registers
 always @(posedge clk)
@@ -676,77 +600,115 @@ always @(posedge clk)
 	begin
 		bplcon0[15:12]<=4'b0000;
 		interlace<=0;
+		hires <= 0;	//JB:
+		shres <= 0;	//JB:
 	end
 	else if(regaddressin[8:1]==BPLCON0[8:1])
 	begin
 		bplcon0[15:12]<=datain[15:12];
 		interlace<=datain[2];
+		hires <= datain[15];	//JB:
+		shres <= datain[6];	//JB:
 	end
 
+//JB: needed for better ddf handling
+//write part of bplcon1 register
+always @(posedge clk)
+	if (regaddressin[8:1] == BPLCON1[8:1])
+		bplcon1[7:0] <= datain[7:0];
+
+
 //--------------------------------------------------------------------------------------
-reg		ddfenable;
-reg		[8:3]ddfstop_cor;
-reg		[8:3]ddfstrt_cor;
+// (JB) More on mystical magic investigation after some experiments with my real A4k:
+// H3/H2 bits in DDFSTRT and DDFSTOP registers are important in all resolutions.
+// LORES:
+// if H3 or H2 of DDFSTRT is set the display is delayed by one full dma fetch cycle (8 colour clocks [cck])
+// it means that the display stop position is also shifted by 16 lowres pixels eventhough DDFSTOP hasn't changed
+// if H3:H2 of DDFSTOP is greater than H3:H2 of DDFSTRT the display is stopped after an extra dma cycle
+//   (extra 16 pixels fetched in lowres, 32 in hires and 64 in super hires)
+// if the DDFSTOP is close enough to the HTOTAL value in some cases the dma engine doesn't see a display stop
+// and total display corruption happens, i.e:
+//  DDFSTOP=$D4 and DDFSTRT[3:2]=%01,
+//  DDFSTOP=$D6 and (DDFSTRT[3:2]=%01 or DDFSTRT[3:2]=%10),
+//  DDFSTOP>=$D8 and DDFSTRT[3:2]!=%00 
+//  if DDFSTOP > $D8 and DDFSTRT[3:2]=%00 the display stops at $D8 (hardware stop)
+// in lores dma cycles always begin and end on 8 colour clock (cck) cycle boundary
+// HIRES:
+// dma cycles can start and stop on 4 cck boundary and always last 8 ccks
+// if H2 of DDFSTART is set the display starts on next 4 cck boundary
+// (the display is a multiple of 32 hires pixels)
+// SUPER HIRES:
+// dma cycles can start and stop on 2 cck boundary and always last 8 ccks
+// (the display is a multiple of 64 super hires pixels)
+// in all resolutions the dma engine fetch cycle lasts 8 colour clocks
+// it can start at a multiple of: 8 cck's in lowres, 4 cck's in hires and 2 cck's in super hires
+// hint: SHRES bit in BPLCON0 takes precedence over HIRES bit
+// all tests were performed with FMODE=0
+// more magic: ddfstrt is delayed by one fetch cycle only if ddfstrt[3:2]>bplcon1[3:2] (tested only under UAE)
 
-//generate corrected ddfstop[8:3] (needed for proper end of datafetch handling)
-//This is magic mystical logic and I've got absolutely no idea how this is 
-//handled in the real hardware
-always @(bplcon0 or ddfstrt or ddfstop or horbeam)
-	if(ddfstop[8:4]>5'b11011)//hardware limit
-		ddfstop_cor[8:3]=6'b110110;
-	else if(bplcon0[15])//hires
-		ddfstop_cor[8:3]=ddfstop[8:3]+{4'b0000,(ddfstrt[3]^ddfstop[3]),~(ddfstrt[3]^ddfstop[3])};
-	else//lores
-		ddfstop_cor[8:3]=ddfstop[8:3]+{4'b0000,(ddfstrt[3]^ddfstop[3]),horbeam[3]};
 
-//generate corrected ddfstrt[8:3]
-always @(bplcon0 or ddfstrt)
-	if(ddfstrt[8:4]<5'b00011)//hardware limit
-		ddfstrt_cor[8:3]=6'b000110;
-	else if(bplcon0[15])//hires
-		ddfstrt_cor[8:3]=ddfstrt[8:3];
-	else//lores
-		ddfstrt_cor[8:3]={ddfstrt[8:4],1'b0};
+wire	[8:2]ddf_start;
+reg 	[3:2]ddfstrt_latched;
+reg 	[3:2]ddf_start_latched;
+reg		[3:2]bplcon1_latched;
+wire	[8:2]ddf_stop;
+wire	[8:2]ddf_stop_delay;
+reg		ddf_enable;
+wire	[8:2]ddf_mask;
 
-//check ddfstrt and ddfstop with beam (generate ddfenable signal) 
-always @(horbeam or ddfstrt_cor or ddfstop_cor)
-		if((horbeam[8:3]>=ddfstrt_cor[8:3]) && (horbeam[8:3]<=ddfstop_cor[8:3]))
-			ddfenable=1;
-		else
-			ddfenable=0;
+assign ddf_mask = shres ? 7'b000_0000 : hires ? 7'b000_0001 : 7'b000_0011;
 
-//check if this fetch is last of line, if true add modulo (generate mod signal)
-always @(horbeam or ddfstop_cor)
-		if(horbeam[8:3]==ddfstop_cor[8:3])
-			mod=1;
-		else
-			mod=0;
+//this should be rewritten someday to use more efficient code
+assign ddf_start = ddfstrt-7'd1-bplcon1[3:2] | ddf_mask;
+assign ddf_stop_delay = ddfstop[3:2] > ddfstrt_latched[3:2] ? 7'd4 : 7'd0;
+assign ddf_stop = ({ddfstop[8:4],ddfstrt_latched[3:2]}-7'd1-bplcon1_latched[3:2] | ddf_mask) + ddf_stop_delay; 
 
-//lookup table for plane dma slot allocation
-//remember that our plane dma pointers are stored in a ram bank
-//our local planes are therefore numbered 0-5
-//an invalid plane (no plane) is coded as plane 7
-always @(bplcon0[15] or horbeam[3:1])
-begin
-	case	({bplcon0[15],horbeam[3:1]})
-		4'b0000:	plane=7;	//lores slots
-		4'b0001:	plane=3;
-		4'b0010:	plane=5;
-		4'b0011:	plane=1;
-		4'b0100:	plane=7;
-		4'b0101:	plane=2;
-		4'b0110:	plane=4;
-		4'b0111:	plane=0;
-		4'b1000:	plane=3;	//hires slots
-		4'b1001:	plane=1;
-		4'b1010:	plane=2;
-		4'b1011:	plane=0;
-		4'b1100:	plane=3;
-		4'b1101:	plane=1;
-		4'b1110:	plane=2;
-		4'b1111:	plane=0;
-	endcase
-end
+//display dma last cycle
+reg	  ddf_last_fetch;
+
+// changing ddfstrt register value when display has already started doesn't affect the stop condition
+// so we have to store the initial value of ddfstrt to determine stop condition (only two bits do matter)
+always @(posedge clk)
+	if (reset)
+	begin
+		ddfstrt_latched <= 2'b00;
+		ddf_start_latched <= 2'b00;
+		bplcon1_latched <= 2'b00;
+	end
+	else if ({ddf_start,2'b11} == horbeam[8:0])
+	begin
+		ddfstrt_latched[3:2] <= ddfstrt[3:2];
+		ddf_start_latched[3:2] <= ddf_start[3:2];
+		bplcon1_latched <= bplcon1[3:2];
+	end
+
+always @(posedge clk)
+	if (reset)
+		ddf_last_fetch <= 0;
+	else if ({ddf_stop,2'b11} == horbeam[8:0])
+		ddf_last_fetch <= ddf_enable;
+	else if ({ddf_start_latched[3:2],2'b11} == horbeam[3:0])
+		ddf_last_fetch <= 0;
+	
+always @(posedge clk)
+	if (reset)
+		ddf_enable <= 0;
+	else if ({ddf_start,2'b11} == horbeam[8:0])
+		ddf_enable <= 1;
+	else if (ddf_last_fetch && {ddf_start_latched[3:2],2'b11} == horbeam[3:0])
+		ddf_enable <= 0;
+
+assign mod = (ddf_last_fetch) & (hires ? horbeam[3]^ddfstrt_latched[3] : shres ? (&(horbeam[3:2]^ddfstrt_latched[3:2])): 1'b1);
+
+assign ddfenable = ddf_enable;
+
+always @(shres or hires or horbeam)
+	if (shres)
+		plane = {2'b00,~horbeam[1]};
+	else if (hires)
+		plane = {1'b0,~horbeam[1],~horbeam[2]};
+	else
+		plane = {~horbeam[1],~horbeam[2],~horbeam[3]};
 
 //generate dma signal
 //for a dma to happen plane must be less than BPU (bplcon0), dma must be enabled
@@ -801,208 +763,229 @@ endmodule
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
+/*
+JB: some conclusions of sprite engine investigation, it seems to be as follows:
+- during vblank sprite dma is disabled by hardware, no automatic fetches occur but copper or cpu
+can write to any sprite register, and all SPRxPTR pointers should be refreshed
+- during the last line of vblank (PAL: $19, NTSC: $14) if sprite dma is enabled
+it fetches SPRxPOS/SPRxCTL registers according to current SPRxPTR pointers
+	This is the only chance for DMA to fetch new values of SPRxPOS/SPRxCTL. If DMA isn't enabled
+during this line new values won't be placed into SPRxPOS/SPRxCTL registers.
+	Enabling DMA after this line can have two results depending on current value of SPRxPOS/SPRxCTL.
+- if VSTOP value is matched first with VERBEAM, data from memory is fetched and placed into SPRxPOS/SPRxCTL
+- or if VSTART value is matched with VERBEAM, data from memory is fetched and placed into SPRxDATA/SPRxDATB 
+  and the situation repeats with every new line until VSTOP condition is met.
+The VSTOP condition takes precedence.
+	If you set VSTART to value lower or the same (remember that VSTOP takes precedence) as the current VERBEAM
+this condition will never be met and sprite engine will wait till VSTOP matches VERBEAM. If it happens then it
+fetches another two words into SPRxPOS/SPRxCTL. And again if new VSTART is lower or the same as VERBEAM
+it will fetch another new SPRxPOS/SPRxCTL when VSTOP is met (or will wait till next vbl).
+	To disable further sprite list processing it's enough to set VSTART and VSTOP to values which are outside
+of the screen or has been already achieved.
+
+	When waiting for VSTART condition any write to SPRxDATA (write to SPRxDATB takes no effect) makes the written value
+visible on the screen but it doesn't start DMA although it's enabled. The same value is displayed in every subsequent 
+line until DMA starts and delivers new data to SPRxDAT or SPRxCTL is written (by DMA, copper or cpu).
+It seems like only VSTART condition starts DMA transfer.
+	Any write to SPRxCTL while DMA is active doesn't stop display but new value of VSTOP takes effect. Actually 
+display is reenabled by DMA write to SPRxDATA in next line.
+	The same applies to SPRxPOS writes when sprite is beeing displayed - only HSTART position changes (if new VSTART
+is specified to be met before VSTOP nothing interesting happens).
+
+	The DMA engine sees VSTART condition as true even if DMA is dissabled. Enabling DMA after VSTART and before VSTOP
+starts sprite display in enabled line (if it's enabled early enough).
+	Dissabling DMA in the line when new SPRxPOS/SPRxCTL is fetched and enabling it in the next one results in stopped
+DMA transfer but the last line of sprite is displayed till the end of the screen.
+
+VSTART and VSTOP specified within vbl are not met.
+vbl stops dma transfer.
+The first possible line to display a sprite is line $1A (PAL).
+During vbl SPRxPOS/SPRxCTL are not automatically modified, values written before vbl are still present when vbl ends.
+
+algo:
+	if vbl or VSTOP : disable data dma
+	else if VSTART: start data dma
+	
+	if vblend or (VSTOP and not vbl): dma transfer to sprxpos/sprxctl
+	else if data dma active: transfer to sprxdata/sprcdatb
+
+It doesn't seem to be complicated :)
+
+Sprite which has been triggered by write to SPRxDATA is not disabled by vbl.
+It seems that vstop and vstart conditions are checked every cycle. 
+Dma doesn't fetch new pos/ctl if vstop is not equal to the current line number.
+
+Feature:
+If new vstart is specified to be the same as the line during which it's fetched, display starts in the next line
+but is one line shorter.
+*/
 
 //sprite dma engine
-module sprdma_engine(clk,reqdma,ackdma,horbeam,verbeam,regaddressin,regaddressout,datain,addressout);
-input 	clk;		    			//bus clock
-output	reqdma;				//sprite dma engine requests dma cycle
-input	ackdma;				//agnus dma priority logic grants dma cycle
-input	[8:0]horbeam;			//horizontal beam counter
-input	[8:0]verbeam;			//vertical beam counter
-input 	[8:1]regaddressin;		//register address inputs
-output 	[8:1]regaddressout;		//register address outputs
-input	[15:0]datain;			//bus data in
-output	[20:1]addressout;		//chip address out
-
+module sprdma_engine
+(
+	input 	clk,		    			//bus clock
+	input	clk28m,
+	output	reg reqdma,				//sprite dma engine requests dma cycle
+	input	ackdma,						//agnus dma priority logic grants dma cycle
+	input	[8:0]hpos,				//horizontal beam counter
+	input	[10:0]vpos,				//vertical beam counter
+	input	vbl,						//JB: vertical blanking
+	input	vblend,						//JB: last line of vertical blanking
+	input	[8:1]regaddressin,		//register address inputs
+	output 	reg [8:1]regaddressout,	//register address outputs
+	input	[15:0]datain,				//bus data in
+	output	[20:1]addressout			//chip address out
+);
 //register names and adresses		
 parameter SPRPTBASE=9'h120;		//sprite pointers base address
-parameter	SPRPOSCTLBASE=9'h140;	//sprite data, position and control register base address
-
-//sprite dma engine states
-parameter	SPRPOS=3'b000;  		//get sprite 1st control word
-parameter SPRCTL=3'b001;	     	//get sprite 2nd control word
-parameter	SPRDATA=3'b010;		//get sprite data word A
-parameter	SPRDATB=3'b011;		//get sprite data word B
-parameter	SPRWAIT=3'b100;		//wait for sprite vertical start match
+parameter SPRPOSCTLBASE=9'h140;	//sprite data, position and control register base address
 
 //local signals
-reg		[8:1]regaddressout;		//see above
-
-reg 		[20:16]sprpth[7:0];		//upper 5 bits sprite pointers register bank
-reg 		[15:1]sprptl[7:0];		//lower 16 bits sprite pointers register bank
+reg 	[20:16]sprpth[7:0];		//upper 5 bits sprite pointers register bank
+reg 	[15:1]sprptl[7:0];		//lower 16 bits sprite pointers register bank
 reg		[15:8]sprpos[7:0];		//sprite vertical start position register bank
-reg		[15:6]sprctl[7:0];		//sprite vertical stop position register bank
-reg		[2:0]sprstate[7:0];		//sprite dma engine state register bank
+//JB: implementing ECS extended vertical sprite position
+reg		[15:4]sprctl[7:0];		//sprite vertical stop position register bank
 
-wire		[2:0]spritestate;		//current state of selected sprite
-reg		[2:0]spritenext;		//next state of selected sprite
-wire		[8:0]vertstart;		//vertical start of selected sprite
-wire		[8:0]vertstop;			//vertical stop of selected sprite
-wire		[2:0]sprite;			//sprite select signal
-wire		[20:1]newpt;			//new sprite pointer value
+wire	[9:0]vstart;				//vertical start of selected sprite
+wire	[9:0]vstop;				//vertical stop of selected sprite
+wire	[2:0]sprite;				//sprite select signal
+wire	[20:1]newptr;				//new sprite pointer value
 
-reg		incpt;				//increment pointer signal
-wire		matchvstart;			//match vertical start signal
-wire		matchvstop;			//match vertical stop signal
-		    		
+wire 	enable;						//hpos in sprite region
+
+//the following signals change their value during cycle 0 of 4-cycle dma sprite window
+reg		sprvstop;					//current line is sprite's vstop
+reg		sprdmastate;				//sprite dma state (sprite image data cycles)
+
+reg		dmastate_mem[7:0];		//dma state for every sprite
+wire	dmastate;					//output from memory
+reg		dmastate_in;				//input to memory
+
+reg		[2:0]sprsel;				//memory selection
+
+//sprite selection signal (in real amiga sprites are evaluated concurently,
+//in our solution to save resources they are evaluated sequencially but 8 times faster (28MHz clock)
+always @(posedge clk28m)
+	if (sprsel[2]==hpos[0])	//sprsel[2] is synced with hpos[0]
+		sprsel <= sprsel + 1;
+
 //--------------------------------------------------------------------------------------
 
 //register bank address multiplexer
-wire		[2:0]ptsel;			//sprite pointer and state registers select
-wire		[2:0]pcsel;			//sprite position and control registers select
+wire	[2:0]ptsel;			//sprite pointer and state registers select
+wire	[2:0]pcsel;			//sprite position and control registers select
 
-assign ptsel=(ackdma)?sprite:regaddressin[4:2];
-assign pcsel=(ackdma)?sprite:regaddressin[5:3];
+assign ptsel = (ackdma) ? sprite : regaddressin[4:2];
+assign pcsel = (ackdma) ? sprite : regaddressin[5:3];
+
+//sprite pointer arithmetic unit
+assign newptr = addressout[20:1] + 1;
 
 //sprite pointer high word register bank (implemented using distributed ram)
 wire [20:16]sprpth_in;
-assign sprpth_in=(ackdma)?newpt[20:16]:datain[4:0];
+assign sprpth_in = ackdma ? newptr[20:16] : datain[4:0];
 always @(posedge clk)
 	if(ackdma || ((regaddressin[8:5]==SPRPTBASE[8:5]) && !regaddressin[1]))//if dma cycle or bus write
-		sprpth[ptsel]<=sprpth_in;
-assign addressout[20:16]=sprpth[sprite];
+		sprpth[ptsel] <= sprpth_in;
+
+assign addressout[20:16] = sprpth[sprite];
 
 //sprite pointer low word register bank (implemented using distributed ram)
 wire [15:1]sprptl_in;
-assign sprptl_in=(ackdma)?newpt[15:1]:datain[15:1];
+assign sprptl_in = ackdma ? newptr[15:1] : datain[15:1];
 always @(posedge clk)
 	if(ackdma || ((regaddressin[8:5]==SPRPTBASE[8:5]) && regaddressin[1]))//if dma cycle or bus write
-		sprptl[ptsel]<=sprptl_in;
-assign addressout[15:1]=sprptl[sprite];
+		sprptl[ptsel] <= sprptl_in;
+
+assign addressout[15:1] = sprptl[sprite];
 
 //sprite vertical start position register bank (implemented using distributed ram)
 always @(posedge clk)
 	if((regaddressin[8:6]==SPRPOSCTLBASE[8:6]) && (regaddressin[2:1]==2'b00))//if bus write
-		sprpos[pcsel]<=datain[15:8];
-assign vertstart[7:0]=sprpos[sprite];
+		sprpos[pcsel] <= datain[15:8];
+
+assign vstart[7:0] = sprpos[sprsel];
 
 //sprite vertical stop position register bank (implemented using distributed ram)
 always @(posedge clk)
 	if((regaddressin[8:6]==SPRPOSCTLBASE[8:6]) && (regaddressin[2:1]==2'b01))//if bus write
-		sprctl[pcsel]<={datain[15:8],datain[2],datain[1]};
-assign {vertstop[7:0],vertstart[8],vertstop[8]}=sprctl[sprite];
+		sprctl[pcsel] <= {datain[15:8],datain[6],datain[5],datain[2],datain[1]};
+		
+assign {vstop[7:0],vstart[9],vstop[9],vstart[8],vstop[8]} = sprctl[sprsel];
 
 //sprite dma channel state register bank
-wire [2:0]sprstate_in;
-assign sprstate_in=(ackdma)?spritenext:SPRPOS;//when pointer register written, reset state machine
-always @(posedge clk)
-	if(ackdma || (regaddressin[8:5]==SPRPTBASE[8:5]))//if dma cycle or bus write
-		sprstate[ptsel]<=sprstate_in;
-assign spritestate=sprstate[sprite];
+//update dmastate when hpos is in sprite fetch region
+//every sprite has allocated 8 system clock cycles with two active dma slots:
+//the first during cycle #3 and the second during cycle #7
+//first slot transfers data to sprxpos register during vstop or vblend or to sprxdata when dma is active
+//second slot transfers data to sprxctl register during vstop or vblend or to sprxdatb when dma is active
+//current dmastate is valid after cycle #1 for given sprite and it's needed during cycle #3 and #7
+always @(posedge clk28m)
+	dmastate_mem[sprsel] <= dmastate_in;
+
+assign dmastate = dmastate_mem[sprsel];
+
+//evaluating sprite image dma data state
+always @(vbl or vpos or vstop or vstart or dmastate) 
+	if (vbl || (vstop[9:0]==vpos[9:0]))
+		dmastate_in = 0;
+	else if (vstart[9:0]==vpos[9:0])
+		dmastate_in = 1;
+	else
+		dmastate_in = dmastate;
+
+always @(posedge clk28m)
+	if (sprite==sprsel && hpos[2:1]==2'b00)
+		sprdmastate <= dmastate;
+
+always @(posedge clk28m)
+	if (sprite==sprsel && hpos[2:1]==2'b00)
+		sprvstop <= vstop[9:0]==vpos[9:0] ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
-
-//sprite pointer arithmetic unit
-assign newpt=addressout[20:1]+{20'b0,incpt};
-
-//--------------------------------------------------------------------------------------
-
-//vertical start compare circuitry
-assign matchvstart=(vertstart[8:0]==verbeam[8:0])?1:0;
-
-//vertical stop compare circuitry
-assign matchvstop=(vertstop[8:0]==verbeam[8:0])?1:0;
-
-//end of data marker
-assign matchend=((vertstart[8:0]==0) && (vertstop[8:0]==0))?1:0;
-
 //--------------------------------------------------------------------------------------
 
 //check if we are allowed to allocate dma slots for sprites
-reg enable;
-always @(posedge clk)//generate enable signal if we are in the sprite region of horbeam
-	if(horbeam[8:2]==7'b0001010)
-		enable<=1;
-	else	if(horbeam[8:2]==7'b0011010)
-		enable<=0;	
-
+//dma slots for sprites from cycle 20 till 51
+assign enable = hpos[8:1]>=8'b0001_0100 && hpos[8:1]<8'b0011_0100 ? 1: 0;
+		
 //get sprite number for which we are going to do dma
-assign sprite=horbeam[5:3]-3'b101;
+assign sprite = hpos[5:3] - 3'b101;
 
-//generate final regdma signal
-assign reqdma=(enable && (horbeam[1:0]==2'b11))?1:0;
+//generate regdma signal
+always @(vpos or vbl or vblend or hpos or enable or sprite or sprvstop or sprdmastate)
+	if (enable && hpos[1:0]==2'b11)
+	begin
+		if (vblend || (sprvstop && ~vbl))
+		begin
+			reqdma = 1;
+			if (~hpos[2])
+				regaddressout[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b00};	//SPRxPOS
+			else
+				regaddressout[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b01};	//SPRxCTL
+		end
+		else if (sprdmastate)
+		begin
+			reqdma = 1;
+			if (~hpos[2])
+				regaddressout[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b10};	//SPRxDATA
+			else
+				regaddressout[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b11};	//SPRxDATB
+		end
+		else
+		begin
+			reqdma = 0;
+			regaddressout[8:1] = 8'hFF;
+		end
+	end
+	else
+	begin
+		reqdma = 0;
+		regaddressout[8:1] = 8'hFF;
+	end
 
 //--------------------------------------------------------------------------------------
-
-//sprite dma channel main controlling state machine
-always @(spritestate or sprite or matchend or matchvstart or matchvstop)
-begin
-	case(spritestate)
-		//fetch 1st control word
-		SPRPOS:
-		begin
-			incpt=1;
-			regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b00};
-			spritenext=SPRCTL;
-		end
-
-		//fetch 2nd control word
-		SPRCTL:
-		begin
-			incpt=1;
-			regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b01};
-			spritenext=SPRWAIT;
-		end
-
-		//wait for vertical start value match
-		SPRWAIT:
-		begin
-			if(matchend)//if end of data marker, wait forever
-			begin
-				incpt=0;
-				regaddressout=8'hff;//register bus NOP
-				spritenext=SPRWAIT;
-			end
-			else if(matchvstart)//if vertical start, fetch first data word (B)
-			begin
-				incpt=1;
-				regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b11};
-				spritenext=SPRDATA;
-			end
-			else//wait a little while longer
-			begin
-				incpt=0;
-				regaddressout=8'hff;//register bus NOP
-				spritenext=SPRWAIT;
-			end
-
-		end
-
-		//fetch data word B
-		SPRDATB:
-		begin
-			if(matchvstop)//last 2 words do not go to data but to pos/ctl registers
-			begin
-				incpt=1;
-				regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b00};
-				spritenext=SPRCTL;
-			end
-			else//just fetch data word B
-			begin
-				incpt=1;
-				regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b11};
-				spritenext=SPRDATA;
-			end
-		end
-
-		//fetch data word A
-		SPRDATA:
-		begin
-			incpt=1;
-			regaddressout[8:1]={SPRPOSCTLBASE[8:6],sprite,2'b10};
-			spritenext=SPRDATB;
-		end
-
-		//handle unknown states
-		default:
-		begin
-			incpt=0;
-			regaddressout[8:1]=8'hff;
-			spritenext=SPRWAIT;
-		end
-	endcase
-end	
-
 //--------------------------------------------------------------------------------------
 
 endmodule
@@ -1020,40 +1003,40 @@ endmodule
 //slot 0x000000111 
 //slot 0x000001011 
 //slot 0x000001111 
-module dskdma_engine(clk,dma,dmal,dmas,horbeam,wr,regaddressin,regaddressout,datain,addressout);
-input 	clk;		    			//bus clock
-output	dma;					//true if disk dma engine uses it's cycle
-input	dmal;				//Paula requests dma
-input	dmas;				//Paula special dma
-input	[8:0]horbeam;			//horizontal beam counter
-output	wr;					//write (disk dma writes to memory)
-input 	[8:1]regaddressin;		//register address inputs
-output 	[8:1]regaddressout;		//register address outputs
-input	[15:0]datain;			//bus data in
-output	[20:1]addressout;		//chip address out
 
+module dskdma_engine
+(
+	input 	clk,		    		//bus clock
+	output	dma,					//true if disk dma engine uses it's cycle
+	input	dmal,					//Paula requests dma
+	input	dmas,					//Paula special dma
+	input	[8:0]horbeam,			//horizontal beam counter
+	output	wr,						//write (disk dma writes to memory)
+	input 	[8:1]regaddressin,	//register address inputs
+	output 	[8:1]regaddressout,	//register address outputs
+	input	[15:0]datain,			//bus data in
+	output	reg [20:1]addressout	//chip address out current disk dma pointer
+);
 //register names and adresses		
 parameter DSKPTH=9'h020;			
-parameter	DSKPTL=9'h022;			
+parameter DSKPTL=9'h022;			
 parameter DSKDAT=9'h026;			
 parameter DSKDATR=9'h008;		
 
 //local signals
-reg		[20:1]addressout;		//current disk dma pointer
-wire		[20:1]addressoutnew;	//new disk dma pointer
+wire	[20:1]addressoutnew;	//new disk dma pointer
 
 //--------------------------------------------------------------------------------------
 
 //dma cycle allocation
 assign dma=(dmal && (horbeam[8:4]==5'b00000) && (horbeam[1:0]==2'b11))?1:0;
-
 //write signal
 assign wr=~dmas;
 
 //--------------------------------------------------------------------------------------
 
 //addressout input multiplexer and ALU
-assign addressoutnew[20:1]=(dma)?(addressout[20:1]+1):{datain[4:0],datain[15:1]}; 
+assign addressoutnew[20:1] = dma ? addressout[20:1]+1 : {datain[4:0],datain[15:1]}; 
 
 //disk pointer control
 always @(posedge clk)
@@ -1066,7 +1049,7 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //register address output
-assign regaddressout[8:1]=(wr)?DSKDATR[8:1]:DSKDAT[8:1];
+assign regaddressout[8:1] = wr ? DSKDATR[8:1] : DSKDAT[8:1];
 
 //--------------------------------------------------------------------------------------
 

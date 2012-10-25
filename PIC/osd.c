@@ -294,12 +294,15 @@ const unsigned char charfont[256][5]=
 #define	OSDCMDENABLE	0x60		//OSD enable command
 #define	OSDCMDDISABLE	0x40		//OSD disable command
 #define	OSDCMDRESET		0x80		//OSD reset command
+#define	OSDCMDFILTER	0xE0		//OSD settings: filter
+#define	OSDCMDMEMCFG	0xF0		//OSD settings: memory config
+
 #define REPEATTIME		50			/*repeat delay in 10ms units*/
 #define REPEATRATE		5			/*repeat rate in 10ms units*/
 
 
 /*write a null-terminated string <s> to the OSD buffer starting at line <n>*/
-void OsdWrite(unsigned char n,const unsigned char *s)
+void OsdWrite(unsigned char n,const unsigned char *s,char invert)
 {
 	unsigned char b;
 	const unsigned char *p;
@@ -308,7 +311,10 @@ void OsdWrite(unsigned char n,const unsigned char *s)
 	EnableOsd();
 
 	/*select buffer and line to write to*/
-	SPI(OSDCMDWRITE|n);
+	if (invert)
+		SPI(OSDCMDWRITE|0x10|n);
+	else
+		SPI(OSDCMDWRITE|n);
 
 	/*send all characters in string to OSD*/
 	while(1)
@@ -351,7 +357,7 @@ void OsdClear(void)
 	EnableOsd();
 	
 	/*select buffer to write to*/
-	SPI(OSDCMDWRITE);
+	SPI(OSDCMDWRITE|0x18);
 	
 	/*clear buffer*/
 	for(n=0;n<(OSDLINELEN*OSDNLINE);n++)
@@ -376,6 +382,27 @@ void OsdDisable(void)
 	/*send command*/
 	EnableOsd();
 	SPI(OSDCMDDISABLE);
+	DisableOsd();
+}
+
+void OsdReset(unsigned char boot)
+{
+	EnableOsd();
+	SPI(OSDCMDRESET | (boot&0x01));
+	DisableOsd();
+}
+
+void OsdFilter(unsigned char lr_filter, unsigned char hr_filter)
+{
+	EnableOsd();
+	SPI(OSDCMDFILTER | ((hr_filter&0x03)<<2) | (lr_filter&0x03));
+	DisableOsd();
+}
+
+void OsdMemoryConfig(unsigned char memcfg)
+{
+	EnableOsd();
+	SPI(OSDCMDMEMCFG | (memcfg&0x03));
 	DisableOsd();
 }
 

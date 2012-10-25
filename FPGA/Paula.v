@@ -41,76 +41,75 @@
 // 06-02-2006		-added user disk control input
 // 03-07-2007		-moved interrupt controller and uart to this file to reduce number of sourcefiles
 
-module Paula(	clk,reset,regaddress,datain,dataout,txd,rxd,sol,sof,int2,int3,int6,_ipl,dmal,dmas,user,
-			_step,direc,_sel,side,_motor,_track0,_change,_ready,
-			_den,din,dout,dclk,
-			left,right);
-//bus interface 
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset 
-input 	[8:1]regaddress;		//register address inputs
-input	[15:0]datain;			//bus data in
-output	[15:0]dataout;			//bus data out
-//serial (uart) 
-output 	txd;					//serial port transmitted data
-input 	rxd;		  			//serial port received data
-//interrupts and dma
-input	sol;					//start of video line
-input	sof;					//start of video frame (triggers vertical blank interrupt)
-input	int2;				//level 2 interrupt
-input	int3;				//level 3 interrupt
-input	int6;				//level 6 interrupt
-output	[2:0]_ipl;			//m68k interrupt request
-output	dmal;				//dma request (to Agnus)
-output	dmas;				//dma special (to Agnus)
-//disk control signals from cia and user
-input	[2:0]user;			//user disk control
-input	_step;				//step heads of disk
-input	direc;				//step heads direction
-input	_sel;				//disk select 	
-input	side;				//upper/lower disk head
-input	_motor;				//disk motor control
-output	_track0;				//track zero detect
-output	_change;				//disk has been removed from drive
-output	_ready;				//disk is ready
-//flash drive host controller interface	(SPI)
-input	_den;				//async. serial data enable
-input	din;					//async. serial data input
-output	dout;				//async. serial data output
-input	dclk;				//async. serial data clock
-//audio outputs
-output	left;				//audio bitstream left
-output	right;				//audio bitstream right
-
+module Paula
+(
+	//bus interface 
+	input 	clk,		    	//bus clock
+	input 	reset,			   	//reset 
+	input 	[8:1]regaddress,	//register address inputs
+	input	[15:0]datain,		//bus data in
+	output	[15:0]dataout,	//bus data out
+	//serial (uart) 
+	output 	txd,				//serial port transmitted data
+	input 	rxd,		  		//serial port received data
+	//interrupts and dma
+	input	sol,				//start of video line
+	input	sof,				//start of video frame (triggers vertical blank interrupt)
+	input	int2,				//level 2 interrupt
+	input	int3,				//level 3 interrupt
+	input	int6,				//level 6 interrupt
+	output	[2:0]_ipl,		//m68k interrupt request
+	output	dmal,				//dma request (to Agnus)
+	output	dmas,				//dma special (to Agnus)
+	//disk control signals from cia and user
+	input	[2:0]user,		//user disk control
+	input	_step,				//step heads of disk
+	input	direc,				//step heads direction
+	input	_sel,				//disk select 	
+	input	side,				//upper/lower disk head
+	input	_motor,				//disk motor control
+	output	_track0,			//track zero detect
+	output	_change,			//disk has been removed from drive
+	output	_ready,				//disk is ready
+	output	_wprot,				//disk is write-protected
+	//flash drive host controller interface	(SPI)
+	input	_den,				//async. serial data enable
+	input	din,				//async. serial data input
+	output	dout,				//async. serial data output
+	input	dclk,				//async. serial data clock
+	//audio outputs
+	output	left,				//audio bitstream left
+	output	right				//audio bitstream right
+);
 //--------------------------------------------------------------------------------------
 
 //register names and addresses
-parameter	DMACON=9'h096;	
+parameter DMACON=9'h096;	
 parameter ADKCON=9'h09e;
 parameter ADKCONR=9'h010;	
 
 //local signals
 reg		[4:0]dmacon;			//dmacon paula bits 
-reg		dmaen;				//master dma enable
+reg		dmaen;					//master dma enable
 reg		[14:0]adkcon;			//audio and disk control register
 reg		[8:0]horbeam;			//horizontal beamcounter
-wire		[15:0]uartdataout; 		//UART data out
-wire		[15:0]intdataout;  		//interrupt controller data out
-wire		[15:0]diskdataout;		//disk controller data out
-wire		[15:0]adkconr;			//ADKCONR register data out
-wire		diskdmal;				//disk dma request
-wire		audiodmal;			//audio dma request
-wire		diskdmas;				//disk dma sepcial
-wire		audiodmas;			//audio dma special
-wire		rbfmirror; 			//rbf mirror (from uart to interrupt controller)
-wire		rxint;  				//uart rx interrupt request
-wire		txint;				//uart tx interrupt request
-wire		blckint;				//disk block finished interrupt
-wire		syncint;				//disk syncword match interrupt
-wire		[3:0]audint;			//audio channels 0,1,2,3 interrupt request
-wire		[3:0]audpen;			//audio channels 0,1,2,3 interrupt pending
-wire		[3:0]auden;			//audio channels 0,1,2,3 dma enable
-wire		dsken; 				//disk dma enable
+wire	[15:0]uartdataout; 	//UART data out
+wire	[15:0]intdataout;  	//interrupt controller data out
+wire	[15:0]diskdataout;	//disk controller data out
+wire	[15:0]adkconr;		//ADKCONR register data out
+wire	diskdmal;				//disk dma request
+wire	audiodmal;				//audio dma request
+wire	diskdmas;				//disk dma sepcial
+wire	audiodmas;				//audio dma special
+wire	rbfmirror; 				//rbf mirror (from uart to interrupt controller)
+wire	rxint;  				//uart rx interrupt request
+wire	txint;					//uart tx interrupt request
+wire	blckint;				//disk block finished interrupt
+wire	syncint;				//disk syncword match interrupt
+wire	[3:0]audint;			//audio channels 0,1,2,3 interrupt request
+wire	[3:0]audpen;			//audio channels 0,1,2,3 interrupt pending
+wire	[3:0]auden;			//audio channels 0,1,2,3 dma enable
+wire	dsken; 					//disk dma enable
 
 //--------------------------------------------------------------------------------------
 
@@ -175,76 +174,89 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //instantiate uart
-uart pu1 (		.clk(clk),
-				.reset(reset),
-				.regaddress(regaddress),
-				.datain(datain[14:0]),
-				.dataout(uartdataout),
-				.rbfmirror(rbfmirror),
-				.rxint(rxint),
-				.txint(txint),
-				.rxd(rxd),
-				.txd(txd)		);
-
+uart pu1
+(
+	.clk(clk),
+	.reset(reset),
+	.regaddress(regaddress),
+	.datain(datain[14:0]),
+	.dataout(uartdataout),
+	.rbfmirror(rbfmirror),
+	.rxint(rxint),
+	.txint(txint),
+	.rxd(rxd),
+	.txd(txd)
+);
 
 //instantiate interrupt controller
-intcontroller pi1 (	.clk(clk),
-				.reset(reset),
-				.regaddress(regaddress),
-				.datain(datain),
-				.dataout(intdataout),
-				.rxint(rxint),
-				.txint(txint),
-				.sof(sof),
-				.int2(int2),
-				.int3(int3),
-				.int6(int6),
-				.blckint(blckint),
-				.syncint(syncint),
-				.audint(audint),
-				.audpen(audpen),
-				.rbfmirror(rbfmirror),
-				._ipl(_ipl)	);
+intcontroller pi1
+(
+	.clk(clk),
+	.reset(reset),
+	.regaddress(regaddress),
+	.datain(datain),
+	.dataout(intdataout),
+	.rxint(rxint),
+	.txint(txint),
+	.sof(sof),
+	.int2(int2),
+	.int3(int3),
+	.int6(int6),
+	.blckint(blckint),
+	.syncint(syncint),
+	.audint(audint),
+	.audpen(audpen),
+	.rbfmirror(rbfmirror),
+	._ipl(_ipl)
+);
 
 //instantiate floppy controller / flashdrive host interface
-floppy	pf1 (		.clk(clk),
-				.reset(reset),
-				.enable(dsken),
-				.horbeam(horbeam),
-				.regaddress(regaddress),
-				.datain(datain),
-				.dataout(diskdataout),
-				.dmal(diskdmal),
-				.dmas(diskdmas),
-				._step(_step),
-				.direc(direc),
-				._sel(_sel),
-				.side(side),
-				._motor(_motor),
-				._track0(_track0),
-				._change(_change),
-				._ready(_ready),
-				.blckint(blckint),
-				.syncint(syncint),
-				.wordsync(adkcon[10]),
-				._den(_den),
-				.din(din),
-				.dout(dout),
-				.dclk(dclk)	);
+floppy pf1
+(
+	.clk(clk),
+	.reset(reset),
+	.enable(dsken),
+	.horbeam(horbeam),
+	.regaddress(regaddress),
+	.datain(datain),
+	.dataout(diskdataout),
+	.dmal(diskdmal),
+	.dmas(diskdmas),
+	.user(user),
+	._step(_step),
+	.direc(direc),
+	._sel(_sel),
+	.side(side),
+	._motor(_motor),
+	._track0(_track0),
+	._change(_change),
+	._ready(_ready),
+	._wprot(_wprot),
+	.blckint(blckint),
+	.syncint(syncint),
+	.wordsync(adkcon[10]),
+	._den(_den),
+	.din(din),
+	.dout(dout),
+	.dclk(dclk)
+);
 
 //instantiate audio controller
-audio ad1	(		.clk(clk),
-				.reset(reset),
-				.horbeam(horbeam),
-				.regaddress(regaddress),
-				.datain(datain),
-				.dmacon(auden[3:0]),
-				.audint(audint[3:0]),
-				.audpen(audpen),
-				.dmal(audiodmal),
-				.dmas(audiodmas),
-				.left(left),
-				.right(right)	);
+audio ad1
+(	
+	.clk(clk),
+	.reset(reset),
+	.horbeam(horbeam),
+	.regaddress(regaddress),
+	.datain(datain),
+	.dmacon(auden[3:0]),
+	.audint(audint[3:0]),
+	.audpen(audpen),
+	.dmal(audiodmal),
+	.dmas(audiodmas),
+	.left(left),
+	.right(right)	
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -255,27 +267,26 @@ endmodule
 //--------------------------------------------------------------------------------------
 
 /*interrupt controller*/
-module intcontroller(	clk,reset,regaddress,datain,dataout,
-					rxint,txint,sof,int2,int3,int6,blckint,syncint,audint,
-					audpen,rbfmirror,_ipl);
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset 
-input 	[8:1] regaddress;		//register address inputs
-input	[15:0]datain;			//bus data in
-output	[15:0]dataout;			//bus data out
-input	rxint;				//uart receive interrupt
-input	txint;				//uart transmit interrupt
-input	sof;					//start of video frame
-input	int2;				//level 2 interrupt
-input	int3;				//level 3 interrupt
-input	int6;				//level 6 interrupt
-input	blckint;				//disk block finished interrupt
-input	syncint;				//disk syncword match interrupt
-input	[3:0]audint;			//audio channels 0,1,2,3 interrupts
-output	[3:0]audpen;			//mirror of audio interrupts for audio controller
-output	rbfmirror;			//mirror of serial receive interrupt for uart SERDATR register
-output	[2:0]_ipl;			//m68k interrupt request
-
+module intcontroller
+(
+	input 	clk,		    	//bus clock
+	input 	reset,			   	//reset 
+	input 	[8:1] regaddress,	//register address inputs
+	input	[15:0]datain,		//bus data in
+	output	[15:0]dataout,	//bus data out
+	input	rxint,				//uart receive interrupt
+	input	txint,				//uart transmit interrupt
+	input	sof,				//start of video frame
+	input	int2,				//level 2 interrupt
+	input	int3,				//level 3 interrupt
+	input	int6,				//level 6 interrupt
+	input	blckint,			//disk block finished interrupt
+	input	syncint,			//disk syncword match interrupt
+	input	[3:0]audint,		//audio channels 0,1,2,3 interrupts
+	output	[3:0]audpen,		//mirror of audio interrupts for audio controller
+	output	rbfmirror,			//mirror of serial receive interrupt for uart SERDATR register
+	output	reg [2:0]_ipl		//m68k interrupt request
+);
 //register names and addresses		
 parameter INTENAR=9'h01c;
 parameter INTREQR=9'h01e;
@@ -284,10 +295,9 @@ parameter INTREQ=9'h09c;
 
 //local signals
 reg		[14:0]intena;			//int enable write register
-reg 		[15:0]intenar;			//int enable read register
+reg 	[15:0]intenar;			//int enable read register
 reg		[13:0]intreq;			//int request register
 reg		[15:0]intreqr;			//int request readback
-reg		[2:0]_ipl;			//m68k interrupt request
 
 //rbf mirror out
 assign rbfmirror=intreq[11];

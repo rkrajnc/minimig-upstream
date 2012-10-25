@@ -35,25 +35,33 @@
 // after keystrobe, keyboard controller waits for keyack or timeout
 // kbdrst is asserted when the control, left gui and right gui keys are hold down together
 // leda and ledb control the numlock and scrolllock leds
-module ps2keyboard(clk,reset,ps2kdat,ps2kclk,leda,ledb,kbdrst,keydat,keystrobe,keyack,osdctrl);
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset (system reset in)
-inout	ps2kdat;				//keyboard PS/2 data
-inout	ps2kclk;				//keyboard PS/2 clk
-input	leda;				//keyboard led a in
-input	ledb;				//keyboard led b in
-output	kbdrst;				//keyboard reset out
-output	[7:0]keydat;			//keyboard data out
-output	keystrobe;			//keyboard data out strobe
-input	keyack;				//keyboard data out acknowledge
-output	[3:0]osdctrl;			//on-screen-display controll
+
+
+//JB:
+// 2008-03-01	- added support for prtscr and ctrlbrk keys
+// 		- verilog 2001 style module declaration
+
+
+module ps2keyboard
+(
+	input 	clk,		   		//bus clock
+	input 	reset,			   	//reset (system reset in)
+	inout	ps2kdat,			//keyboard PS/2 data
+	inout	ps2kclk,			//keyboard PS/2 clk
+	input	leda,				//keyboard led a in
+	input	ledb,				//keyboard led b in
+	output	kbdrst,				//keyboard reset out
+	output	[7:0]keydat,		//keyboard data out
+	output	reg keystrobe,		//keyboard data out strobe
+	input	keyack,				//keyboard data out acknowledge
+	output	[5:0]osdctrl		//on-screen-display controll
+);
 
 //local signals
-reg		keystrobe;			//see above
 reg		pclkout; 				//ps2 clk out
-wire		pdatout;				//ps2 data out
-wire		pclkneg;				//negative edge of ps2 clock strobe
-reg		pdatb,pclkb,pclkc;		//input synchronization	
+wire	pdatout;				//ps2 data out
+wire	pclkneg;				//negative edge of ps2 clock strobe
+reg		pdatb,pclkb,pclkc;	//input synchronization	
 
 reg		[11:0]preceive;		//ps2 receive register
 reg		[11:0]psend;			//ps2 send register
@@ -63,14 +71,14 @@ reg		[2:0]knext;			//keyboard controller next state
 reg		capslock;				//capslock status
 
 reg		prreset;				//ps2 receive reset
-wire		prbusy;				//ps2 receive busy
+wire	prbusy;					//ps2 receive busy
 reg		ptreset;				//ps2 reset timer
-wire		pto1;				//ps2 timer timeout 1 
-wire		pto2;				//ps2 timer timeout 2
-reg		psled1;				//ps2 send led code 1
-reg		psled2;				//ps2 send led code 2
-wire		psready;				//ps2 send ready
-wire		valid;				//valid amiga key code at keymap output
+wire	pto1;					//ps2 timer timeout 1 
+wire	pto2;					//ps2 timer timeout 2
+reg		psled1;					//ps2 send led code 1
+reg		psled2;					//ps2 send led code 2
+wire	psready;				//ps2 send ready
+wire	valid;					//valid amiga key code at keymap output
 
 //bidirectional open collector IO buffers
 assign ps2kclk=(pclkout)?1'bz:1'b0;
@@ -234,17 +242,20 @@ end
 
 //instantiate keymap to convert ps2 scan codes to amiga raw key codes
 wire ctrl,aleft,aright,caps;
-ps2keyboardmap	km1(	.clk(clk),
-				.reset(reset),
-				.enable(prready),
-				.ps2key(preceive[8:1]),
-				.valid(valid),
-				.akey(keydat[7:0]),
-				.ctrl(ctrl),
-				.aleft(aleft),
-				.aright(aright),
-				.caps(caps),
-				.osdctrl(osdctrl)		);
+ps2keyboardmap km1
+(
+	.clk(clk),
+	.reset(reset),
+	.enable(prready),
+	.ps2key(preceive[8:1]),
+	.valid(valid),
+	.akey(keydat[7:0]),
+	.ctrl(ctrl),
+	.aleft(aleft),
+	.aright(aright),
+	.caps(caps),
+	.osdctrl(osdctrl)
+);
 
 //Duplicate key filter and caps lock handling.
 //A ps/2 keyboard has a future called "typematic".
@@ -318,23 +329,24 @@ endmodule
 
 //ps2 key to amiga key mapper using blockram
 //this module also handles the osdctrl signals
-module ps2keyboardmap(clk,reset,enable,ps2key,valid,akey,ctrl,aleft,aright,caps,osdctrl);
-input 	clk;		    			//clock
-input	reset;				//reset
-input	enable;				//enable
-input 	[7:0]ps2key;			//ps2 key code input
-output	valid;				//amiga key code valid (strobed when new valid keycode at output) 
-output	[7:0]akey;			//amiga key code output
-output	ctrl;	  			//amiga control key
-output	aleft; 				//amiga left alt key
-output	aright;	   			//amiga right alt key
-output	caps;	   			//amiga capslock key
-output	[3:0]osdctrl;			//osd menu control
+module ps2keyboardmap
+(
+	input 	clk,		    	//clock
+	input	reset,				//reset
+	input	enable,				//enable
+	input 	[7:0]ps2key,		//ps2 key code input
+	output	valid,				//amiga key code valid (strobed when new valid keycode at output) 
+	output	[7:0]akey,		//amiga key code output
+	output	ctrl,	  			//amiga control key
+	output	aleft, 				//amiga left alt key
+	output	aright,	   			//amiga right alt key
+	output	caps,	   			//amiga capslock key
+	output	reg[5:0]osdctrl	//osd menu control
+);
 
 //local signals
-reg		[3:0]osdctrl;			//see above
 reg		[15:0]keyrom;			//rom output
-reg 		enable2;				//enable signal delayed by one clock
+reg		enable2;				//enable signal delayed by one clock
 reg		upstroke;				//upstroke key status
 reg		extended;				//extended key status			
 
@@ -375,9 +387,9 @@ assign akey[7:0]={upstroke,keyrom[6:0]};
 always @(posedge clk)
 begin
 	if(reset)
-		osdctrl[3:0]<=0;
+		osdctrl[5:0] <= 0;
 	else if(enable2 && keyrom[8])
-		osdctrl[3:0]<=keyrom[3:0]&{~upstroke,~upstroke,~upstroke,~upstroke};
+		osdctrl[5:0] <= keyrom[5:0] & {6{~upstroke}};
 end
 
 //-------------------------------------------------------------------------------------------------
@@ -409,7 +421,7 @@ begin
 			9'h004:		keyrom[15:0]<=16'h8052;//F3
 			9'h005:		keyrom[15:0]<=16'h8050;//F1
 			9'h006:		keyrom[15:0]<=16'h8051;//F2
-			9'h007:		keyrom[15:0]<=16'h0108;//<OSD MENU> MENU
+			9'h007:		keyrom[15:0]<=16'h0108;//F12 <OSD MENU> MENU
 			9'h008:		keyrom[15:0]<=16'h0000;
 			9'h009:		keyrom[15:0]<=16'h8059;//F10
 			9'h00a:		keyrom[15:0]<=16'h8057;//F8
@@ -782,9 +794,9 @@ begin
 			9'h179:		keyrom[15:0]<=16'h0000;
 			9'h17a:		keyrom[15:0]<=16'h0102;//<OSD MENU> DOWN
 			9'h17b:		keyrom[15:0]<=16'h0000;
-			9'h17c:		keyrom[15:0]<=16'h0000;
+			9'h17c:		keyrom[15:0]<=16'h0120;//prtscr
 			9'h17d:		keyrom[15:0]<=16'h0101;//<OSD MENU> UP
-			9'h17e:		keyrom[15:0]<=16'h0000;
+			9'h17e:		keyrom[15:0]<=16'h0110;//ctrl+break
 			9'h17f:		keyrom[15:0]<=16'h0000;
 			9'h180:		keyrom[15:0]<=16'h0000;
 			9'h181:		keyrom[15:0]<=16'h0000;

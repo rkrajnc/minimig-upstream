@@ -30,42 +30,33 @@
 // 12-11-2006		-debugging for new Minimig rev1.0 board
 // 17-11-2006		-removed debugging and added decode for $C0000 ram
 
-module gary(	clk,e,cpuaddress,cpurd,cpuhwr,cpulwr,cpuok,
-			dma,dmawr,dmapri,ovl,boot,
-			rd,hwr,lwr,selreg,selchip,selslow,selciaa,selciab,selkick,selboot);
-input	clk;				//bus clock
-input	e;				//e clock enable
-
-input 	[23:12]cpuaddress;	//cpu address inputs
-input	cpurd;			//cpu read
-input	cpuhwr;			//cpu high write
-input	cpulwr;			//cpu low write
-output	cpuok;			//cpu slot ok
-input	dma;				//agnus needs bus
-input	dmawr;			//agnus does a write cycle
-input	dmapri;			//agnus blitter has priority
-input	ovl;				//overlay kickstart rom over chipram
-input	boot;			//overlay bootrom over chipram
-
-output	rd;				//bus read
-output	hwr;				//bus high write
-output	lwr;				//bus low write
-output 	selreg;  			//select chip register bank
-output 	selchip; 			//select chip memory
-output	selslow;			//select slowfast memory ($C0000)
-output 	selciaa;			//select cia A
-output 	selciab; 			//select cia B
-output 	selkick;	    		//select kickstart rom
-output	selboot;			//select boot room
-
+module gary
+(
+	input	clk,					//bus clock
+	input	e,						//e clock enable
+	input 	[23:12]cpuaddress,	//cpu address inputs
+	input	cpurd,					//cpu read
+	input	cpuhwr,					//cpu high write
+	input	cpulwr,					//cpu low write
+	output	reg cpuok,				//cpu slot ok
+	input	dma,					//agnus needs bus
+	input	dmawr,					//agnus does a write cycle
+	input	dmapri,					//agnus blitter has priority
+	input	ovl,					//overlay kickstart rom over chipram
+	input	boot,					//overlay bootrom over chipram
+	output	rd,						//bus read
+	output	hwr,					//bus high write
+	output	lwr,					//bus low write
+	output 	reg selreg,  			//select chip register bank
+	output 	reg selchip, 			//select chip memory
+	output	reg selslow,			//select slowfast memory ($C0000)
+	output 	selciaa,				//select cia A
+	output 	selciab, 				//select cia B
+	output 	reg selkick,	    	//select kickstart rom
+	output	reg selboot				//select boot room
+);
 
 //local signals
-reg		cpuok;			//see above
-reg		selreg;			//see above
-reg		selchip;			//see above
-reg		selslow;			//see above
-reg		selkick;			//see above
-reg		selboot;			//see above
 reg		ecpu;			//e clock synchronized to CPU available cycles
 
 //--------------------------------------------------------------------------------------

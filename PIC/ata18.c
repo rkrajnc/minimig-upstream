@@ -15,8 +15,8 @@
 
 #include <pic18.h>
 #include <stdio.h>
-#include <ata18.h>
-#include <hardware.h>
+#include "ata18.h"
+#include "hardware.h"
 
 /*IO definitions*/
 #define		SDCARD_CS	_M_CS
@@ -129,12 +129,13 @@ unsigned char SDCARD_Init(void)
 		SPI(0xFF);								/*10 * 8bits = 80 clockpulses*/
 	SDCARD_CS=0;								/*SDcard Enabled*/
 
-	for(lp=0; lp < 50000; lp++);				/*delay for a lot of milliseconds (least 16 bus clock cycles)*/
+	for(lp=0; lp<56000; lp++);					/*delay for a lot of milliseconds (least 16 bus clock cycles)*/
 
 	Command_R1(CMD0,0,0);						/*CMD0: Reset all cards to IDLE state*/
 	if (response_1 !=1)
 	{
 		DisableCard();
+		printf("No card detected!\r");
 		return(FALSE);							/*error, quit routine*/
 	}
 	else
@@ -155,7 +156,7 @@ unsigned char SDCARD_Init(void)
 				}
 				timeout++;
 			}
-			printf("MultiMediaCard detected\n\r");
+			printf("MMC-card detected\n\r");
 			DisableCard();
 			return(TRUE);
 		}
@@ -175,8 +176,10 @@ unsigned char SDCARD_Init(void)
 				}
 				timeout++;
 			}
-			printf("SecureDigital-card detected\n\r");
-			DisableCard();
+			printf("SD-card detected\n\r");
+			Command_R1(CMD16,0x000,0x0200); //set block size
+			//DisableCard();
+			SSPCON1=0x30; //spiclk =  1/16 sysclk
 			return(TRUE);					
 		}
 	}
@@ -200,7 +203,7 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 	/*exit if invalid response*/
 	if (response_1 !=0)
 	{
-		printf("invalid response->%d\r",response_1);
+		printf("MMC CMD17: invalid response %02X\r",response_1);
 		DisableCard();
 		return(FALSE);
 	}
@@ -209,8 +212,9 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 	timeout = 0;
 	while(SPI(0xFF) != 0xFE)
 	{					
-		if (timeout++ >= 1000)					
+		if (timeout++ >= 50000)					
 		{
+			printf("MMC CMD17: no data token\r");
 			DisableCard();
 			return(FALSE);
 		}
@@ -235,11 +239,9 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 		*(p++)=SSPBUF;	
 	}
 	while(--i);
-	//for(lp=0; lp < 512; lp++)					
-	//	ReadData[lp] = SPI(0xFF);
 
-	SPI(0xff);
-	SPI(0xff);
+	SPI(0xff);	//Read CRC lo byte
+	SPI(0xff);	//Read CRC hi byte
 
 	DisableCard();
 	return(TRUE);
@@ -250,42 +252,75 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 /*Write: 512 Byte-Mode, this will not work (read MMC and SD-card specs) with any other sector/block size then 512*/
 unsigned char AtaWriteSector(unsigned long lba, unsigned char *WriteData)
 {
-	unsigned short upper_lba, lower_lba, lp;	/*Variable 0...65535*/
+	unsigned short upper_lba, lower_lba;
 	unsigned char i;
+	unsigned char *p;
 
-	lba = lba * 512;							/*since the MMC and SD cards are byte addressable and the FAT relies on a sector address (where a sector is 512bytes big), we must multiply by 512 in order to get the byte address*/
+	/* since the MMC and SD cards are byte addressable and the FAT relies on a sector address
+	   (where a sector is 512bytes big), we must multiply by 512 in order to get the byte address */
+	lba = lba * 512;
 	upper_lba = (lba/65536);
 	lower_lba = (lba%65536);
 
+	EnableCard();
+
 	Command_R1(CMD24, upper_lba, lower_lba);
-	if (response_1 != 0)
+	/*exit if invalid response*/
+	if (response_1 !=0)
 	{
+		printf("MMC CMD24: invalid response %02X\r",response_1);
+		DisableCard();
 		return(FALSE);
 	}
-	else
+	
+	SPI(0xFF);	//One byte gap
+	//SPI(0xFF);
+	SPI(0xFE);	//Send Data token
+
+	//Send bytes for sector
+	p = WriteData;
+	i=128;
+	do
 	{
-		SPI(0xFF);
-		SPI(0xFF);
-		SPI(0xFE);
-
-
-		for(lp=0; lp < 512; lp++)
-			{
-				SPI(WriteData[lp]);
-			}
-		SPI(255);						// Am ende 2 Byte's ohne Bedeutung senden
-		SPI(255);
-
-		i = SPI(0xFF);
-//		i &=0b.0001.1111;
-//		if (i != 0b.0000.0101) 
-//			printf("Write error\n\r");
-//		else
-//			printf("Write succeeded?");
-		while(SPI(0xFF) !=0xFF);		/*wait until the card has finished writing the data*/
-
-		return(TRUE);
+		SSPBUF = *(p++);
+		while (!BF);		
+		SSPBUF = *(p++);
+		while (!BF);		
+		SSPBUF = *(p++);
+		while (!BF);		
+		SSPBUF = *(p++);
+		while (!BF);		
 	}
+	while (--i);
+
+	SPI(0xFF);	//Send CRC lo byte
+	SPI(0xFF);	//Send CRC hi byte
+
+	i = SPI(0xFF);	//Read packet response 
+	//Status codes
+	//: 010 = Data accepted
+	//: 101 = Data rejected due to CRC error
+	//: 110 = Data rejected due to write error
+	i &= 0b00011111;
+	if (i != 0b00000101) 
+	{
+		printf("MMC CMD24: write error %02X\r",i);
+		DisableCard();
+		return(FALSE);
+	}
+
+	timeout = 0;
+	while (SPI(0xFF) == 0x00)	/*wait until the card has finished writing the data*/
+	{					
+		if (timeout++ >= 50000)					
+		{
+			printf("MMC CMD24: busy wait timeout\r");
+			DisableCard();
+			return(FALSE);
+		}
+	}
+	DisableCard();
+	return(TRUE);
 }
  
 
@@ -317,23 +352,29 @@ Command_R0(char cmd,unsigned short AdrH,unsigned short AdrL)
 	crc_7++;				/*set LSB to '1'*/
 
 	SPI(crc_7);				/*transmit CRC*/
-	SPI(0xFF);				/*flush SPI-bus, or int other words process command*/
+	//SPI(0xFF);				/*flush SPI-bus, or int other words process command*/
 }
 
 
 /*Send a command to the SDcard, a one byte response is expected*/
 Command_R1(char cmd,unsigned short AdrH,unsigned short AdrL)
 {
+	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
-	response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	do 
+		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	while (response_1==0xFF && --i);
 }
 
 
 /*Send a command to the SDcard, a two byte response is expected*/
 Command_R2(char cmd,unsigned short AdrH,unsigned short AdrL)
 {
+	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
-	response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	do	
+		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	while (response_1==0xFF && --i);
 	response_2 = SPI(0xFF);			
 }
 
@@ -341,8 +382,11 @@ Command_R2(char cmd,unsigned short AdrH,unsigned short AdrL)
 /*Send a command to the SDcard, a five byte response is expected*/
 Command_R3(char cmd,unsigned short AdrH,unsigned short AdrL)
 {
+	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
-	response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	do
+		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
+	while (response_1==0xFF && --i);
 	response_2 = SPI(0xFF);			
 	response_3 = SPI(0xFF);			
 	response_4 = SPI(0xFF);			

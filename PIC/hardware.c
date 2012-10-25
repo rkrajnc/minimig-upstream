@@ -49,8 +49,8 @@ void HardwareInit(void)
 			
 	/*initialize SPI*/
 	SSPSTAT=0x00;
-	SSPCON1=0x31;
-	
+	SSPCON1=0x32; //changed from 1/16 to 1/64
+
 	/*initialize input/ouput configuration*/
 	TRISA=0b11001100;
 	TRISB=0b00001011;

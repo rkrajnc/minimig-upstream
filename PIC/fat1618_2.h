@@ -4,9 +4,10 @@
 struct file2TYPE
 {
 	unsigned char name[12];   			/*name of file*/
+	unsigned char attributes;
 	unsigned short entry;				/*file-entry index in directory table*/
 	unsigned short sec;  				/*sector index in file*/
-	unsigned short len;					/*total number of sectors in file, 0 if no file*/
+	unsigned long len;					/*file size*/
 	unsigned long cluster;				/*current cluster*/	
 };
 
@@ -24,5 +25,6 @@ unsigned char FindDrive2(void);
 unsigned char FileSearch2(struct file2TYPE *file, unsigned char mode);
 unsigned char FileNextSector2(struct file2TYPE *file);
 unsigned char FileRead2(struct file2TYPE *file);
+unsigned char FileWrite2(struct file2TYPE *file);
 
 #endif

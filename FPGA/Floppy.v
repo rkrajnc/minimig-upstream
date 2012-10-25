@@ -47,98 +47,242 @@
 // 22-01-2006		-removed support for track 80-127 again
 // 06-02-2006		-added user disk control input
 // 28-12-2006		-spi data out is now low when not addressed to allow multiplexing with multiple spi devices		
+// JB:
+// 2008-07-17		- modified floppy interface for better read handling and write support
+//					- spi interface clocked by SPI clock
 
-module floppy(	clk,reset,enable,horbeam,regaddress,datain,dataout,dmal,dmas,user,
-			_step,direc,_sel,side,_motor,_track0,_change,_ready,
-			blckint,syncint,wordsync,
-			_den,din,dout,dclk);
-//bus interface
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset 
-input	enable;				//dma enable
-input	[8:0]horbeam;			//horizontal beamcounter
-input 	[8:1] regaddress;		//register address inputs
-input	[15:0]datain;			//bus data in
-output	[15:0]dataout;			//bus data out
-output	dmal;				//dma request output
-output	dmas;				//dma special output 
-//disk control signals from cia and user
-input	[2:0]user;			//user disk control
-input	_step;				//step heads of disk
-input	direc;				//step heads direction
-input	_sel;				//disk select 	
-input	side;				//upper/lower disk head
-input	_motor;				//disk motor control
-output	_track0;				//track zero detect
-output	_change;				//disk has been removed from drive
-output	_ready;				//disk is ready
-//interrupt request and misc. control
-output	blckint;				//disk dma has finished interrupt
-output	syncint;				//disk syncword found
-input	wordsync;				//wordsync enable
-//flash drive host controller interface	(SPI)
-input	_den;				//async. serial data enable
-input	din;					//async. serial data input
-output	dout;				//async. serial data output
-input	dclk;				//async. serial data clock
+
+module floppy
+(
+	//bus interface
+	input 	clk,		    	//bus clock
+	input 	reset,			   	//reset 
+	input	enable,				//dma enable
+	input	[8:0]horbeam,		//horizontal beamcounter
+	input 	[8:1] regaddress,	//register address inputs
+	input	[15:0]datain,		//bus data in
+	output	[15:0]dataout,	//bus data out
+	output	reg dmal,			//dma request output
+	output	reg dmas,			//dma special output 
+	//disk control signals from cia and user
+	input	[2:0]user,		//user disk control
+	input	_step,				//step heads of disk
+	input	direc,				//step heads direction
+	input	_sel,				//disk select 	
+	input	side,				//upper/lower disk head
+	input	_motor,				//disk motor control
+	output	_track0,			//track zero detect
+	output	_change,			//disk has been removed from drive
+	output	_ready,				//disk is ready
+	output	_wprot,				//disk is write-protected
+	//interrupt request and misc. control
+	output	reg blckint,			//disk dma has finished interrupt
+	output	syncint,			//disk syncword found
+	input	wordsync,			//wordsync enable
+	//flash drive host controller interface	(SPI)
+	input	_den,				//async. serial data enable
+	input	din,				//async. serial data input
+	output	dout,				//async. serial data output
+	input	dclk				//async. serial data clock
+);
 
 //register names and addresses
-parameter DSKBYTR=9'h01a;
-parameter	DSKDAT=9'h026;		
-parameter	DSKDATR=9'h008;
-parameter DSKSYNC=9'h07e;
-parameter	DSKLEN=9'h024;
+	parameter DSKBYTR=9'h01a;
+	parameter DSKDAT =9'h026;		
+	parameter DSKDATR=9'h008;
+	parameter DSKSYNC=9'h07e;
+	parameter DSKLEN =9'h024;
 
-//local signals
-reg		dmal;				//see above
-reg		dmas;				//see above
-reg		blckint;				//see above
-reg		[15:0]dsksync;			//disk sync register
-reg		[15:0]dsklen;			//disk dma length, direction and enable 
-reg		[7:0]track;			//track select
+	//local signals
+	reg		[15:0]dsksync;	//disk sync register
+	reg		[15:0]dsklen;		//disk dma length, direction and enable 
+	reg		[7:0]track;		//track select
+	
+	reg		dmaon;				//disk dma read/write enabled
+	wire	lenzero;			//disk length counter is zero
+	wire	spidat;				//data word read/written by external host
+	reg		trackwr;			//write track (command to host)
+	reg		trackrd;			//read track (command to host)
+	reg		trackch;			//check track (command to host)
+	
+	reg		_dskwprot;			//disk is write protected
+	reg		_dskchange;			//disk has been removed
+	reg		_dskready;			//disk is ready (motor running)
+	wire	_dsktrack0;			//disk heads are over track 0
+	
+	wire	[15:0]bufdin;		//fifo data in
+	wire	[15:0]bufdout; 	//fifo data out
+	wire	bufwr;				//fifo write enable
+	reg		bufwr_del;			//fifo write enable delayed
+	wire	bufrd;				//fifo read enable
+	wire	bufempty;			//fifo is empty
+	wire	buffull;			//fifo is full
 
-reg		[15:0]sdshift;			//serial data shift register
-reg		[4:0]sdcnt;			//serial data bit counter
+	wire	[15:0]dskbytr;			
+	wire	[15:0]dskdatr;
+	
+	//JB:
+	wire	fifo_reset;
+	reg		dmaen;	//dsklen dma enable
+	wire	[13:0]fifo_cnt;
+	reg		[15:0]wr_fifo_status;
 
-reg		[1:0]ldclk;			//serial clock input synchronize register
-wire		sdclkpos;				//synchronized serial clock positive edge strobe
-wire		sdclkneg;				//synchronized serial clock negative edge strobe
-reg		sdin;	 			//synchronized serial data in
-reg		_sden;				//synchronized serial enable
+//-----------------------------------------------------------------------------------------------//
+//JB: SPI interface
+//-----------------------------------------------------------------------------------------------//
 
-reg		dmaon;				//disk dma read/write enabled
-wire		lenzero;				//disk length counter is zero
-wire		spidat;				//data word read/written by external host
-reg		trackwr;				//write track (command to host)
-reg		trackrd;				//read track (command to host)
-reg		trackch;				//check track (command to host)
+wire sck;	//SPI clock
+wire scs;	//SPI chip select
+wire sdi;	//SPI data in
+wire sdo;	//SPI data out
 
-reg		_dskchange;			//disk has been removed
-reg		_dskready;			//disk is ready (motor running)
-wire		_dsktrack0;			//disk heads are over track 0
+reg [3:0]spi_bit_cnt;	//received bit counter - incremented on rising edge of SCK
+wire spi_bit_15;
+reg [15:1]spi_sdi_reg;	//spi receive register
+reg [15:0]rx_data;		//spi received data
+reg [15:0]spi_sdo_reg;	//spi transmit register (shifted on SCK falling edge)
 
-wire		[15:0]bufdin;			//fifo data in
-wire		[15:0]bufdout; 		//fifo data out
-wire		bufwr;				//fifo write enable
-wire		bufrd;				//fifo read enable
-wire		bufempty;				//fifo is empty
-wire		buffull;				//fifo is full
+reg spi_rx_flag;
+reg rx_flag_sync;
+reg rx_flag;
+wire spi_rx_flag_clr;
 
-wire		[15:0]dskbytr;			
-wire		[15:0]dskdatr;
+reg spi_tx_flag;
+reg tx_flag_sync;
+reg tx_flag;
+wire spi_tx_flag_clr;
+
+reg [15:0]spi_tx_data;	//data to be send via SPI
+reg [1:0]tx_word_cnt;		//transmitted word count
+
+reg	spi_cmd0;	// first command word
+reg	spi_cmd1;	// first command word
+reg	spi_cmd2;	// second command word
+reg spi_dat;	// data word
+
+//SPI mode 0 - high idle clock
+assign sck = dclk;
+assign sdi = din;
+assign scs = ~_den;
+assign dout = sdo;
+
+//received bits counter (0-15)
+always @(posedge sck or negedge scs)
+	if (~scs)
+		spi_bit_cnt <= 0;	//reset if inactive chip select
+	else
+		spi_bit_cnt <= spi_bit_cnt + 1;
+		
+assign spi_bit_15 = spi_bit_cnt==15 ? 1 : 0;
+
+//SDI input shift register
+always @(posedge sck)
+	spi_sdi_reg <= {spi_sdi_reg[14:1],sdi};
+	
+//spi rx data register
+always @(posedge sck)
+	if (spi_bit_15)
+		rx_data <= {spi_sdi_reg[15:1],sdi};		
+
+// rx_flag is synchronous with clk and is set after receiving the last bit of a word
+
+assign spi_rx_flag_clr = rx_flag | reset;
+always @(posedge sck or posedge spi_rx_flag_clr)
+	if (spi_rx_flag_clr)
+		spi_rx_flag <= 0;
+	else if (spi_bit_cnt==15)
+		spi_rx_flag <= 1;
+
+always @(negedge clk)
+	rx_flag_sync <= spi_rx_flag;	//double synchronization to avoid metastability
+
+always @(posedge clk)
+	rx_flag <= rx_flag_sync;		//synchronous with clk
+
+// tx_flag is synchronous with clk and is set after sending the first bit of a word
+
+assign spi_tx_flag_clr = tx_flag | reset;
+always @(negedge sck or posedge spi_tx_flag_clr)
+	if (spi_tx_flag_clr)
+		spi_tx_flag <= 0;
+	else if (spi_bit_cnt==0)
+		spi_tx_flag <= 1;
+
+always @(negedge clk)
+	tx_flag_sync <= spi_tx_flag;	//double synchronization to avoid metastability
+
+always @(posedge clk)
+	tx_flag <= tx_flag_sync;		//synchronous with clk
+
+//---------------------------------------------------------------------------------------------------------------------
+
+always @(negedge sck or negedge scs)
+	if (~scs)
+		tx_word_cnt <= 0;
+	else if (spi_bit_cnt==0 && tx_word_cnt!=2)
+		tx_word_cnt <= tx_word_cnt + 1;
+
+always @(posedge sck or negedge scs)
+	if (~scs)
+		spi_cmd0 <= 1;
+	else if (spi_bit_15)
+	begin
+		spi_cmd0 <= 0;
+		spi_cmd1 <= spi_cmd0;
+		spi_cmd2 <= ~spi_cmd0 & spi_cmd1;
+		spi_dat  <= ~spi_cmd0 & (spi_cmd2 | spi_dat);
+	end
+
+//spidat strobe		
+assign spidat = rx_flag & spi_dat;
+
+//------------------------------------
+
+//SDO output shift register
+always @(negedge sck)
+	if (spi_bit_cnt==0)
+		spi_sdo_reg <= spi_tx_data;
+	else
+		spi_sdo_reg <= {spi_sdo_reg[14:0],1'b0};
+
+assign sdo = scs & spi_sdo_reg[15];
+
+
+always @(spi_cmd0 or spi_cmd1 or user or trackch or trackrd or trackwr or track or dmaen or dsklen or bufdout or tx_word_cnt or wr_fifo_status)
+begin
+	if (tx_word_cnt==0)
+		spi_tx_data = {user[2:0],2'b00,trackch,trackrd,trackwr,track[7:0]};
+	else if (trackrd)
+		spi_tx_data = {dmaen,dsklen[14:0]};
+	else if (trackwr)
+		if (tx_word_cnt==1)
+			spi_tx_data = wr_fifo_status;
+		else
+			spi_tx_data = bufdout;
+	else
+		spi_tx_data = 0;
+end
+
+always @(posedge clk)
+	if (tx_flag)
+		wr_fifo_status <= {dmaen&dsklen[14],1'b0,fifo_cnt[13:0]};
+
+//-----------------------------------------------------------------------------------------------//
+//-----------------------------------------------------------------------------------------------//
+
 
 //--------------------------------------------------------------------------------------
 //data out multiplexer
-assign dataout=dskbytr|dskdatr;
+assign dataout = dskbytr | dskdatr;
 
 //--------------------------------------------------------------------------------------
 //floppy control signal behaviour
 reg		_stepd; 		//used to detect rising edge of _step
-reg		_seld; 		//used to detect falling edge of _sel
-wire		_dsktrack79;	//last track
+reg		_seld; 			//used to detect falling edge of _sel
+wire	_dsktrack79;	//last track
 
 //_ready,_track0 and _change signals
-assign {_track0,_change,_ready}=(!_sel)?{_dsktrack0,_dskchange,_dskready}:3'b111; 
+assign {_track0,_change,_ready,_wprot}=(!_sel)?{_dsktrack0,_dskchange,_dskready,_dskwprot}:4'b1111; 
 
 //delay _step and _sel
 always @(posedge clk)
@@ -170,99 +314,51 @@ always @(posedge clk)
 		_dskready<=_motor;
 
 //--------------------------------------------------------------------------------------
-//async. input synchronizers
-always @(posedge clk)
-begin
-	_sden<=_den;
-	sdin<=din;
-	ldclk[0]<=dclk;
-	ldclk[1]<=ldclk[0];
-end
-
-//synchronized clock positive edge detect
-assign sdclkpos=ldclk[0]&(~ldclk[1]);
-
-//synchronized clock negative edge detect
-assign sdclkneg=(~ldclk[0])&ldclk[1];
-
-//--------------------------------------------------------------------------------------
 
 //disk data byte and status read
 assign dskbytr=(regaddress[8:1]==DSKBYTR[8:1])?{1'b0,(trackrd|trackwr),dsklen[14],13'b000000000000}:16'h0000;
 	 
 //disk sync register
 always @(posedge clk)
-	if(reset)
-		dsksync[15:0]<=0;
-	else if(regaddress[8:1]==DSKSYNC[8:1])
-		dsksync[15:0]<=datain[15:0];
-
-//disk length dma enable bit
-always @(posedge clk)
-	if(reset)
-		dsklen[15]<=0;
-	else if(regaddress[8:1]==DSKLEN[8:1])
-		dsklen[15]<=datain[15];
+	if (reset)
+		dsksync[15:0] <= 0;
+	else if (regaddress[8:1]==DSKSYNC[8:1])
+		dsksync[15:0] <= datain[15:0];
 
 //disk length register
 always @(posedge clk)
-	if(reset)
-		dsklen[14:0]<=0;
-	else if(regaddress[8:1]==DSKLEN[8:1] && datain[15] && dsklen[15])//write from bus if second write with dma enabled
-		dsklen[14:0]<=datain[14:0];
-	else if(bufwr)//decrement length register
-		dsklen[13:0]<=dsklen[13:0]-1;
+	if (reset)
+		dsklen[14:0] <= 0;
+	else if (regaddress[8:1]==DSKLEN[8:1])
+		dsklen[14:0] <= datain[14:0];
+	else if (bufwr)//decrement length register
+		dsklen[13:0] <= dsklen[13:0] - 1;
+
+//disk length register DMAEN
+always @(posedge clk)
+	if (reset)
+		dsklen[15] <= 0;
+	else if (blckint)
+		dsklen[15] <= 0;
+	else if (regaddress[8:1]==DSKLEN[8:1])
+		dsklen[15] <= datain[15];
+		
+//dmaen - disk dma enable signal
+always @(posedge clk)
+	if (reset)
+		dmaen <= 0;
+	else if (blckint)
+		dmaen <= 0;
+	else if (regaddress[8:1]==DSKLEN[8:1])
+		dmaen <= datain[15] & dsklen[15];//start disk dma if second write in a row with dsklen[15] set
 
 //dsklen zero detect
-assign lenzero=(dsklen[13:0]==0)?1:0;
-
-//--------------------------------------------------------------------------------------
-//SPI bus
-wire		sddone;				//one word has been send/received over the SPI bus
-wire		[15:0]sdnew;			//new spi data to send out, loaded when sddone=1
-reg		sdl;					//bit to detect if host is reading command or doing data operation
-reg		doutl;				//dout output latch
-
-//dout control
-assign dout=(!_sden)?doutl:1'b0;
-
-//serial-parallel / parallel-serial converter
-always @(posedge clk)
-begin
-	if(sdclkneg)//data out
-		doutl<=sdshift[15];
-	if(_sden || sddone)//load now data to send out
-		sdshift[15:0]<=sdnew[15:0];
-	else if(sdclkpos)//data in
-		sdshift[15:0]<={sdshift[14:0],sdin};
-end
-
-//bit counter
-always @(posedge clk)
-	if(_sden || sddone)
-		sdcnt[4:0]<=0;
-	else if(sdclkpos)
-		sdcnt[4:0]<=sdcnt[4:0]+1;
-assign sddone=sdcnt[4];
-
-//command multiplexer
-assign sdnew[15:0]=(_sden)?{user[2:0],2'b00,trackch,trackrd,trackwr,track[7:0]}:bufdout[15:0];
-
-//sdl bit, this bit is zero if the next completed spi transfer is a command read operation
-//this bit is true if the next completed spi transfer is a data operation (read or write)
-always @(posedge clk)
-	if(_sden)
-		sdl=0;
-	else if(sddone)
-		sdl=1;
-
-//spidat strobe		
-assign spidat=sddone&sdl;
+assign lenzero = (dsklen[13:0]==0) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 //disk data read path
-wire		busrd;				//bus read
-wire		buswr;				//bus write
+wire	busrd;				//bus read
+wire	buswr;				//bus write
 reg		trackrdok;			//track read enable
 
 //disk buffer bus read address decode
@@ -272,33 +368,44 @@ assign busrd=(regaddress[8:1]==DSKDATR[8:1])?1:0;
 assign buswr=(regaddress[8:1]==DSKDAT[8:1])?1:0;
 
 //fifo data input multiplexer
-assign bufdin[15:0]=(trackrd)?sdshift[15:0]:datain[15:0];
+assign bufdin[15:0] = trackrd ? rx_data[15:0] : datain[15:0];
 
 //fifo write control
-assign bufwr=(buswr&dmaon)|(trackrdok&spidat);
+assign bufwr = (trackrdok & spidat & ~lenzero) | (buswr & dmaon);
+
+//delayed version to allow writing of the last word to empty fifo
+always @(posedge clk)
+	bufwr_del <= bufwr;
 
 //fifo read control
-assign bufrd=(busrd&dmaon)|(trackwr&spidat);
+assign bufrd = (busrd & dmaon) | (trackwr & spidat);
 
 //DSKSYNC interrupt
-assign syncint=( (dsksync[15:0]==sdshift[15:0]) && spidat && trackrd )?1:0;
+//assign syncint = dsksync[15:0]==rx_data[15:0] && spidat && trackrd ? 1 : 0;
+assign syncint = 16'h4489==rx_data[15:0] && spidat && trackrd ? 1 : 0;
 
 //track read enable / wait for syncword logic
 always @(posedge clk)
-	if(!trackrd)//reset
-		trackrdok<=0;
+	if (!trackrd)//reset
+		trackrdok <= 0;
 	else//wordsync is enabled, wait with reading untill syncword is found
-		trackrdok<=~wordsync|syncint|trackrdok;
+		trackrdok <= ~wordsync | syncint | trackrdok;
+
+assign fifo_reset = reset | ~dmaen;
 		
 //disk fifo / trackbuffer
-fifo	db1 (	.clk(clk),
-			.reset(reset),
-			.din(bufdin),
-			.dout(bufdout),
-			.rd(bufrd),
-			.wr(bufwr),
-			.full(buffull),
-			.empty(bufempty)	);
+fifo db1
+(
+	.clk(clk),
+	.reset(fifo_reset),
+	.din(bufdin),
+	.dout(bufdout),
+	.rd(bufrd),
+	.wr(bufwr),
+	.full(buffull),
+	.cnt(fifo_cnt),
+	.empty(bufempty)
+);
 
 
 //disk data read output gate
@@ -333,14 +440,21 @@ always @(dmaon or dsklen or bufempty or buffull or horbeam)
 
 //--------------------------------------------------------------------------------------
 //main disk controller
-reg		[1:0]dskstate;			//current state of disk
+reg		[1:0]dskstate;		//current state of disk
 reg		[1:0]nextstate; 		//next state of state
 
 //disk states
-parameter	DISKCHANGE=2'b00;
-parameter	DISKPRESENT=2'b01;
-parameter	DISKDMA=2'b10;
+parameter DISKCHANGE=2'b00;
+parameter DISKPRESENT=2'b01;
+parameter DISKDMA=2'b10;
 parameter DISKINT=2'b11;
+
+//disk write protect status
+always @(posedge clk)
+	if(reset)
+		_dskwprot <= 0;
+	else if (dskstate==DISKPRESENT && rx_flag && spi_cmd2) //PIC response to CMD_GETDSKSTAT
+		_dskwprot <= rx_data[1];
 
 //main disk state machine
 always @(posedge clk)
@@ -348,7 +462,8 @@ always @(posedge clk)
 		dskstate<=DISKCHANGE;		
 	else
 		dskstate<=nextstate;
-always @(dskstate or spidat or sdshift or lenzero or enable or dsklen or bufempty or _sden)
+		
+always @(dskstate or spidat or rx_data or dmaen or lenzero or enable or dsklen or bufempty or rx_flag or spi_cmd2 or bufwr_del)// or _sden)
 begin
 	case(dskstate)
 		DISKCHANGE://disk is removed from flash drive, poll drive for new disk
@@ -359,7 +474,7 @@ begin
 			dmaon=0;
 			blckint=0;
 			_dskchange=0;
-			if(spidat && sdshift[0])//drive response: disk is present
+			if(rx_flag && spi_cmd2 && rx_data[0])//drive response: disk is present
 				nextstate=DISKPRESENT;
 			else
 				nextstate=DISKCHANGE;			
@@ -372,10 +487,10 @@ begin
 			dmaon=0;
 			blckint=0;
 			_dskchange=1;
-			if(spidat && !lenzero && enable)//dsklen>0 and dma enabled, do disk dma operation
-				nextstate=DISKDMA; 
-			else if(spidat && !sdshift[0])//drive response: disk has been removed
+			 if (rx_flag && spi_cmd2 && !rx_data[0])//drive response: disk has been removed
 				nextstate=DISKCHANGE;
+			else if(rx_flag && spi_cmd2 && dmaen && !lenzero && enable)//dsklen>0 and dma enabled, do disk dma operation
+				nextstate=DISKDMA; 
 			else
 				nextstate=DISKPRESENT;			
 		end
@@ -387,10 +502,12 @@ begin
 			dmaon=(~lenzero)|(~dsklen[14]);
 			blckint=0;
 			_dskchange=1;
-			if(lenzero && bufempty && _sden)//complete dma cycle done
-				nextstate=DISKINT;
+			if (!dmaen || !enable)
+				nextstate = DISKPRESENT;
+			else if (lenzero && bufempty && !bufwr_del)//complete dma cycle done
+				nextstate = DISKINT;
 			else
-				nextstate=DISKDMA;			
+				nextstate = DISKDMA;			
 		end
 		DISKINT://generate disk dma completed (DSKBLK) interrupt
 		begin
@@ -418,7 +535,6 @@ begin
 end
 
 
-
 //--------------------------------------------------------------------------------------
 
 endmodule
@@ -431,23 +547,26 @@ endmodule
 //reading is more or less asynchronous if you read during the rising edge of clk
 //because the output data is updated at the falling edge of the clk
 //when rd=1, the next data word is selected 
-module fifo(clk,reset,din,dout,rd,wr,full,empty);
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset 
-input	[15:0]din;			//data in
-output	[15:0]dout;			//data out
-input	rd;					//read from fifo
-input	wr;					//write to fifo
-output	full;				//fifo is full
-output	empty;				//fifo is empty
+module fifo
+(
+	input 	clk,		    	//bus clock
+	input 	reset,			   	//reset 
+	input	[15:0]din,		//data in
+	output	reg [15:0]dout,	//data out
+	input	rd,					//read from fifo
+	input	wr,					//write to fifo
+	output	full,				//fifo is full
+	output	[13:0]cnt,
+	output	reg empty			//fifo is empty
+);
 
 //local signals and registers
-reg		empty;				//see above, delayed one clock to handle sync. ram delay
-reg		[15:0]dout;			//see above
-reg 		[15:0]mem[8191:0];		//8192 words by 16 bit wide fifo memory
+reg 	[15:0]mem[8191:0];	//8192 words by 16 bit wide fifo memory
 reg		[13:0]inptr;			//fifo input pointer
 reg		[13:0]outptr;			//fifo output pointer
-wire		equal;				//lower 13 bits of inptr and outptr are equal
+wire	equal;					//lower 13 bits of inptr and outptr are equal
+
+assign cnt = inptr - outptr;
 
 //main fifo memory (implemented using synchronous block ram)
 always @(posedge clk)

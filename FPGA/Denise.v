@@ -41,19 +41,27 @@
 // 19-10-2005		-code now uses sol signal to synchronize local beam counter
 // 11-01-2006		-added blanking circuit
 // 22-01-2006		-added vertical window clipping
+//JB:
+// 2008-07-08		-added hires output (for scandoubler)
+//					-changed Denise ID (sometimes Show Config detected wrong chip type)
 
-module Denise(clk,reset,sol,sof,regaddress,datain,dataout,blank,red,green,blue);
-input 	clk;		   			//bus clock / lores pixel clock
-input 	reset;				//reset
-input	sol;					//start of video line
-input	sof;					//start of video frame 
-input 	[8:1]regaddress;		//register adress inputs
-input 	[15:0]datain;			//bus data in
-output 	[15:0]dataout;			//bus data out
-input	blank;				//blanking input
-output 	[3:0]red; 			//red componenent video out
-output 	[3:0]green;  			//green component video out
-output 	[3:0]blue;			//blue component video out
+
+module Denise
+(
+	input 	clk,		   			//bus clock / lores pixel clock
+	input 	reset,					//reset
+	input	sol,					//start of video line
+	input	sof,					//start of video frame 
+	input	strhor,					//horizontal strobe
+	input 	[8:1]regaddress,		//register adress inputs
+	input 	[15:0]datain,			//bus data in
+	output 	[15:0]dataout,		//bus data out
+	input	blank,					//blanking input
+	output 	[3:0]red, 			//red componenent video out
+	output 	[3:0]green,  			//green component video out
+	output 	[3:0]blue,			//blue component video out
+	output	reg hires				//hires
+);
 
 //register names and adresses		
 parameter DIWSTRT=9'h08e;
@@ -65,36 +73,34 @@ parameter DENISEID=9'h07c;
 //local signals
 reg		[8:0]horbeam;			//horizontal beamcounter
 reg		[8:0]verbeam;			//vertical beamcounter
-reg		hires;				//hires mode select
-reg		homod;				//HAM mode select
-reg		dblpf;				//double playfield select
+reg		homod;					//HAM mode select
+reg		dblpf;					//double playfield select
 reg		[6:0]bplcon2;			//bplcon2 (playfield video priority) register
-reg		[15:0]deniseid; 		//deniseid register
 
-wire		dclk;				//ddr register select clock
+wire	dclk;					//ddr register select clock
 
-reg		[15:0]diwstrt;			//vertical/horizontal display window start position
-reg		[15:0]diwstop;			//vertical/horizontal display window stop position
+reg		[15:0]diwstrt;		//vertical/horizontal display window start position
+reg		[15:0]diwstop;		//vertical/horizontal display window stop position
 
-wire		[6:1]bpldata;			//raw bitplane serial video data
-wire		[3:0]sprdata;			//sprite serial video data
-wire		[5:0]plfdata;			//playfield serial video data
-wire		[2:1]nplayfield;		//playfield 1,2 valid data signals
-wire		[7:0]nsprite;			//sprite 0-7 valid data signals 
-wire		sprsel;				//sprite select
+wire	[6:1]bpldata;			//raw bitplane serial video data
+wire	[3:0]sprdata;			//sprite serial video data
+wire	[5:0]plfdata;			//playfield serial video data
+wire	[2:1]nplayfield;		//playfield 1,2 valid data signals
+wire	[7:0]nsprite;			//sprite 0-7 valid data signals 
+wire	sprsel;					//sprite select
 
-wire		[11:0]hamrgb;			//hold and modify mode RGB video data
-wire		[5:0]plfdata_d;		//plfdata delayed by one low res pixel
-wire		sprsel_d;				//sprsel delayed by one low res pixel
+wire	[11:0]hamrgb;			//hold and modify mode RGB video data
+wire	[5:0]plfdata_d;		//plfdata delayed by one low res pixel
+wire	sprsel_d;				//sprsel delayed by one low res pixel
 reg		[3:0]sprdata_d;		//sprdata delayed by one low res pixel
 
 reg		[5:0]tabledata;		//color table color select in
-wire		[11:0]tablergb;		//color table rgb data out
+wire	[11:0]tablergb;		//color table rgb data out
 reg		[11:0]outrgb;			//final multiplexer rgb output data
-wire		window;				//window enable signal
+wire	window;					//window enable signal
 
-wire		[15:0]idout; 			//deniseid dataout
-wire		[15:0]colout;			//colision detection dataout
+wire	[15:0]idout; 			//deniseid dataout
+wire	[15:0]colout;			//colision detection dataout
 
 //--------------------------------------------------------------------------------------
 
@@ -117,17 +123,17 @@ assign dclk=dclkl1^dclkl2;
 
 //Denise local horizontal beamcounter
 always @(posedge clk)
-	if(sol)
-		horbeam<=0;
+	if (strhor)
+		horbeam <= 16;
 	else
-		horbeam<=horbeam+1;
+		horbeam <= horbeam + 1;
 
 //Denise local vertical beamcounter
 always @(posedge clk)
-	if(sof)
-		verbeam<=0;
-	else if(sol)
-		verbeam<=verbeam+1;
+	if (sof)
+		verbeam <= 0;
+	else if (sol)
+		verbeam <= verbeam + 1;
 
 //--------------------------------------------------------------------------------------
 
@@ -161,11 +167,7 @@ always @(posedge clk)
 	if(regaddress[8:1]==DIWSTOP[8:1])
 		diwstop[15:0]<=datain[15:0];
 
-//deniseID register	the value of the last bus cycle is latched and read when deniseid is selected
-always @(posedge clk)
-	if(regaddress[8:1]!=8'b11111111)//when no idle cycle latch bus value
-		deniseid<=datain;
-assign idout=(regaddress[8:1]==DENISEID[8:1])?deniseid:16'b0000000000000000;
+assign idout = regaddress[8:1]==DENISEID[8:1] ? 16'hFF_FF : 16'b00000000_00000000;
 
 //--------------------------------------------------------------------------------------
 

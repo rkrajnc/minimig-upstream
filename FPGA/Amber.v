@@ -29,151 +29,201 @@
 // 10-01-2006		-first serious version
 // 11-01-2006		-done lot's of work, Amber is now finished
 // 29-12-2006		-added support for OSD overlay
+// JB:
+// 26-02-2008	- synchronous 28MHz version
+// 28-02-2008	- horizontal and vertical interpolation
+// 02-03-2008	- hfilter/vfilter inputs added, unused inputs removed
 
-module amber(	clk,vgaclk,dblscan,
-			osdblank,osdpixel,
-			redin,bluein,greenin,_hsyncin,_vsyncin,
-			redout,blueout,greenout,_hsyncout,_vsyncout);
-input 	clk;		   			//bus clock / lores pixel clock
-input	vgaclk;				//VGA pixel clock
-input	dblscan;				//enable VGA output (enable scandoubler)
-input	osdblank;				//OSD overlay enable (blank normal video)
-input	osdpixel;				//OSD pixel(video) data
-input 	[3:0]redin; 			//red componenent video in
-input 	[3:0]greenin;  		//green component video in
-input 	[3:0]bluein;			//blue component video in
-input	_hsyncin;				//horizontal synchronisation in
-input	_vsyncin;				//vertical synchronisation in
-output 	[3:0]redout; 			//red componenent video out
-output 	[3:0]greenout;  		//green component video out
-output 	[3:0]blueout;			//blue component video out
-output	_hsyncout;			//horizontal synchronisation out
-output	_vsyncout;			//vertical synchronisation out
+module Amber
+(	
+	input	clk,
+	input 	clk28m,
+	input	[1:0]lr_filter,
+	input	[1:0]hr_filter,
+	input	hires,
+	input	dblscan,				//enable VGA output (enable scandoubler)
+	input	osdblank,				//OSD overlay enable (blank normal video)
+	input	osdpixel,				//OSD pixel(video) data
+	input 	[3:0]redin, 			//red componenent video in
+	input 	[3:0]greenin,  		//green component video in
+	input 	[3:0]bluein,			//blue component video in
+	input	_hsyncin,				//horizontal synchronisation in
+	input	_vsyncin,				//vertical synchronisation in
+	output 	reg [3:0]redout, 		//red componenent video out
+	output 	reg [3:0]greenout,  	//green component video out
+	output 	reg [3:0]blueout,		//blue component video out
+	output	reg _hsyncout,			//horizontal synchronisation out
+	output	reg _vsyncout			//vertical synchronisation out
+);
 
 //local signals
-reg		_vsyncout; 			//registered output
-reg		[25:0]linebuf[453:0];	//scan doubler line buffer
-reg		[11:0]hresbuf;			//hires pixel buffer
-reg		[9:0]addr;			//line buffer input address
-reg		[25:0]vgadata;			//linebuffer output data
-reg		_hsyncd;				//delayed _hsyncin
-wire		_hcsync;				//horizontal/composite sync
-wire		[3:0]redin2; 			//video data + osd overlay
-wire		[3:0]greenin2;		    	//video data + osd overlay
-wire		[3:0]bluein2;	 		//video data + osd overlay
+reg 	[3:0]red_del;
+reg 	[3:0]green_del;
+reg 	[3:0]blue_del;
 
-//delayed version of _hsync
-always @(posedge clk)
-	_hsyncd<=_hsyncin;	
+wire 	[4:0]red;
+wire	[4:0]green;
+wire 	[4:0]blue;
 
-//OSD overlay
-assign redin2[3:0]=(osdblank)?{osdpixel,osdpixel,osdpixel,osdpixel}:redin[3:0];
-assign greenin2[3:0]=(osdblank)?{osdpixel,osdpixel,osdpixel,osdpixel}:greenin[3:0];
-assign bluein2[3:0]=(osdblank)?4'b1111:bluein[3:0];
+reg		_hsyncin_del;			//delayed horizontal synchronisation input
+reg		hss;					//horizontal sync start
 
-//latch data for hires pixel at falling edge of clk (hires is double pumped, see Denise)
-always @(negedge clk)
-	hresbuf[11:0]<={redin2[3:0],greenin2[3:0],bluein2[3:0]};
+reg		hfilter;				//horizontal interpolation enable
+reg		vfilter;				//vertical interpolation enable
 
-//video line input address counter and line counter
-//counter is synchronised to leading edge of _hsyncin 
-always @(posedge clk)
-	if(!_hsyncin && _hsyncd)
-		addr[9:0]<={~addr[9],9'b000000000};
+//-----------------------------------------------------------------------------//
+
+// local horizontal counters for scan doubling
+reg		[10:0]hposin;		//line buffer write pointer
+reg		[10:0]hposout;	//line buffer read pointer
+//reg		[10:0]htotal;		//line length (for variable line length)
+
+always @(posedge clk28m)
+	_hsyncin_del <= _hsyncin;
+
+//horizontal sync start	
+always @(posedge clk28m)
+	hss <= ~_hsyncin & _hsyncin_del;
+
+// pixels delayed by one hires pixel for horizontal interpolation
+always @(posedge clk28m)
+	if (hposin[0])	//sampled at 14MHz (hires clock rate)
+		begin
+			red_del <= redin;
+			green_del <= greenin;
+			blue_del <= bluein;
+		end
+
+//horizontal interpolation
+assign red	= hfilter ? redin + red_del : redin*2;
+assign green = hfilter ? greenin + green_del : greenin*2;
+assign blue	= hfilter ? bluein + blue_del : bluein*2;
+
+// horizontal line length
+//always @(posedge clk28m)
+//	if (hss)
+//		htotal <= hposin;
+
+// line buffer write pointer
+always @(posedge clk28m)
+	if (hss)
+		hposin <= 0;
 	else
-		addr[8:0]<=addr[8:0]+1;
+		hposin <= hposin + 1;
 
-//horizontal / composite sync control
-assign _hcsync=(dblscan)?_hsyncin:(_hsyncin&_vsyncin);
-
-//register vertical sync output
-always @(posedge clk)
-	if(dblscan)
-		_vsyncout<=_vsyncin;//31kHz mode
+//line buffer read pointer
+always @(posedge clk28m)
+//	if (hss || hposout==htotal/2)//for variable line length use htotal/2
+	if (hss || hposout==907)
+		hposout <= 0;
 	else
-		_vsyncout<=1;//15kHz mode
+		hposout <= hposout + 1;
 
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//28 MHz VGA part (clocked by vgaclk)
-reg 		[3:0]redout; 		//registered output
-reg 		[3:0]greenout;  	//registered output
-reg 		[3:0]blueout;		//registered output
-reg		_hsyncout;		//registered output
-reg 		phd;				//used to detect line phase errors
-reg		phe;				//true if line phase error detected
-wire		eovl;			//end of vga video line
-reg		[9:0]vgahorbeam;	//28MHz horizontal beam counter
-reg		vce;				//28MHz vga clock enable
+always @(posedge clk28m)
+	if (hss)
+		hfilter <= hires ? hr_filter[0] : lr_filter[0];		//horizontal interpolation enable
 
-//clock enable control, if scandoubler is enabled (vgaenable==1)
-//ce is always true, so that the circuitry runs a 31kHz linerate.
-//if the scandoubler is disabled, vce toggles @ vgaclk/2, so
-//that the circuitry runs at 15kHz linerate
-always @(posedge vgaclk)
-	if(dblscan)
-		vce<=1;//31kHz mode
-	else
-		vce<=~vce;//15kHz mode
+always @(posedge clk28m)
+	if (hss)
+		vfilter <= hires ? hr_filter[1] : lr_filter[1];		//vertical interpolation enable
 
-//line phase error detector for 31kHz mode
-//line data (vgadata) is valid for 2 clocks
-//on the second clock (vgahorbeam[0]==1), the phase is checked
-//if it was equal during the scan phe=0. If the phase changed phe=1
-//and the beamcounter is delayed by one clock
-always @(posedge vgaclk)
-	if(vce && vgahorbeam[0] && eovl)
-	begin
-		phd<=vgadata[0];
-		phe<=0;
-	end
-	else if(vce && vgahorbeam[0] && (phd==vgadata[0]))
-		phe<=1;
+reg	[17:0]lbf[1023:0];	// line buffer for scan doubling (there are 908/910 hires pixels in every line)
+reg [17:0]lbfo;			// line buffer output register
+reg [17:0]lbfo2;			// compensantion for one clock delay of the second line buffer
+reg	[17:0]lbfd[1023:0];	// delayed line buffer for vertical interpolation
+reg [17:0]lbfdo;			// delayed line buffer output register
 
-//VGA 28MHz horizontal beamcounter
-always @(posedge vgaclk)
-	if(vce && eovl && !phe)
-		vgahorbeam[9:0]<=0;
-	else	if (vce && !eovl)
-		vgahorbeam[9:0]<=vgahorbeam[9:0]+1;
+// line buffer write
+always @(posedge clk28m)
+	lbf[hposin[10:1]] <= { _hsyncin, osdblank, osdpixel, red, green, blue };
 
-//detect end of vga line
-assign eovl=(vgahorbeam[9:0]==907)?1:0;
-		
-//registered rgb output and horizontal sync output
-always @(posedge vgaclk)
+//line buffer read
+always @(posedge clk28m)
+	lbfo <= lbf[hposout[9:0]];
+
+//delayed line buffer write
+always @(posedge clk28m)
+	lbfd[hposout[9:0]] <= lbfo;
+
+//delayed line buffer read
+always @(posedge clk28m)
+	lbfdo <= lbfd[hposout[9:0]];
+
+//delayed line buffer pixel by one clock cycle
+always @(posedge clk28m)
+	lbfo2 <= lbfo;
+
+// output pixel generation - OSD mixer and vertical interpolation
+always @(posedge clk28m)
 begin
-	//red, green and blue
-	if(vgahorbeam[0])
-	begin
-		redout[3:0]<=vgadata[25:22];
-		greenout[3:0]<=vgadata[21:18];
-		blueout[3:0]<=vgadata[17:14];
-	end
-	else
-	begin
-		redout[3:0]<=vgadata[13:10];
-		greenout[3:0]<=vgadata[9:6];
-		blueout[3:0]<=vgadata[5:2];
-	end
-	//horizontal synchronization
-	_hsyncout<=vgadata[1];
+		_hsyncout <= dblscan ? lbfo2[17] : _hsyncin&_vsyncin;
+		
+		if (~dblscan)
+		begin  //pass through
+			if (osdblank) //osd window
+			begin
+				if (osdpixel)	//osd text colour
+				begin
+					redout    <= 4'b1110;
+					greenout  <= 4'b1110;
+					blueout   <= 4'b1110;
+				end
+				else //osd background
+				begin
+					redout    <= redin / 2;
+					greenout  <= greenin / 2;
+					blueout   <= 4'b0100 + bluein / 2;
+				end
+			end
+			else //no osd
+			begin
+					redout    <= redin;
+					greenout  <= greenin;
+					blueout   <= bluein;
+			end
+		end
+		else
+		begin
+			if (lbfo2[16]) //osd window
+			begin
+				if (lbfo2[15])	//osd text colour
+				begin
+					redout    <= 4'b1110;
+					greenout  <= 4'b1110;
+					blueout   <= 4'b1110;
+				end
+				else	//osd background
+					if (vfilter)
+					begin //dimmed transparent background with vertical interpolation
+						redout    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
+						greenout  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
+						blueout   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) /8;
+					end
+					else
+					begin //dimmed transparent background without vertical interpolation
+						redout    <= lbfo2[14:11] / 2;
+						greenout  <= lbfo2[9:6] / 2;
+						blueout   <= 4'b0100 + lbfo2[4:1] / 2;
+					end
+			end
+			else	//no osd
+				if (vfilter)
+				begin //vertical interpolation
+					redout    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
+					greenout  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
+					blueout   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
+				end
+				else
+				begin //no vertical interpolation
+					redout    <= lbfo2[14:11];
+					greenout  <= lbfo2[9:6];
+					blueout   <= lbfo2[4:1];
+				end
+		end
 end
 
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------
+// vsync buffer
+always @(posedge clk28m)
+	_vsyncout <= _vsyncin;
 
-//line buffer
-//this should instantiate a dual ported block ram
-always @(posedge clk)
-	linebuf[addr[8:0]]<={hresbuf,redin2[3:0],greenin2[3:0],bluein2[3:0],_hcsync,addr[9]};
-always @(posedge vgaclk)
-	if(vce && !vgahorbeam[0])
-		vgadata<=linebuf[vgahorbeam[9:1]];
-
-//--------------------------------------------------------------------------------------
 endmodule
