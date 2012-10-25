@@ -22,27 +22,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 2009-09-08	- ScrollDir uses direct structure copy beacuse directory is list of file entries smaller memory footprint
 2009-10-15	- Removed extern string buffer reference defined in main
 2009-12-13	- Fixed ScrollDir when searching for file begining with specific character 
-
+2010-08-21	- Directory displayed with "<dir>" prefix instead only "d"
+			- String buffer for directory write depends on OSD line length now
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Modified directory list display
+			- Added handling for different OSD line size
 */
+
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
+#include "hardware.h"
 #include "osd.h"
 #include "fat16.h"
 #include "fileBrowser.h"
+#include "osdFont.h"
 
 
 unsigned char dirptr;						// pointer into directory array
 bdata struct fileTYPE directory[DIRSIZE];	// directory array 
 
+const unsigned char defDirMarker[] = "<dir> ";	// Default directory marker
 
 // print the contents of directory[] and the pointer dirptr onto the OSD
 void PrintDir(void)
 {
 	unsigned char i;
 
-	// TODO: Check for osd text size 21 or 25
-	unsigned char s[22];
+	// Define string buffer needed +1 char for \0
+	unsigned char s[(OSD_LINE_BYTES / (OSD_FONT_CHAR_WIDTH+OSD_FONT_CHAR_SPACING))+1];
 
 	if (0 == directory[0].name[0])
 	{
@@ -52,7 +61,7 @@ void PrintDir(void)
 
 	for(i=0;i < DIRSIZE;i++)
 	{
-		// Clear temp string
+		// Clear temp string and terminate
 		memset(s,' ',sizeof(s));
 		s[sizeof(s)-1] = 0;
 
@@ -64,13 +73,25 @@ void PrintDir(void)
 
 			// Mark directory
 			if(directory[i].attributes & FAT_ATTRIB_DIR)
-			{	s[0]='D';	}
+			{	strcpy(s,defDirMarker);	}
 			
 			// Copy name for display
 			if(longFilename[0])
-			{	strncpy(&s[3],longFilename,17);		}
+			{
+				strncpy(
+					&s[sizeof(defDirMarker)-1],
+					longFilename,
+					sizeof(s)-sizeof(defDirMarker)-2
+				);
+			}
 			else
-			{	strncpy(&s[3],directory[i].name,12);	}
+			{
+				strncpy(
+					&s[sizeof(defDirMarker)-1],
+					directory[i].name,
+					sizeof(s)-sizeof(defDirMarker)-2
+				);
+			}
 		}
 
 		OsdWrite(i, s, i==dirptr);

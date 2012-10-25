@@ -5,7 +5,11 @@
 //#define HDD_DEBUG
 
 // Enable / Disable HDD support
-#define	HDD_SUPPORT_ENABLE
+// HDD_SUPPORT_ENABLE -> Defined in firmwareConfiguration.h
+
+// TODO: Enable / Disable HDD Multi block transfer
+// NOTE: This feature is not finished
+// #define HDD_MULTIBLOCK_TRANSFER_ENABLE
 
 #define CMD_IDECMD			0x04
 #define CMD_IDEDAT			0x08
@@ -148,6 +152,9 @@ typedef struct hdfTYPE
 	unsigned short	cylinders;
 	unsigned short	heads;
 	unsigned short	sectors;
+	#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+	unsigned short	sectors_per_block;
+	#endif
 };
 
 // hardfile structure
@@ -164,9 +171,13 @@ void HandleHDD(unsigned char c1, unsigned char c2);
 void GetHardfileGeometry(struct hdfTYPE *hdf);
 unsigned char OpenHardfile(unsigned char unit, unsigned char *name);
 
+#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit, unsigned char multi);
+void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit, unsigned char multi);
+#else
 void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit);
 void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit);
-
+#endif
 
 #ifdef HDD_DEBUG
 void HDD_Debug(const char *msg, unsigned char *tfr);

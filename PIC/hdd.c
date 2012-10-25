@@ -35,11 +35,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			- WriteStatus renamed to WriteIDEStatus
 2009-01-24	- ReadHDDSectors, WriteHDDSectors refactored out of HandleHDD
 			- Removed variable for handling direct transfer mode, ReadFileEx is used with NULL param for buffer
+2010-03-10	- Added Multi block transfer define
+			- Added ACMD_SET_MULTIPLE_MODE command (NOT_FINISHED!)
+			- Added ACMD_READ_MULTIPLE command (NOT_FINISHED!)
+			- Added ACMD_WRITE_MULTIPLE command (NOT_FINISHED!)
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Modified maximum sectors per block in Read/Write Multiple command from 0x8008 to 0x8010
+2010-10-09	- Multi block transfers work in progress changed to conditional compile
+			- NOTE: There is not enough memory for multi block transfers even with other features dissabled
 */
 
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "config.h"
 #include "mmc.h"
 #include "fat16.h"
@@ -87,6 +96,10 @@ void IdentifyDevice(struct driveIdentify *id, unsigned char unit)
 
 	SwapBytes(&id->modelNumber, 40);
 
+	#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+	id->maxSecTransfer = 0x8010;						//maximum sectors per block in Read/Write Multiple command 
+	#endif
+	
 	id->isValidCHS = 1;
 	id->curNoCylinders = hdf[unit].cylinders;
 	id->curNoHeads = hdf[unit].heads;
@@ -108,6 +121,7 @@ unsigned long chs2lba(union ideRegsTYPE *ideRegs, unsigned char unit)
 	res += (unsigned long)ideRegs->regs.sector;
 	res -= 1;
 	
+	// Doesn't work for some strange reason
 //	return(cylinder * hdf[unit].heads + head) * hdf[unit].sectors + sector - 1;
     return res;
 }
@@ -146,6 +160,7 @@ void WriteIDEStatus(unsigned char status)
     DisableFpga();
 }
 
+
 void NextHDDSector(union ideRegsTYPE *ideRegs, unsigned char unit)
 {
 	unsigned char head;
@@ -177,7 +192,6 @@ void HandleHDD(unsigned char c1, unsigned char c2)
 	unsigned char	*buffer;
 	union ideRegsTYPE	ideRegs;
 	unsigned short	i;
-//	unsigned long	lba;
 	unsigned char	unit;
 
 	if (c1 & CMD_IDECMD)
@@ -260,14 +274,47 @@ void HandleHDD(unsigned char c1, unsigned char c2)
 
 			WriteIDEStatus(IDE_STATUS_END | IDE_STATUS_IRQ);
         }
-        else if (ideRegs.regs.cmd == ACMD_READ_SECTORS)		// Read Sectors 0x20
+		#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+        else if (ideRegs.regs.cmd == ACMD_SET_MULTIPLE_MODE)
         {
-        	ReadHDDSectors(&ideRegs,unit);
+			#ifdef HDD_DEBUG
+        	HDD_Debug("Set Multiple Mode\r\n", ideRegs.regs.count);
+			#endif
+
+        	// Read Sector Count in Multi Block Transfer
+			hdf[unit].sectors_per_block = ideRegs.regs.count;
+			
+			WriteIDEStatus(IDE_STATUS_END | IDE_STATUS_IRQ);
         }
+		#endif
+        else if (ideRegs.regs.cmd == ACMD_READ_SECTORS)
+        {
+			#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+        	ReadHDDSectors(&ideRegs, unit,0);
+			#else
+        	ReadHDDSectors(&ideRegs, unit);
+			#endif
+        }
+		#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+        else if (ideRegs.regs.cmd == ACMD_READ_MULTIPLE)
+        {
+        	ReadHDDSectors(&ideRegs, unit, 1);
+        }
+		#endif
         else if (ideRegs.regs.cmd == ACMD_WRITE_SECTORS)
         {
-        	WriteHDDSectors(&ideRegs,unit);
+			#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+        	WriteHDDSectors(&ideRegs, unit, 0);
+			#else
+        	WriteHDDSectors(&ideRegs, unit);
+			#endif
         }
+		#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+        else if (ideRegs.regs.cmd == ACMD_WRITE_MULTIPLE)
+        {
+        	WriteHDDSectors(&ideRegs, unit, 1);
+        }
+		#endif
         else
         {
 			#ifdef HDD_DEBUG
@@ -284,38 +331,120 @@ void HandleHDD(unsigned char c1, unsigned char c2)
 }
 
 
+#ifdef HDD_MULTIBLOCK_TRANSFER_ENABLE
+
 // Read HDD Sectors
-void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
+void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit, unsigned char multi)
 {
 	unsigned short	i;
 	unsigned long	lba;
 
-	WriteIDEStatus(IDE_STATUS_RDY); // pio in (class 1) command type
+	WriteIDEStatus(IDE_STATUS_RDY);		// pio in (class 1) command type
 
 	lba = chs2lba(ideRegs, unit);
+	FileSeek(&hdf[unit].file, lba);
 
 	#ifdef HDD_DEBUG
 	HDD_Debug("Read\r\n", ideRegs->tfr);
 	printf("CHS: %d.%d.%d\r\n", ideRegs->regs.cylinder, ideRegs->regs.mode_drive_head & IDEREGS_HEAD_MASK, ideRegs->regs.sector);
 	printf("Read LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs->tfr[2]);
 	#endif
-
-	FileSeek(&hdf[unit].file, lba);
 	
-	do
-	{
-		// Wait for IDE cmd
-	    while (!(GetFPGAStatus()& CMD_IDECMD));
+	// Wait for IDE cmd
+	while (!(GetFPGAStatus()& CMD_IDECMD));
 
-	    #ifdef ALOW_MMC_DIRECT_TRANSFER_MODE
-		
-//		MMC_DIRECT_TRANSFER_MODE = 1;
-//		FileRead(&hdf[unit].file);
+	#ifdef ALOW_MMC_DIRECT_TRANSFER_MODE
+
+	FileReadEx(&hdf[unit].file, NULL);
+
+	#else
+
+	// Read sector to buffer
+	FileRead(&hdf[unit].file);
+	
+	// Send Sector to FPGA
+	BeginHDDTransfer(CMD_IDE_DATA_WR, 0x00);
+	for(i=0; i < 512; i++)
+	{	SPI(secbuf[i]);	}
+	DisableFpga();
+	
+	#endif
+	
+	// decrease sector count
+	ideRegs->regs.count--;
+
+	// advance to next sector unless the last one is to be transmitted
+	NextHDDSector(ideRegs,unit);
+
+	WriteIDERegs(ideRegs);
+	WriteIDEStatus((ideRegs->regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
+}
+
+
+// Write HDD sectors
+void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit, unsigned char multi)
+{
+	unsigned short	i;
+	unsigned long	lba;
+
+    // pio out (class 2) command type
+	WriteIDEStatus(IDE_STATUS_REQ);
+
+	// write sectors
+	lba = chs2lba(ideRegs, unit);
+	FileSeek(&hdf[unit].file, lba);
+    
+	#ifdef HDD_DEBUG
+	HDD_Debug("Write\r\n", ideRegs->tfr);
+	printf("Write LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs->tfr[2]);
+	#endif
+
+    // cmd request and drive number
+    while (!(GetFPGAStatus()& CMD_IDEDAT));
+
+    // Read Sector from FPGA
+	BeginHDDTransfer(CMD_IDE_DATA_RD, 0x00);
+    for (i = 0; i < 512; i++)
+    {  	secbuf[i] = SPI(0xFF);		}
+    DisableFpga();
+
+    // Write sector to file
+	FileWrite(&hdf[unit].file);	
+
+    // decrease sector count
+	ideRegs->regs.count--;
+    // advance to next sector unless the last one is to be transmitted
+	NextHDDSector(ideRegs,unit);
+
+	WriteIDERegs(ideRegs);
+	WriteIDEStatus((ideRegs->regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
+}
+
+#else
+
+// Read HDD Sectors
+void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
+{
+	unsigned short	i;
+	unsigned long	lba;
+
+	WriteIDEStatus(IDE_STATUS_RDY);		// pio in (class 1) command type
+
+	lba = chs2lba(ideRegs, unit);
+	FileSeek(&hdf[unit].file, lba);
+
+	#ifdef HDD_DEBUG
+	HDD_Debug("Read\r\n", ideRegs->tfr);
+	printf("CHS: %d.%d.%d\r\n", ideRegs->regs.cylinder, ideRegs->regs.mode_drive_head & IDEREGS_HEAD_MASK, ideRegs->regs.sector);
+	printf("Read LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs->tfr[2]);
+	#endif
+	
+	// Wait for IDE cmd
+	while (!(GetFPGAStatus()& CMD_IDECMD));
+
+	#ifdef ALOW_MMC_DIRECT_TRANSFER_MODE
 		FileReadEx(&hdf[unit].file, NULL);
-//		MMC_DIRECT_TRANSFER_MODE = 0;
-		
-		#else
-		
+	#else
 		// Read sector to buffer
 		FileRead(&hdf[unit].file);
 		
@@ -324,68 +453,17 @@ void ReadHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
 		for(i=0; i < 512; i++)
 		{	SPI(secbuf[i]);	}
 		DisableFpga();
-		
-		#endif
-		
-		// decrease sector count
-		ideRegs->regs.count--;
-
-		// Go to next file sector
-		FileNextSector(&hdf[unit].file);
-
-		// advance to next sector unless the last one is to be transmitted
-		//NextHDDSector(ideRegs,unit);
-		//WriteIDERegs(ideRegs);
-		
-		//WriteIDEStatus((ideRegs->regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
-		WriteIDEStatus(IDE_STATUS_IRQ);
-	}
-	while(ideRegs->regs.count);
-
-	WriteIDEStatus(IDE_STATUS_END);
-
-	/*
-	WriteIDEStatus(IDE_STATUS_RDY); // pio in (class 1) command type
-
-	lba = chs2lba(&ideRegs, unit);
-
-	#ifdef HDD_DEBUG
-	HDD_Debug("Read\r\n", ideRegs.tfr);
-	printf("CHS: %d.%d.%d\r\n", ideRegs.regs.cylinder, ideRegs.regs.mode_drive_head & IDEREGS_HEAD_MASK, ideRegs.regs.sector);
-	printf("Read LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs.tfr[2]);
 	#endif
-
-	FileSeek(&hdf[unit].file, lba);
 	
-	#ifdef ALOW_MMC_DIRECT_TRANSFER_MODE
-	
-		MMC_DIRECT_TRANSFER_MODE = 1;
-		FileRead(&hdf[unit].file);
-		MMC_DIRECT_TRANSFER_MODE = 0;
-
-	#else
-
-		// Read sector to buffer
-		FileRead(&hdf[unit].file);
-
-    	// Send Sector to FPGA
-		BeginHDDTransfer(CMD_IDE_DATA_WR, 0x00);
-    	for(i=0; i < 512; i++)
-        {	SPI(secbuf[i]);	}
-    	DisableFpga();
-
-	#endif
-
 	// decrease sector count
-	ideRegs.regs.count--;
-	// advance to next sector unless the last one is to be transmitted
-	NextHDDSector(&ideRegs,unit);
-	WriteIDERegs(&ideRegs);
-	
-	WriteIDEStatus((ideRegs.regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
-	*/
-}
+	ideRegs->regs.count--;
 
+	// advance to next sector unless the last one is to be transmitted
+	NextHDDSector(ideRegs,unit);
+
+	WriteIDERegs(ideRegs);
+	WriteIDEStatus((ideRegs->regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
+}
 
 // Write HDD sectors
 void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
@@ -398,13 +476,12 @@ void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
 
 	// write sectors
 	lba = chs2lba(ideRegs, unit);
+	FileSeek(&hdf[unit].file, lba);
     
 	#ifdef HDD_DEBUG
 	HDD_Debug("Write\r\n", ideRegs->tfr);
 	printf("Write LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs->tfr[2]);
 	#endif
-
-	FileSeek(&hdf[unit].file, lba);
 
     // cmd request and drive number
     while (!(GetFPGAStatus()& CMD_IDEDAT));
@@ -425,43 +502,9 @@ void WriteHDDSectors(union ideRegsTYPE *ideRegs, unsigned char unit)
 	WriteIDERegs(ideRegs);
 	
 	WriteIDEStatus((ideRegs->regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
-
-	/*
-	// write sectors
-	lba = chs2lba(&ideRegs, unit);
-    
-	#ifdef HDD_DEBUG
-	HDD_Debug("Write\r\n", ideRegs.tfr);
-	printf("Write LBA:0x%08lX/SC:0x%02X\r\n", lba, ideRegs.tfr[2]);
-	#endif
-
-	FileSeek(&hdf[unit].file, lba);
-
-    // pio out (class 2) command type
-	WriteIDEStatus(IDE_STATUS_REQ);
-
-    // cmd request and drive number
-    while (!(GetFPGAStatus()& CMD_IDEDAT));
-
-    // read data command
-	BeginHDDTransfer(CMD_IDE_DATA_RD, 0x00);
-    for (i = 0; i < 512; i++)
-    {  	secbuf[i] = SPI(0xFF);		}
-    DisableFpga();
-
-    // Write sector to file
-	FileWrite(&hdf[unit].file);	
-
-    // decrease sector count
-	ideRegs.regs.count--;
-    // advance to next sector unless the last one is to be transmitted
-	NextHDDSector(&ideRegs,unit);
-	WriteIDERegs(&ideRegs);
-	
-	WriteIDEStatus((ideRegs.regs.count ? 0 : IDE_STATUS_END) | IDE_STATUS_IRQ);
-	*/
 }
 
+#endif
 
 
 // this function comes from WinUAE, should return the same CHS as WinUAE

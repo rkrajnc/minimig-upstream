@@ -32,11 +32,23 @@ Minimig on screen display menu
 2009-12-20	- Unselecting HD Files Added
 2009-12-23	- Fixed HD file unselection by clearing global file handle when no file selection done
 2009-12-30	- Kickstart reloading code cleanup
+2010-01-29	- Alternate core loading added
+2010-08-20	- Chipset config features for new Yaqube core YQ100818
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Added Info Menu display
+			- Modified Chipset display handling
+			- Modified Chipset config handling
+2010-09-09	- Fixed Alternate core select always from root
+2010-09-12	- Autofire handling 
+2010-10-05	- Autofire handling conditionaly compiled
+			- Turbo selection conditionlay compiled
+			- Alternate cores selection conditionaly compiled
 */
 
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "hardware.h"
 #include "boot.h"
 #include "osd.h"
@@ -49,17 +61,32 @@ Minimig on screen display menu
 
 
 //global temporary buffer for strings
-extern unsigned char s[25];
+//defined in main.c
+extern unsigned char s[32];
 
 // variables
 unsigned char menustate = MENU_NONE1;
 unsigned char menusub = 0;
 
+#ifdef	AUTOFIRE_RATE_KEYBOARD_SELECT || TURBO_MODE_KEYBOARD_SELECT
+unsigned short menu_timer;
+#endif
+
+#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT
+unsigned char config_autofire = 0;
+#endif
+
+
 // "const" added before array to move arrays to rom
 const char * const config_filter_msg[] =  {"none", "HOR ", "VER ", "H+V "};
 const char * const config_memory_chip_msg[] = {"0.5 MB", "1.0 MB", "1.5 MB", "2.0 MB"};
 const char * const config_memory_slow_msg[] = {"none  ", "0.5 MB", "1.0 MB", "1.5 MB"};
-const char * const config_scanline_msg[] = {"off", "dim", "blk"};
+const char * const config_scanline_msg[] = {"Off", "Dim", "Blk"};
+#if	defined(PGL100818)
+const char * const config_chipset_msg[] = {"OCS-A500", "OCS-A1000", "ECS", "---"};
+const char * const config_autofire_msg[] = {"Off", "Fast", "Medium", "Slow"};
+#endif
+
 
 // Variables for decoded events
 bit up;
@@ -68,6 +95,10 @@ bit select;
 bit menu;
 bit right;
 bit left;
+#if	defined(PGL100818)
+bit ctrl = 0;
+bit lalt = 0;
+#endif
 
 // File Selection
 const unsigned char *fbFileExt;
@@ -76,8 +107,10 @@ unsigned char fbSelectedStatePreselect;
 unsigned char fbExitState;
 unsigned char fbAllowDirectorySelect;
 
+#ifdef ALTERNATE_CORES
 // Alternate Core Loaded
 unsigned char bAlternateCoreLoaded;
+#endif
 
 void HandleUI(void)
 {
@@ -95,6 +128,23 @@ void HandleUI(void)
 	right = 0;
 	left = 0;
 
+	#if	defined(PGL100818)
+	// Control and Left Alt key handling
+	if (c==KEY_CTRL)					{	ctrl = 1;	}
+	if (c==(KEY_CTRL|KEY_UPSTROKE))		{	ctrl = 0;	}
+	if (c==KEY_LALT)					{	lalt = 1;	}
+	if (c==(KEY_LALT|KEY_UPSTROKE))		{	lalt = 0;	}
+	#endif
+
+	#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT
+	if (c==KEY_KP0)						{	AutoFireSwitch();	}
+	#endif
+
+	#ifdef TURBO_MODE_KEYBOARD_SELECT
+	if (c==KEY_KPPLUS)					{	TurboModeSwitch(1);	}
+	if (c==KEY_KPMINUS)					{	TurboModeSwitch(0);	}
+	#endif
+	
 	if (c==KEY_UP)						{	up = 1;	}
 	if (c==KEY_DOWN)					{	down = 1;	}
 	if (c==KEY_ENTER || c==KEY_SPACE)	{	select = 1;	}
@@ -109,7 +159,7 @@ void HandleUI(void)
 	switch (menustate)
 	{
 		/******************************************************************/
-		/*no menu selected / menu exited / menu not displayed*/
+		/*no menu selected / menu exited / menu not displayed			  */
 		/******************************************************************/
 		case MENU_NONE1 :
 			OsdDisable();
@@ -123,7 +173,11 @@ void HandleUI(void)
 				menustate = MENU_MAIN1;
 				menusub = 0;
 				OsdClear();
-				OsdEnable();
+				#if		defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+					OsdEnable();
+				#elif	defined(PGL100818)
+					OsdEnable(DISABLE_KEYBOARD);
+				#endif
 			}
 			break;
 
@@ -257,7 +311,11 @@ void HandleUI(void)
 			break;
 
 		case MENU_MAIN_EXT2:
+			#ifdef ALTERNATE_CORES
+			HandleUpDown(MENU_MAIN_EXT1, 3);
+			#else
 			HandleUpDown(MENU_MAIN_EXT1, 2);
+			#endif
 
 			if (select) 
 			{
@@ -271,6 +329,8 @@ void HandleUI(void)
 					}
 					else if (1 == menusub)
 					{
+						// Always Core From Root
+						OpenRootDirectory(&currentDir);
 						// Select Alternate Core
 						SelectFile(defCoreExt, MENU_ALTCORE_SELECTED, menusub, MENU_MAIN_EXT1, 0);
 					}
@@ -491,7 +551,7 @@ void HandleUI(void)
 		case MENU_SETTINGS_CHIPSET1 :
 			OsdWrite(0, " \x1B  -= CHIPSET =-  \x1A", 0);
 	
-			#if	defined(PYQ090405)
+			#if	defined(PGL090421)
 				strcpy(s, "      CPU : ");
 				strcat(s, config.chipset & CONFIG_CPU_28MHZ ? "28.36MHz " : " 7.09MHz");
 				OsdWrite(2, s, 0 == menusub);
@@ -503,7 +563,7 @@ void HandleUI(void)
 				strcpy(s, "    Agnus : ");
 				strcat(s, config.chipset & CONFIG_AGNUS_NTSC ? "NTSC" : "PAL ");
 				OsdWrite(4, s, 2 == menusub);
-			#elif	defined(PGL091207) || defined(PGL091230)
+			#elif	defined(PGL090911) || defined(PGL091224)
 				strcpy(s, "      CPU : ");
 				strcat(s, config.chipset & CONFIG_CPU_TURBO ? "turbo " : "normal");
 				OsdWrite(2, s, 0 == menusub);
@@ -514,6 +574,18 @@ void HandleUI(void)
 	
 				strcpy(s, "    Agnus : ");
 				strcat(s, config.chipset & CONFIG_AGNUS_ECS ? "ECS" : "OCS");
+				OsdWrite(4, s, 2 == menusub);
+			#elif	defined(PGL100818)
+				strcpy(s, "      CPU : ");
+				strcat(s, config.chipset & CONFIG_TURBO ? "turbo " : "normal");
+				OsdWrite(2, s, 0 == menusub);
+	
+				strcpy(s, "    Video : ");
+				strcat(s, config.chipset & CONFIG_NTSC ? "NTSC  " : "PAL ");
+				OsdWrite(3, s, 1 == menusub);
+	
+				strcpy(s, "  Chipset : ");
+				strcat(s, config_chipset_msg[config.chipset >> 2 & 0x03]);
 				OsdWrite(4, s, 2 == menusub);
 			#endif
 	
@@ -528,7 +600,7 @@ void HandleUI(void)
 	
 			if (select)
 			{
-				#if	defined(PYQ090405)
+				#if	defined(PGL090421)
 
 					if (0 == menusub)
 					{
@@ -555,7 +627,7 @@ void HandleUI(void)
 						OsdClear();
 					}
 
-				#elif	defined(PGL091207) || defined(PGL091230)
+				#elif	defined(PGL090911) || defined(PGL091224)
 
 					if (0 == menusub)
 					{
@@ -582,6 +654,37 @@ void HandleUI(void)
 						OsdClear();
 					}
 
+				#elif	defined(PGL100818)
+
+					if (0 == menusub)
+					{
+						config.chipset ^= CONFIG_TURBO;
+						menustate = MENU_SETTINGS_CHIPSET1;
+						ConfigChipset(config.chipset);
+					}
+					else if (1 == menusub)
+					{
+						config.chipset ^= CONFIG_NTSC;
+						menustate = MENU_SETTINGS_CHIPSET1;
+						ConfigChipset(config.chipset);
+					}
+					else if (2 == menusub)
+					{
+						if(config.chipset & CONFIG_ECS)
+						{	config.chipset &= ~(CONFIG_ECS|CONFIG_A1000);	}
+						else
+						{	config.chipset += CONFIG_A1000;	}
+
+						menustate = MENU_SETTINGS_CHIPSET1;
+						ConfigChipset(config.chipset);
+					}
+					else if (3 == menusub)/*return to settings menu*/
+					{
+						menustate = MENU_SETTINGS1;
+						menusub = 0;
+						OsdClear();
+					}
+					
 				#endif
 			}
 	
@@ -699,13 +802,9 @@ void HandleUI(void)
 			sprintf(s,"   drives   : %d", config.floppy_drives + 1);
 			OsdWrite(2, s, 0 == menusub);
 	
-			//strcpy(s, "   speed    : ");
-			//strcat(s, config.floppy_speed ? "2x " : "1x");
 			sprintf(s,"   speed    : %s", config.floppy_speed ? "2x " : "1x");
 			OsdWrite(3, s, 1 == menusub);
 	
-	        //strcpy(s, "   A600 IDE : ");
-	        //strcat(s, config.ide ? "on " : "off");
 			sprintf(s,"   A600 IDE : %s", config.ide ? "on " : "off");
 			OsdWrite(4, s, menusub == 2);
 	
@@ -733,8 +832,6 @@ void HandleUI(void)
 				}
 				else if (1 == menusub)
 				{
-					//config.floppy_speed++;
-					//config.floppy_speed &= 0x01;
 					config.floppy_speed ^= CONFIG_FLOPPY2X; 
 					menustate = MENU_SETTINGS_DRIVES1;
 					ConfigFloppy(config.floppy_drives, config.floppy_speed);
@@ -984,10 +1081,12 @@ void HandleUI(void)
 						//reset to bootloader
 						OsdReset(RESET_BOOTLOADER);
 						
-						#if	defined(PYQ090405)
+						#if	defined(PGL090421)
 							ConfigChipset(config.chipset|CONFIG_CPU_28MHZ);			//force CPU turbo mode
-						#elif	defined(PGL091207) || defined(PGL091230)
+						#elif	defined(PGL090911) || defined(PGL091224)
 							ConfigChipset(config.chipset|CONFIG_CPU_TURBO);			//force CPU turbo mode
+						#elif	defined(PGL100818) 
+							ConfigChipset(config.chipset|CONFIG_TURBO);				//force CPU turbo mode
 						#endif
 
 						ConfigFloppy(1, 1);
@@ -1056,11 +1155,23 @@ void HandleUI(void)
 		/*error message menu*/
 		/******************************************************************/
 		case MENU_ERROR:
-			if (menu)/*exit when menu button is pressed*/
-			{
-				menustate = MENU_NONE1;
-			}
+			/*exit when menu button is pressed*/
+			if (menu)
+			{	menustate = MENU_NONE1;	}
 			break;
+
+		#ifdef	AUTOFIRE_RATE_KEYBOARD_SELECT || TURBO_MODE_KEYBOARD_SELECT
+		/******************************************************************/
+		/*Info message menu*/
+		/******************************************************************/
+		case MENU_INFO:
+			/*exit when menu button is pressed*/
+			if (menu)
+			{	menustate = MENU_NONE1;		}
+			else if (CheckTimer(menu_timer))
+			{	menustate = MENU_NONE1;		}
+			break;
+		#endif
 	
 		/******************************************************************/
 		/*we should never come here*/
@@ -1116,11 +1227,80 @@ void ErrorMessage(const char* message, unsigned char code)
 	strncpy(s,message,21);
 	s[21] = 0;
 	OsdWrite(2,s,0);
+
 	if (code)
 	{
 		sprintf(s,"  error #%d",code);
 		OsdWrite(4,s,0);
 	}
-	OsdEnable();
+	#if	defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+		OsdEnable();
+	#elif	defined(PGL100818) 
+		OsdEnable(0);	// Don't dissable keyboard
+	#endif
 }
 
+
+#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT
+
+void AutoFireSwitch()
+{
+	// Control + Left Alt + Keypad 0 and not in menu
+	if(ctrl && lalt && (menustate == MENU_NONE2 || menustate == MENU_INFO))
+	{
+		config_autofire++;
+		config_autofire &= 0x03;
+		ConfigAutofire(config_autofire);
+		sprintf(s, "AutoFire:%s", config_autofire_msg[config_autofire]);
+		InfoMessage(s);
+	}
+}
+
+#endif
+
+#ifdef TURBO_MODE_KEYBOARD_SELECT
+
+void TurboModeSwitch(unsigned char bTurbo)
+{
+	// Control + Left Alt + Keypad Plus/Minus
+	if(ctrl && lalt)
+	{
+		if(bTurbo)
+		{	config.chipset |= CONFIG_TURBO;	}
+		else
+		{	config.chipset &= ~CONFIG_TURBO;	}
+		ConfigChipset(config.chipset);
+
+		if (menustate == MENU_SETTINGS_CHIPSET2)
+		{	menustate = MENU_SETTINGS_CHIPSET1;	}
+		else if (menustate == MENU_NONE2 || menustate == MENU_INFO)
+		{
+			sprintf(s, "Turbo:%s", bTurbo ? "On":"Off");
+			InfoMessage(s);
+		}
+	}
+}
+
+#endif
+
+#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT || TURBO_MODE_KEYBOARD_SELECT
+
+void InfoMessage(char *message)
+{   
+	// TODO: Make it wait Vertical Blank
+	//OsdWaitVBL();
+
+	if (menustate != MENU_INFO)
+	{	
+		OsdClear();
+		// do not disable keyboard
+		OsdEnable(0);
+	}
+	
+	OsdWrite(1, message, 0);
+	// Keep it for one sec on screen
+	menu_timer = GetTimer(100);
+	menustate = MENU_INFO;
+}
+
+#endif

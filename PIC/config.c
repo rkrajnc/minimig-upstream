@@ -25,58 +25,71 @@ Minimig configuration Load/Save
 2009-11-30	- Defaults for kickstart and Action Replay Added
 2009-12-04	- IDE Config Load/Save Added
 			- Code Cleaned a bit
-2009-12-24	- Fixed loading saving chipset settings for minimg FPGA firmware PYQ090911 
+2009-12-24	- Fixed loading saving chipset settings for minimg FPGA firmware PYQ090911
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Added default FPGA file name depending on PIC code version
+2010-09-12	- Default EEPROM config enabled and set for default config to avoid issues on flash
 */
 
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "fat16.h"
 #include "adf.h"
 #include "hdd.h"
 #include "config.h"
 
 // Default EEprom config, clear on flash
-/*
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-__EEPROM_DATA(0,0,0,0,0,0,0,0);
-*/
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x4,0x0,0x1,0x3,0x1,0x0);	// Filter LoRes, Filter HiRes, Memory, Chipset, Floppy Speed, Floppy Drives, Ar Enable, Scan Line
+__EEPROM_DATA('K','I','C','K',' ',' ',' ',' ');	// Kick name(8)
+__EEPROM_DATA('R','O','M',0x0,0x0,0x1,0x1,'H');	// Kick name(4), IDE enabled, IDE Master, IDE Slave, HDFile0(1) 
+__EEPROM_DATA('D','F','I','L','E','0','0','H'); // HDFile0(8)
+__EEPROM_DATA('D','F',0x0,'H','D','F','I','L'); // HDFile0(3), HDFile1(5) 
+__EEPROM_DATA('E','0','1','H','D','F',0x0,0x0); // HDFile1(7)
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
+__EEPROM_DATA(0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0);	// Empty
 
 // Current config in ram
 struct configType	config;
 
-// Defaults
-const unsigned char defFPGAName[]	= "MINIMIG1BIN";
+// Default FPGA file name
+#if defined(PGL090421) && defined(USE_CORE_SPECIFIC_FILENAME)
+	const unsigned char defFPGAName[]	= "YQ090421BIN";
+#elif defined(PGL090911) && defined(USE_CORE_SPECIFIC_FILENAME)
+	const unsigned char defFPGAName[]	= "YQ090911BIN";
+#elif defined(PGL091224) && defined(USE_CORE_SPECIFIC_FILENAME)
+	const unsigned char defFPGAName[]	= "YQ091224BIN";
+#elif defined(PGL100818) && defined(USE_CORE_SPECIFIC_FILENAME)
+	const unsigned char defFPGAName[]	= "YQ100818BIN";
+#else
+	const unsigned char defFPGAName[]	= "MINIMIG1BIN";
+#endif
+
 const unsigned char defKickName[]	= "KICK    ROM";
 const unsigned char defARName[] 	= "AR3     ROM";
 const unsigned char	defHDFileName[]	= "HDFILE%02dHDF";

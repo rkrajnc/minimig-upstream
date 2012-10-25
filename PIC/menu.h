@@ -2,7 +2,7 @@
 #define MENU_H_
 
 // Enables / Disables Alternate core loading
-#define ALTERNATE_CORES
+// ALTERNATE_CORES -> Defined in firmwareConfiguration.h
 
 // menu states
 enum MENU
@@ -37,14 +37,19 @@ enum MENU
 	#ifdef ALTERNATE_CORES
 	MENU_ALTCORE_SELECTED,
 	#endif
+	#ifdef	AUTOFIRE_RATE_KEYBOARD_SELECT || TURBO_MODE_KEYBOARD_SELECT
+	MENU_INFO,
+	#endif
 };
 
 // Extern exposed variables
 extern const char * const config_memory_chip_msg[];
 extern const char * const config_memory_slow_msg[];
 
+#ifdef ALTERNATE_CORES
 // Alternate Core Loaded
 extern unsigned char bAlternateCoreLoaded;
+#endif
 
 void HandleUI(void);
 void HandleUpDown(unsigned char state, unsigned char max);
@@ -52,5 +57,16 @@ void SelectFile(const char* extension, unsigned char selectedState, unsigned cha
 
 void ErrorMessage(const char* message, unsigned char code);
 
+#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT
+	void AutoFireSwitch(void);
+#endif
+
+#ifdef TURBO_MODE_KEYBOARD_SELECT
+	void TurboModeSwitch(unsigned char bTurbo);
+#endif
+
+#ifdef	AUTOFIRE_RATE_KEYBOARD_SELECT || TURBO_MODE_KEYBOARD_SELECT
+	void InfoMessage(char *message);
+#endif
 
 #endif /*MENU_H_*/

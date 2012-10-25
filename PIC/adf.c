@@ -34,11 +34,17 @@ ADF Routines for minimig
 			- adapted gap size
 			- fixed sector header generation
 			- removed DMA size check from ReadTrack
+2010-08-26	- Added firmwareConfiguration.h
+			- Removed Flopy insert on OSD, not visible anyway
+2010-09-09	- Added definitions for standard floppy size
+			- Added defines for MFM format
+			
 */
 
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "hardware.h"
 #include "fat16.h"
 #include "osd.h"
@@ -95,20 +101,23 @@ void UpdateDriveStatus(void)
 
 
 /*insert floppy image pointed to to by global <file> into <drive>*/
+
 void InsertFloppy(struct adfTYPE *drive)
 {
-	unsigned char i;
+//	unsigned char i;
 
 	// clear OSD and display message
-	OsdClear();
-	OsdWrite(1,"     Inserting",0);
-	OsdWrite(2,"     floppy...",0);
+	// REMOVED 2010-08-26 - Not visible anyway
+//	OsdClear();
+//	OsdWrite(1,"     Inserting",0);
+//	OsdWrite(2,"     floppy...",0);
 
-	/*copy name*/
-	for (i=0;i<12;i++)
-	{	drive->name[i]=file.name[i];	}
-
-	/*initialize rest of struct*/
+	// copy name
+//	for (i=0;i<12;i++)
+//	{	drive->name[i]=file.name[i];	}
+	strncpy(drive->name, file.name, 12);	// Smaller size
+	
+	// initialize rest of struct
 	drive->status = DSK_INSERTED;
 	
 	//read-only attribute
@@ -188,7 +197,7 @@ void ReadTrack(struct adfTYPE *drive)
 		sector = 0;
 
 		seekSector = (unsigned long)drive->track;
-		seekSector *=11;
+		seekSector *= SECTOR_COUNT;
 		FileSeek(&file, seekSector);
 	}
 	else
@@ -216,7 +225,7 @@ void ReadTrack(struct adfTYPE *drive)
 //		sector = 0;
 		
 //		seekSector = (unsigned long)drive->track;
-//		seekSector *=11;
+//		seekSector *=SECTOR_COUNT;
 //		FileSeek(&file, seekSector);
 //	}
 
@@ -282,7 +291,7 @@ void ReadTrack(struct adfTYPE *drive)
 						printf("+%X", c4);
 						#endif
 					}
-					else if (sector == 10)
+					else if (sector == LAST_SECTOR)
 					{
 						SectorGapToFpga();
 						#ifdef DEBUG_ADF
@@ -305,7 +314,7 @@ void ReadTrack(struct adfTYPE *drive)
 		{	break;	}
 
 		sector++;
-		if (sector < 11)
+		if (sector < SECTOR_COUNT)
 		{	FileNextSector(&file);	}
 		else
 		{
@@ -313,7 +322,7 @@ void ReadTrack(struct adfTYPE *drive)
 			sector = 0;
 				
 			seekSector = (unsigned long)drive->track;
-			seekSector *=11;
+			seekSector *= SECTOR_COUNT;
 			FileSeek(&file, seekSector);
 		}
 
@@ -345,7 +354,7 @@ void WriteTrack(struct adfTYPE *drive)
 	
 	//setting file pointer to begining of current track
 	seekSector = (unsigned long)drive->track;
-	seekSector *=11;
+	seekSector *=SECTOR_COUNT;
 	FileSeek(&file, seekSector);
 
 	sector = 0;
@@ -374,7 +383,7 @@ void WriteTrack(struct adfTYPE *drive)
 					else
 					{
 						seekSector = (unsigned long)drive->track;
-						seekSector *=11;
+						seekSector *=SECTOR_COUNT;
 						FileSeek(&file, seekSector);
 
 						sector = 0;
@@ -479,7 +488,7 @@ unsigned char GetHeader(unsigned char * pTrack, unsigned char * pSector)
 		c1 = SPI(0); //write request signal
 		c2 = SPI(0); //track number (cylinder & head)
 		if (!(c1 & CMD_WRTRK))
-			break;
+		{	break;	}
 		SPI(0); //disk sync high byte
 		SPI(0); //disk sync low byte
 		c3 = SPI(0); //msb of mfm words to transfer
@@ -500,38 +509,39 @@ unsigned char GetHeader(unsigned char * pTrack, unsigned char * pSector)
 
 			c = SPI(0);
 			checksum[0] = c;
-			c1 = (c&0x55)<<1;
+			c1 = (c & MFM_DATA_BITS_MASK)<<1;
 			c = SPI(0);
 			checksum[1] = c;
-			c2 = (c&0x55)<<1;
+			c2 = (c & MFM_DATA_BITS_MASK)<<1;
 			c = SPI(0);
 			checksum[2] = c;
-			c3 = (c&0x55)<<1;
+			c3 = (c & MFM_DATA_BITS_MASK)<<1;
 			c = SPI(0);
 			checksum[3] = c;
-			c4 = (c&0x55)<<1;
+			c4 = (c & MFM_DATA_BITS_MASK)<<1;
 
 			c = SPI(0);
 			checksum[0] ^= c;
-			c1 |= c&0x55;
+			c1 |= c & MFM_DATA_BITS_MASK;
 			c = SPI(0);
 			checksum[1] ^= c;
-			c2 |= c&0x55;
+			c2 |= c & MFM_DATA_BITS_MASK;
 			c = SPI(0);
 			checksum[2] ^= c;
-			c3 |= c&0x55;
+			c3 |= c & MFM_DATA_BITS_MASK;
 			c = SPI(0);
 			checksum[3] ^= c;
-			c4 |= c&0x55;
+			c4 |= c & MFM_DATA_BITS_MASK;
+
 
 			if (c1 != 0xFF)//always 0xFF
-				Error = 22;
+			{	Error = 22;	}
 			else if (c2 > 159)//Track number (0-159)
-				Error = 23;
+			{	Error = 23;	}
 			else if (c3 > 10)//Sector number (0-10)
-				Error = 24;
+			{	Error = 24;	}
 			else if (c4 > 11 || c4==0)//Number of sectors to gap (1-11)
-				Error = 25;
+			{	Error = 25;	}
 
 			if (Error)
 			{
@@ -556,20 +566,20 @@ unsigned char GetHeader(unsigned char * pTrack, unsigned char * pSector)
 				checksum[3] ^= SPI(0);
 			}
 
-			checksum[0] &= 0x55;
-			checksum[1] &= 0x55;
-			checksum[2] &= 0x55;
-			checksum[3] &= 0x55;
+			checksum[0] &= MFM_DATA_BITS_MASK;
+			checksum[1] &= MFM_DATA_BITS_MASK;
+			checksum[2] &= MFM_DATA_BITS_MASK;
+			checksum[3] &= MFM_DATA_BITS_MASK;
 
-			c1 = (SPI(0)&0x55)<<1;
-			c2 = (SPI(0)&0x55)<<1;
-			c3 = (SPI(0)&0x55)<<1;
-			c4 = (SPI(0)&0x55)<<1;
+			c1 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c2 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c3 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c4 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
 
-			c1 |= SPI(0)&0x55;
-			c2 |= SPI(0)&0x55;
-			c3 |= SPI(0)&0x55;
-			c4 |= SPI(0)&0x55;
+			c1 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c2 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c3 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c4 |= SPI(0) & MFM_DATA_BITS_MASK;
 
 			if (c1!=checksum[0] || c2!=checksum[1] || c3!=checksum[2] || c4!=checksum[3])
 			{
@@ -610,7 +620,7 @@ unsigned char GetData(void)
 		c1 = SPI(0); //write request signal
 		c2 = SPI(0); //track number (cylinder & head)
 		if (!(c1 & CMD_WRTRK))
-			break;
+		{	break;	}
 		SPI(0); //disk sync high byte
 		SPI(0); //disk sync low byte
 		c3 = SPI(0); //msb of mfm words to transfer
@@ -620,15 +630,15 @@ unsigned char GetData(void)
 
 		if (n >= 0x204)
 		{
-			c1 = (SPI(0)&0x55)<<1;
-			c2 = (SPI(0)&0x55)<<1;
-			c3 = (SPI(0)&0x55)<<1;
-			c4 = (SPI(0)&0x55)<<1;
+			c1 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c2 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c3 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
+			c4 = (SPI(0) & MFM_DATA_BITS_MASK)<<1;
 
-			c1 |= SPI(0)&0x55;
-			c2 |= SPI(0)&0x55;
-			c3 |= SPI(0)&0x55;
-			c4 |= SPI(0)&0x55;
+			c1 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c2 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c3 |= SPI(0) & MFM_DATA_BITS_MASK;
+			c4 |= SPI(0) & MFM_DATA_BITS_MASK;
 
 			checksum[0] = 0;
 			checksum[1] = 0;
@@ -636,49 +646,49 @@ unsigned char GetData(void)
 			checksum[3] = 0;
 
 			/*odd bits of data field*/
-			i = 128;
+			i = SECTOR_BYTES / 4;
 			p = secbuf;
 			do
 			{
 				c = SPI(0);
 				checksum[0] ^= c;
-				*p++ = (c&0x55)<<1;
+				*p++ = (c & MFM_DATA_BITS_MASK)<<1;
 				c = SPI(0);
 				checksum[1] ^= c;
-				*p++ = (c&0x55)<<1;
+				*p++ = (c & MFM_DATA_BITS_MASK)<<1;
 				c = SPI(0);
 				checksum[2] ^= c;
-				*p++ = (c&0x55)<<1;
+				*p++ = (c & MFM_DATA_BITS_MASK)<<1;
 				c = SPI(0);
 				checksum[3] ^= c;
-				*p++ = (c&0x55)<<1;
+				*p++ = (c & MFM_DATA_BITS_MASK)<<1;
 			}
 			while (--i);
 
 			/*even bits of data field*/
-			i = 128;
+			i = SECTOR_BYTES / 4;
 			p = secbuf;
 			do
 			{
 				c = SPI(0);
 				checksum[0] ^= c;
-				*p++ |= c&0x55;
+				*p++ |= c & MFM_DATA_BITS_MASK;
 				c = SPI(0);
 				checksum[1] ^= c;
-				*p++ |= c&0x55;
+				*p++ |= c & MFM_DATA_BITS_MASK;
 				c = SPI(0);
 				checksum[2] ^= c;
-				*p++ |= c&0x55;
+				*p++ |= c & MFM_DATA_BITS_MASK;
 				c = SPI(0);
 				checksum[3] ^= c;
-				*p++ |= c&0x55;
+				*p++ |= c & MFM_DATA_BITS_MASK;
 			}
 			while (--i);
 
-			checksum[0] &= 0x55;
-			checksum[1] &= 0x55;
-			checksum[2] &= 0x55;
-			checksum[3] &= 0x55;
+			checksum[0] &= MFM_DATA_BITS_MASK;
+			checksum[1] &= MFM_DATA_BITS_MASK;
+			checksum[2] &= MFM_DATA_BITS_MASK;
+			checksum[3] &= MFM_DATA_BITS_MASK;
 
 			if (c1 != checksum[0] || c2 != checksum[1] || c3 != checksum[2] || c4 != checksum[3])
 			{
@@ -717,10 +727,10 @@ unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned 
 	unsigned char c3, c4;
 
 	/*preamble*/
-	SPI(0xAA);
-	SPI(0xAA);
-	SPI(0xAA);
-	SPI(0xAA);
+	SPI(MFM_CLOCK_BITS);
+	SPI(MFM_CLOCK_BITS);
+	SPI(MFM_CLOCK_BITS);
+	SPI(MFM_CLOCK_BITS);
 
 	/*synchronization*/
 	SPI(dsksynch);
@@ -729,59 +739,65 @@ unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned 
 	SPI(dsksyncl);
 
 	/*clear header checksum*/
-	csum[0]=0;
-	csum[1]=0;
-	csum[2]=0;
-	csum[3]=0;
+//	csum[0]=0;
+//	csum[1]=0;
+//	csum[2]=0;
+//	csum[3]=0;
 
 	/*odd bits of header*/
-	c=0x55;
-	csum[0]^=c;
+	c=MFM_DATA_BITS_MASK;
+//	csum[0]^=c;
+	csum[0]=c;
 	SPI(c);
-	c=(track>>1)&0x55;
-	csum[1]^=c;
+	c=(track>>1) & MFM_DATA_BITS_MASK;
+//	csum[1]^=c;
+	csum[1]=c;
 	SPI(c);
-	c=(sector>>1)&0x55;
-	csum[2]^=c;
+	c=(sector>>1) & MFM_DATA_BITS_MASK;
+//	csum[2]^=c;
+	csum[2]=c;
 	SPI(c);
-	c=((11-sector)>>1)&0x55;
-	csum[3]^=c;
+	c=((SECTOR_COUNT-sector)>>1) & MFM_DATA_BITS_MASK;
+//	csum[3]^=c;
+	csum[3]=c;
 	SPI(c);
 
 	/*even bits of header*/
-	c=0x55;
+	c=MFM_DATA_BITS_MASK;
 	csum[0]^=c;
 	SPI(c);
-	c=track&0x55;
+	c=track & MFM_DATA_BITS_MASK;
 	csum[1]^=c;
 	SPI(c);
-	c=sector&0x55;
+	c=sector & MFM_DATA_BITS_MASK;
 	csum[2]^=c;
 	SPI(c);
-	c=(11-sector)&0x55;
+	c=(SECTOR_COUNT-sector) & MFM_DATA_BITS_MASK;
 	csum[3]^=c;
 	SPI(c);
 
 	/*sector label and reserved area (changes nothing to checksum)*/
-	for (i=0;i<32;i++)
-	{	SPI(0xAA);	}
+	i=32;
+	do
+	{	SPI(MFM_CLOCK_BITS);	}
+	while(--i);
 
 	/*checksum over header*/
-	SPI((csum[0]>>1)|0xaa);
-	SPI((csum[1]>>1)|0xaa);
-	SPI((csum[2]>>1)|0xaa);
-	SPI((csum[3]>>1)|0xaa);
-	SPI(csum[0]|0xaa);
-	SPI(csum[1]|0xaa);
-	SPI(csum[2]|0xaa);
-	SPI(csum[3]|0xaa);
+	SPI((csum[0]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[1]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[2]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[3]>>1)|MFM_CLOCK_BITS);
+	SPI(csum[0]|MFM_CLOCK_BITS);
+	SPI(csum[1]|MFM_CLOCK_BITS);
+	SPI(csum[2]|MFM_CLOCK_BITS);
+	SPI(csum[3]|MFM_CLOCK_BITS);
 
 	/*calculate data checksum*/
 	csum[0]=0;
 	csum[1]=0;
 	csum[2]=0;
 	csum[3]=0;
-	i=128;
+	i=SECTOR_BYTES/4;
 	p=secbuf;
 	do
 	{
@@ -799,70 +815,73 @@ unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned 
 		csum[3]^=c;
 	}
 	while (--i);
-	csum[0]&=0x55;
-	csum[1]&=0x55;
-	csum[2]&=0x55;
-	csum[3]&=0x55;
+	csum[0]&=MFM_DATA_BITS_MASK;
+	csum[1]&=MFM_DATA_BITS_MASK;
+	csum[2]&=MFM_DATA_BITS_MASK;
+	csum[3]&=MFM_DATA_BITS_MASK;
 
 
 	/*checksum over data*/
-	SPI((csum[0]>>1)|0xaa);
-	SPI((csum[1]>>1)|0xaa);
-	SPI((csum[2]>>1)|0xaa);
-	SPI((csum[3]>>1)|0xaa);
-	SPI(csum[0]|0xaa);
-	SPI(csum[1]|0xaa);
-	SPI(csum[2]|0xaa);
-	SPI(csum[3]|0xaa);
+	SPI((csum[0]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[1]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[2]>>1)|MFM_CLOCK_BITS);
+	SPI((csum[3]>>1)|MFM_CLOCK_BITS);
+	SPI(csum[0]|MFM_CLOCK_BITS);
+	SPI(csum[1]|MFM_CLOCK_BITS);
+	SPI(csum[2]|MFM_CLOCK_BITS);
+	SPI(csum[3]|MFM_CLOCK_BITS);
 
 	/*odd bits of data field*/
-	i=128;
+	i=SECTOR_BYTES/4;
 	p=secbuf;
 	do
 	{
 		c=*(p++);
 		c>>=1;
-		c|=0xaa;
+		c|=MFM_CLOCK_BITS;
 		SSPBUF=c;
 		while (!BF);
 
 		c=*(p++);
 		c>>=1;
-		c|=0xaa;
+		c|=MFM_CLOCK_BITS;
 		SSPBUF=c;
 		while (!BF);
 
 		c=*(p++);
 		c>>=1;
-		c|=0xaa;
+		c|=MFM_CLOCK_BITS;
 		SSPBUF=c;
 		while (!BF);
 
 		c=*(p++);
 		c>>=1;
-		c|=0xaa;
+		c|=MFM_CLOCK_BITS;
 		SSPBUF=c;
 		while (!BF);
 	}
 	while (--i);
 
 	/*even bits of data field*/
-	i=128;
+	i=SECTOR_BYTES/4;
 	p=secbuf;
 	do
 	{
 		c=*(p++);
-		SSPBUF=c|0xaa;
+		SSPBUF=c|MFM_CLOCK_BITS;
 		while (!BF);
+
 		c=*(p++);
-		SSPBUF=c|0xaa;
+		SSPBUF=c|MFM_CLOCK_BITS;
 		while (!BF);
+		
 		c=*(p++);
-		SSPBUF=c|0xaa;
+		SSPBUF=c|MFM_CLOCK_BITS;
 		while (!BF);
 		c3 = SSPBUF;
+		
 		c=*(p++);
-		SSPBUF=c|0xaa;
+		SSPBUF=c|MFM_CLOCK_BITS;
 		while (!BF);
 		c4 = SSPBUF;
 	}
@@ -874,13 +893,11 @@ unsigned short SectorToFpga(unsigned char sector, unsigned char track, unsigned 
 
 void SectorGapToFpga()
 {
-	unsigned short i = (12668 - 544*11*2) / 2;
+	unsigned short i = GAP_SIZE;
 
-	while (i--);
-	{
-		SPI(0xAA);
-		SPI(0xAA);
-	}
+	do
+	{	SPI(MFM_CLOCK_BITS);	}
+	while (--i);
 }
 
 
@@ -888,13 +905,13 @@ void SectorHeaderToFpga(unsigned char n, unsigned char dsksynch, unsigned char d
 {
 	if (n)
 	{
-		SPI(0xAA);
-		SPI(0xAA);
+		SPI(MFM_CLOCK_BITS);
+		SPI(MFM_CLOCK_BITS);
 
 		if (--n)
 		{
-			SPI(0xAA);
-			SPI(0xAA);
+			SPI(MFM_CLOCK_BITS);
+			SPI(MFM_CLOCK_BITS);
 
 			if (--n)
 			{

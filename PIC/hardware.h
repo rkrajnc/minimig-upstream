@@ -1,31 +1,27 @@
 #ifndef HARDWARE_H_INCLUDED
 #define HARDWARE_H_INCLUDED
 
-// To String helper define
-#define _DEF_TO_STRING(str)	#str
-#define DEF_TO_STRING(str)	_DEF_TO_STRING(str)
-
-// PIC firmware revision
-//#define	PYQ090405	PYQ090405
-//#define	PGL091207	PGL091207
-#define	PGL091230	PGL091230
-
 // Define Command header, FPGA and PIC rev
-#if	defined(PYQ090405)
+#if	defined(PGL090421)
 	#define	FPGA_CMD_HDR0	0xAA
 	#define	FPGA_CMD_HDR1	0x55
-	#define FPGA_REV 		PYQ090405
-	#define	PIC_REV			PGL090405
-#elif	defined(PGL091207)
+	#define FPGA_REV 		YQ090421
+	#define	PIC_REV			PGL090421
+#elif	defined(PGL090911)
 	#define	FPGA_CMD_HDR0	0xAA
 	#define	FPGA_CMD_HDR1	0x67
-	#define FPGA_REV 		PYQ090911
-	#define	PIC_REV			PGL091207
-#elif	defined(PGL091230)
+	#define FPGA_REV 		YQ090911
+	#define	PIC_REV			PGL090911
+#elif	defined(PGL091224)
 	#define	FPGA_CMD_HDR0	0xAA
 	#define	FPGA_CMD_HDR1	0x68
-	#define FPGA_REV 		PYQ091224
-	#define	PIC_REV			PGL091230
+	#define FPGA_REV 		FYQ091224
+	#define	PIC_REV			PGL091224
+#elif	defined(PGL100818)
+	#define	FPGA_CMD_HDR0	0xAA
+	#define	FPGA_CMD_HDR1	0x69
+	#define FPGA_REV 		FYQ100818
+	#define	PIC_REV			PGL100818
 #endif
 
 
@@ -59,7 +55,7 @@
 #define		DisableCard()	{_M_CS=1;SPI(0xff);_M_CD=0;}
 #define		CheckButton()	(!_SW0)
 #define		ResetFPGA()		{	PROG_B_VAL = 0; PROG_B=0; PROG_B=1;	}
-
+#define		SPI_MACRO(val)	{ 	SSPBUF=val;while(!BF);	}
 
 // functions
 void HardwareInit(void);

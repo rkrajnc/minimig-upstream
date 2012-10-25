@@ -49,10 +49,12 @@ images.
 			- Fixed LFN search when previous entries are either volume or short dir entires
 2009-12-23	- Fixed File Open when no file is found handle is cleared
 2010-01-24	- Added FileReadEx function
+2010-08-26	- Added firmwareConfiguration.h
 */
 
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "mmc.h"
 #include "fat16.h"
 

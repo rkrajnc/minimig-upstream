@@ -23,8 +23,10 @@ This is the Minimig OSD Font Only to make it separate .
 			- Fixed vertical position by shifting all chars for 1 bit right
 2009-12-05	- Font reduced to 7bit ASCII to fit in rom
 2009-12-25	- Added constants for font definition
+2010-08-26	- Added firmwareConfiguration.h
 */
 
+#include "firmwareConfiguration.h"
 #include "osdFont.h"
 
 // character font

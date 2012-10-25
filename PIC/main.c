@@ -88,13 +88,24 @@ WriteTrack errors:
 			- PAL/NTSC switch constants used
 			- Code cleanup comments removed
 			- ConfigureFpga modified to accept default string filename
-2009-01-29	- FPGA Core reset on PIC reset to allow reseting cores that are messed up SPI lines to SD card e.g. VIC20
+2010-01-29	- FPGA Core reset on PIC reset to allow reseting cores that are messed up SPI lines to SD card e.g. VIC20
 			- Main loop added handling for alternate core, for future alternate core requests
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Added handling for new NTSC mode variables
+			- TODO: changes to floppy handling (Check ARM source AYQ100818)
+			- TODO: improved menu button handling (Check ARM source AYQ100818)
+			- improved FPGA configuration routines (This allready might be done in alternate core handling) (Check ARM source AYQ100818)
+			- TODO: added support for OSD vsync (Check ARM source AYQ100818)
+			- support for joystick emulation (Check ARM source AYQ100818)
+2010-10-09	- Finished support for FYQ100818
+			- support for joystick emulation auto fire
+			- support for turbo mode switching
 */
 
 #include <pic18.h>
 #include <stdio.h>
 #include <string.h>
+#include "firmwareConfiguration.h"
 #include "boot.h"
 #include "hardware.h"
 #include "osd.h"
@@ -114,7 +125,7 @@ const char version[] = { "$VER:" DEF_TO_STRING(PIC_REV) "\0" };
 void HandleFpga(void);
 
 //global temporary buffer for strings
-unsigned char s[25];
+unsigned char s[32];
 
 
 /* This is where it all starts after reset */
@@ -127,8 +138,11 @@ void main(void)
 	memset(df,0,sizeof(df));
 	// Reset HD status
 	memset(hdf,0,sizeof(hdf));
+
+	#ifdef ALTERNATE_CORES
 	// Reset Alternate Core Loaded Status on reset 
 	bAlternateCoreLoaded = 0;
+	#endif
 	
 	// initialize hardware
 	HardwareInit();
@@ -157,21 +171,16 @@ void main(void)
 		FatalError(2);
 	}
 
-//	if (DONE) //FPGA has not been configured yet
-//	{		printf("FPGA already configured\r\n");		}
-//	else
-//	{
-		/*configure FPGA*/
-		if (ConfigureFpga(defFPGAName))
-		{	printf("\r\nFPGA configured\r\n");	}
-		else
-		{
-			#ifdef MAIN_DEBUG
-			printf("\r\nFPGA configuration failed\r\n");
-			#endif
-			FatalError(3);
-		}
-//	}
+	/*configure FPGA*/
+	if (ConfigureFpga(defFPGAName))
+	{	printf("\r\nFPGA configured\r\n");	}
+	else
+	{
+		#ifdef MAIN_DEBUG
+		printf("\r\nFPGA configuration failed\r\n");
+		#endif
+		FatalError(3);
+	}
 
 	//let's wait some time till reset is inactive so we can get a valid keycode
 	DISKLED_OFF;
@@ -180,30 +189,45 @@ void main(void)
 	//get key code
 	tmp = OsdGetCtrl();
 
-	if (tmp == KEY_F1)	{	config.chipset |= CONFIG_AGNUS_NTSC;	}	//force NTSC mode
-	if (tmp == KEY_F2)	{	config.chipset &= ~CONFIG_AGNUS_NTSC;	}	//force PAL mode
-
-	#if	defined(PYQ090405)
-		ConfigChipset(config.chipset|CONFIG_CPU_28MHZ);			//force CPU turbo mode
-	#elif	defined(PGL091207) || defined(PGL091230)
-		ConfigChipset(config.chipset|CONFIG_CPU_TURBO);			//force CPU turbo mode
+	#if	defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+		if (tmp == KEY_F1)	{	config.chipset |= CONFIG_AGNUS_NTSC;	}	//force NTSC mode
+		if (tmp == KEY_F2)	{	config.chipset &= ~CONFIG_AGNUS_NTSC;	}	//force PAL mode
+	#elif	defined(PGL100818)
+		if (tmp == KEY_F1)	{	config.chipset |= CONFIG_NTSC;	}	//force NTSC mode
+		if (tmp == KEY_F2)	{	config.chipset &= ~CONFIG_NTSC;	}	//force PAL mode
 	#endif
 
-	if (config.chipset & CONFIG_AGNUS_NTSC)		//reset if NTSC mode requested because FPGA boots in PAL mode by default
-	{	OsdReset(RESET_BOOTLOADER);	}
+	#if	defined(PGL090421)
+		ConfigChipset(config.chipset|CONFIG_CPU_28MHZ);			//force CPU turbo mode
+	#elif	defined(PGL090911) || defined(PGL091224) 
+		ConfigChipset(config.chipset|CONFIG_CPU_TURBO);			//force CPU turbo mode
+	#elif	defined(PGL100818)
+		ConfigChipset(config.chipset|CONFIG_TURBO);				//force CPU turbo mode
+	#endif
+
+	#if	defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+		if (config.chipset & CONFIG_AGNUS_NTSC)		//reset if NTSC mode requested because FPGA boots in PAL mode by default
+		{	OsdReset(RESET_BOOTLOADER);	}
+	#elif	defined(PGL100818)
+		if (config.chipset & CONFIG_NTSC)		//reset if NTSC mode requested because FPGA boots in PAL mode by default
+		{	OsdReset(RESET_BOOTLOADER);	}
+	#endif
 
 	ConfigFloppy(1, 1);					//high speed mode for ROM loading
 
 	sprintf(s, "PIC firmware %s\n", version+5);
 	BootPrint(s);
 
-	#if	defined(PYQ090405)
+	#if	defined(PGL090421)
 		sprintf(s, "CPU clock     : %s MHz", config.chipset & CONFIG_CPU_28MHZ ? "28.36": "7.09");
 		BootPrint(s);
 		sprintf(s, "Blitter speed : %s", config.chipset & CONFIG_BLITTER_FAST ? "fast": "normal");
 		BootPrint(s);
-	#elif	defined(PGL091207) || defined(PGL091230)
+	#elif	defined(PGL090911) || defined(PGL091224)
 		sprintf(s, "CPU clock     : %s", config.chipset & CONFIG_CPU_TURBO ? "turbo": "normal");
+		BootPrint(s);
+	#elif	defined(PGL100818)
+		sprintf(s, "CPU clock     : %s", config.chipset & CONFIG_TURBO ? "turbo": "normal");
 		BootPrint(s);
 	#endif
 	
@@ -215,6 +239,7 @@ void main(void)
 	BootPrint(s);
 	sprintf(s, "Floppy speed  : %s\n", config.floppy_speed ? "2x": "1x");
 	BootPrint(s);
+
 
 	// Load Kickstart
 	if (UploadKickstart(config.kickname))
@@ -268,7 +293,7 @@ void main(void)
 	    	sprintf(s, "CHS: %d.%d.%d", hdf[tmp].cylinders, hdf[tmp].heads, hdf[tmp].sectors);
 	    	BootPrint(s);
 	    	
-	    	sprintf(s, "Size: %ld MB\n", ((((unsigned long) hdf[tmp].cylinders) * hdf[tmp].heads * hdf[tmp].sectors) >> 11));
+	    	sprintf(s, "Size: %d MB\n", ((((unsigned long) hdf[tmp].cylinders) * hdf[tmp].heads * hdf[tmp].sectors) >> 11));
 	    	BootPrint(s);
 	    }
 
@@ -319,22 +344,21 @@ void main(void)
 
 	while (1)
 	{
-		if (!bAlternateCoreLoaded)
-		{
-			// handle command
-			HandleFpga();
+		#ifdef ALTERNATE_CORES
+		//TODO: Handle Alternate Core Requests
+		if (bAlternateCoreLoaded)
+		{	continue;	}
+		#endif
 
-			// handle user interface
-			if (CheckTimer(time))
-			{
-				time = GetTimer(2);
-				HandleUI();
-			}
+		// handle command
+		HandleFpga();
+
+		// handle user interface
+		if (CheckTimer(time))
+		{
+			time = GetTimer(2);
+			HandleUI();
 		}
-		//else
-		//{
-		//	//TODO: Handle Alternate Core Requests
-		//}
 	}
 }
 

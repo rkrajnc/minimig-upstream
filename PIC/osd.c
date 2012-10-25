@@ -33,35 +33,47 @@ This is the Minimig OSD (on-screen-display) handler.
 			- OSD Font moved to separate file for easier change
 2009-12-05	- OsdGetCtrl, repeat - changed to short to save memory and smaller code
 			- OsdWrite added switch for new FPGA support
+2010-08-21	- Support for new YQ100818 core
+			- Hires OSD display restored
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-07	- Added Configure AutoFire function
+			- Modified OSD Enable to allow Keyboard disabled when OSD visible
+			- TODO: Define Wait Vertical Blank For OSD Update
+			- TODO: Fix OsdGetCtrl repeat and delays check ARM source
+			- Renamed config IDE define
+			- Renamed config chipset define 
+2010-09-12	- Keycode table reduced in size
+2010-10-05	- Fixed key repeat and delay for new core FYQ100818
 */
 
 #include <pic18.h>
+#include "firmwareConfiguration.h"
+#include "hardware.h"
 #include "osd.h"
 #include "osdFont.h"
-#include "hardware.h"
-
-// some constants
-#define OSD_NO_LINES		8			// number of lines of OSD
-
-#if		defined(PYQ090405)
-	#define	OSD_LINE_BYTES		128		// single line length in bytes
-#elif	defined(PGL091207) || defined(PGL091230)
-	#define	OSD_LINE_BYTES		256		// single line length in bytes
-#endif
-
 
 //Amiga keyboard codes to ASCII convertion table
+#if	defined(PGL100818)
+const char keycode_table[64] =
+{
+	0x0,'1','2','3','4','5','6','7','8','9','0',0x0,0x0,0x0,0x0,0x0,
+	'Q','W','E','R','T','Y','U','I','O','P',0x0,0x0,0x0,0x0,0x0,0x0,
+	'A','S','D','F','G','H','J','K','L',0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,'Z','X','C','V','B','N','M',0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0
+};
+#else
 const char keycode_table[128] =
 {
-	  0,'1','2','3','4','5','6','7','8','9','0',  0,  0,  0,  0,  0,
-	'Q','W','E','R','T','Y','U','I','O','P',  0,  0,  0,  0,  0,  0,
-	'A','S','D','F','G','H','J','K','L',  0,  0,  0,  0,  0,  0,  0,
-	  0,'Z','X','C','V','B','N','M',  0,  0,  0,  0,  0,  0,  0,  0,
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	0x0,'1','2','3','4','5','6','7','8','9','0',0x0,0x0,0x0,0x0,0x0,
+	'Q','W','E','R','T','Y','U','I','O','P',0x0,0x0,0x0,0x0,0x0,0x0,
+	'A','S','D','F','G','H','J','K','L',0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,'Z','X','C','V','B','N','M',0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+	0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0
 };
+#endif
 
 
 // write a null-terminated string <s> to the OSD buffer starting at line <n>
@@ -111,7 +123,7 @@ void OsdWrite(unsigned char n, const unsigned char *s, char invert)
 		}
 		else
 		{
-			#if	defined(PYQ090405)
+			#if	defined(PGL090421) || defined(PGL090911) || defined(PGL100818)
 				// Send Space
 				SPI(0x00);
 	
@@ -125,7 +137,7 @@ void OsdWrite(unsigned char n, const unsigned char *s, char invert)
 				
 				byte_cnt += 6;
 	
-			#elif	defined(PGL091207) || defined(PGL091230)
+			#elif	defined(PGL091224) 
 				// Send Space
 				SPI(0x00);
 				SPI(0x00);
@@ -181,10 +193,31 @@ void OsdClear(void)
 }
 
 // enable displaying of OSD
+#if		defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+
 void OsdEnable(void)
 {
 	OsdCommand(OSDCMDENABLE);
 }
+
+#elif	defined(PGL100818)
+
+void OsdEnable(unsigned char mode)
+{
+	OsdCommand(OSDCMDENABLE | (mode & DISABLE_KEYBOARD));
+}
+
+#endif
+
+#ifdef AUTOFIRE_RATE_KEYBOARD_SELECT
+
+void ConfigAutofire(unsigned char autofire)
+{
+	OsdCommand(OSDCMDAUTOFIRE | (autofire & 0x03));		
+}
+
+#endif
+
 
 // disable displaying of OSD
 void OsdDisable(void)
@@ -209,7 +242,11 @@ void ConfigMemory(unsigned char memory)
 
 void ConfigChipset(unsigned char chipset)
 {
-	OsdCommand(OSDCMDCFGCPU | (chipset&0x0F));
+	#if	defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+		OsdCommand(OSDCMDCFGCPU | (chipset&0x0F));
+	#elif	defined(PGL100818) 
+		OsdCommand(OSDCMDCFGCHP | (chipset&0x0F));
+	#endif
 }
 
 void ConfigFloppy(unsigned char drives, unsigned char speed)
@@ -224,9 +261,12 @@ void ConfigScanline(unsigned char scanline)
 
 void ConfigIDE(unsigned char gayle, unsigned char master, unsigned char slave)
 {
-    OsdCommand(OSDCMDENAHDD | (slave ? 4 : 0) | (master ? 2 : 0) | (gayle ? 1 : 0));
+	#if	defined(PGL090421) || defined(PGL090911) || defined(PGL091224)
+		OsdCommand(OSDCMDENAHDD | (slave ? 4 : 0) | (master ? 2 : 0) | (gayle ? 1 : 0));
+	#elif	defined(PGL100818) 
+		OsdCommand(OSDCMDCFGIDE | (slave ? 4 : 0) | (master ? 2 : 0) | (gayle ? 1 : 0));
+	#endif
 }
-
 
 // get key status
 unsigned char OsdGetCtrl(void)
@@ -251,15 +291,25 @@ unsigned char OsdGetCtrl(void)
 
 	/*generate repeat "key-pressed" events
 	do not for menu button*/
-
-	if (!c1)
-	{	repeat = GetTimer(REPEATDELAY);		}
-	else if (CheckTimer(repeat))
-	{
-		repeat = GetTimer(REPEATRATE);
-		if (c1==KEY_UP || c1==KEY_DOWN || GetASCIIKey(c1))
-		{	c = c1;	}
-	}
+	#if	defined(PGL100818)
+		if (c1 & KEY_UPSTROKE)
+		{	repeat = GetTimer(REPEATDELAY);		}
+		else if (CheckTimer(repeat))
+		{
+			repeat = GetTimer(REPEATRATE);
+			if (c1==KEY_UP || c1==KEY_DOWN || GetASCIIKey(c1))
+			{	c = c1;	}
+		}
+	#else
+		if (!c1)
+		{	repeat = GetTimer(REPEATDELAY);		}
+		else if (CheckTimer(repeat))
+		{
+			repeat = GetTimer(REPEATRATE);
+			if (c1==KEY_UP || c1==KEY_DOWN || GetASCIIKey(c1))
+			{	c = c1;	}
+		}
+	#endif
 
 	// return events
 	return(c);
@@ -267,7 +317,11 @@ unsigned char OsdGetCtrl(void)
 
 unsigned char GetASCIIKey(unsigned char keycode)
 {
-	return keycode&0x80 ? 0 : keycode_table[keycode&0x7F];
+	#if	defined(PGL100818)
+	return keycode & KEY_UPSTROKE ? 0 : keycode_table[keycode&0x3F];
+	#else
+	return keycode & KEY_UPSTROKE ? 0 : keycode_table[keycode&0x7F];
+	#endif
 }
 
 

@@ -11,6 +11,20 @@
 #define		DSK_INSERTED		0x01	/*disk is inserted*/
 #define		DSK_WRITABLE		0x10	/*disk is writable*/
 
+// Define standard floppy params size
+#define	TRACK_SIZE		12668										// Number of bytes in track
+#define	HEADER_SIZE		0x40										// Sector header size
+#define	DATA_SIZE		0x400										// Sector data size
+#define	SECTOR_BYTES	0x200										// Sector data size
+#define	SECTOR_SIZE		(HEADER_SIZE + DATA_SIZE)					// Full sector size header+data
+#define	SECTOR_COUNT	11											// Number of secors per track
+#define	LAST_SECTOR		(SECTOR_COUNT - 1)							// Last sector zero based index
+#define	GAP_SIZE		(TRACK_SIZE - SECTOR_COUNT * SECTOR_SIZE)	// Track gap size
+
+// Some MFM encoding stuff
+#define	MFM_CLOCK_BITS		0xAA	// Clock bits mixed with data
+#define	MFM_DATA_BITS_MASK	0x55	// Data Bits Mask
+
 // Type for storing active floppy-es
 struct adfTYPE
 {

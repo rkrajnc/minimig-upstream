@@ -23,17 +23,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 2009-12-20	- Corrected error display when AR or Rom missing
 2009-12-30	- SendFile optimized a bit to save rom
 			- ConfigureFpga modified to support any FPGA bin length divisable by eight
-2009-01-29	- Added proper FPGA core reset sequence to alow core reloading
+2010-01-29	- Added proper FPGA core reset sequence to alow core reloading
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-12	- Updated reference to global string buffer
 */
 
 #include <pic18.h>
 #include <stdio.h>
+#include "firmwareConfiguration.h"
 #include "hardware.h"
 #include "fat16.h"
 #include "boot.h"
 
-// Global string buffer 
-extern unsigned char s[25];
+//global temporary buffer for strings
+//defined in main.c
+extern unsigned char s[32];
 
 
 // Infinite loop for error display
@@ -407,19 +411,17 @@ void SendFile(struct fileTYPE *file)
 		SPI(0);
 
 		p=secbuf;
-		//j=256;
 		j=255;
 		do
 		{
 			//SPI(*(p++));
-			//SPI(*(p++));
 			SSPBUF = *(p++);
 			while (!BF);
 
+			//SPI(*(p++));
 			SSPBUF = *(p++);
 			while (!BF);
 		}
-		//while (--j);
 		while (j--);
 		DisableFpga();
 

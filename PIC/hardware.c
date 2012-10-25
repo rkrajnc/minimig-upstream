@@ -18,21 +18,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Hardware control routines
 
-27-11-2005		-started coding
-29-01-2006		-done a lot of work
-31-01-2006		-added key repeat
-06-02-2006		-took out all button handling stuff
+27-11-2005	-started coding
+29-01-2006	-done a lot of work
+31-01-2006	-added key repeat
+06-02-2006	-took out all button handling stuff
 
 -- Goran Ljubojevic --
-2009-11-13		- OsdCommand added
-2009-11-21		- small cleanup
-2009-12-20		- systimer reset on every hardware init to support propper timings on reset
-2009-12-30		- Support for new FPGA firmware added in header file
-				- GetFPGAStatus function added
-2010-01-29		- ResetFPGA() macro added to header file.
+2009-11-13	- OsdCommand added
+2009-11-21	- small cleanup
+2009-12-20	- systimer reset on every hardware init to support propper timings on reset
+2009-12-30	- Support for new FPGA firmware added in header file
+			- GetFPGAStatus function added
+2010-01-29	- ResetFPGA() macro added to header file.
+2010-08-21	- YQ100818 FPGA core support
+2010-08-26	- Added firmwareConfiguration.h
+2010-09-09	- Added _SPI macro to help save space on multiple SPI calls
 */
 
 #include <pic18.h>
+#include "firmwareConfiguration.h"
 #include "hardware.h"
 
 /*local functions*/

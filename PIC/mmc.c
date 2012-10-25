@@ -7,27 +7,29 @@
 /*------------------------------------------------------------------------------------------*/
 
 /*	History:
-	2005-04-19		-start of project
-	2005-12-11		-(Dennis) added proper CS handling to enable sharing of SPI bus
-	-- JB --
-	2009-03-01		- changed card detection routine (now Kingston 128 MB MMC works correctly)
-					- removed CRC7 calculation (only required for CMD0, static value used)
-					- lba sector address calculation uses logical operations
-					- t_lba variable added for skipping unnecessary reads of the sector which is already in the buffer - results in faster FileSearch()
-	-- Goran Ljubojevic --
-	2009-08-29		- Restored CRC7 calculation for SDHC detection
-					- SDHC detection
-					- SDHC reading/writing
-					- CMD definitions moved to header file
-					- IO definitions used from hardware.h
-	2009-11-25		- Added direct to FPGA transfer mode when reading for HDD support
-	2010-01-24		- Removed MMC_DIRECT_TRANSFER_MODE variable, direct transfer mode is used when read buffer is null
+2005-04-19	-start of project
+2005-12-11	-(Dennis) added proper CS handling to enable sharing of SPI bus
+-- JB --
+2009-03-01	- changed card detection routine (now Kingston 128 MB MMC works correctly)
+			- removed CRC7 calculation (only required for CMD0, static value used)
+			- lba sector address calculation uses logical operations
+			- t_lba variable added for skipping unnecessary reads of the sector which is already in the buffer - results in faster FileSearch()
+-- Goran Ljubojevic --
+2009-08-29	- Restored CRC7 calculation for SDHC detection
+			- SDHC detection
+			- SDHC reading/writing
+			- CMD definitions moved to header file
+			- IO definitions used from hardware.h
+2009-11-25	- Added direct to FPGA transfer mode when reading for HDD support
+2010-01-24	- Removed MMC_DIRECT_TRANSFER_MODE variable, direct transfer mode is used when read buffer is null
+2010-08-26	- Added firmwareConfiguration.h
 */
 
 /*------------------------------------------------------------------------------------------*/
 
 #include <pic18.h>
 #include <stdio.h>
+#include "firmwareConfiguration.h"
 #include "mmc.h"
 #include "hardware.h"
 
