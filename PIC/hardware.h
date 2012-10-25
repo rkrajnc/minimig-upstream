@@ -9,7 +9,8 @@
 #define	DIN			LATB7			/*FPGA config*/
 #define	_SW0		RB0				/*switch input*/
 #define	_SW1		RB1				/*switch input*/
-#define DISKLED		RB4				/*disk led output*/
+#define DISKLED_ON	RB4=1			/*disk led output*/
+#define DISKLED_OFF	RB4=0			/*disk led output*/
 #define	_M_CD		TRISA0			/*mmc card clock disable*/
 #define	_M_CS		RC0				/*mmc card spi select*/
 #define	_F_CS0		RA1				/*FGPA spi0 select*/

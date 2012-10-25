@@ -9,19 +9,24 @@
 /*	History:
 	2005-04-19		-start of project
 	2005-12-11		-(Dennis) added proper CS handling to enable sharing of SPI bus
+	-- JB --
+	2009-03-01		- changed card detection routine (now Kingston 128 MB MMC works correctly)
+					- removed CRC7 calculation (only required for CMD0, static value used)
+					- lba sector address calculation uses logical operations
+					- t_lba variable added for skipping unnecessary reads of the sector which is already in the buffer - results in faster FileSearch()
 */
 
 /*------------------------------------------------------------------------------------------*/
 
 #include <pic18.h>
 #include <stdio.h>
-#include "ata18.h"
+#include "mmc.h"
 #include "hardware.h"
 
 /*IO definitions*/
-#define		SDCARD_CS	_M_CS
+#define		MMC_CS	_M_CS
 
-/*constants*/   
+/*constants*/
 #define		FALSE		0			/*FALSE*/
 #define		TRUE		1			/*TRUE*/
 #define		MMCCARD		2
@@ -94,13 +99,14 @@
 #define		CMD63		0x7f		/*--*/
 
 /*variables*/
-unsigned char crc_7;			/*contains CRC value*/
 unsigned int timeout;
 unsigned char response_1;		/*byte that holds the first response byte*/
 unsigned char response_2;		/*byte that holds the second response byte*/
 unsigned char response_3;		/*byte that holds the third response byte*/
 unsigned char response_4;		/*byte that holds the fourth response byte*/
 unsigned char response_5;		/*byte that holds the fifth response byte*/
+
+unsigned long t_lba = -1;		//address of the sector in buffer
 
 /*internal functions*/
 Command_R0(char cmd,unsigned short AdrH,unsigned short AdrL);
@@ -109,8 +115,6 @@ Command_R2(char cmd,unsigned short AdrH,unsigned short AdrL);
 Command_R3(char cmd,unsigned short AdrH,unsigned short AdrL);
 void MmcAddCrc7(unsigned char c);
 
-	
-
 
 /*************************************************************************************/
 /*************************************************************************************/
@@ -118,88 +122,99 @@ void MmcAddCrc7(unsigned char c);
 /*************************************************************************************/
 /*************************************************************************************/
 
-/*Enable the SDcard correctly*/
-unsigned char SDCARD_Init(void)
+/*Enable the MMC/SD card correctly*/
+unsigned char MMC_Init(void)
 {
 	unsigned short lp;
 
-	_M_CD=1;									/*enable clock*/
-	SDCARD_CS=1;								/*SDcard Disabled*/
-	for(lp=0; lp < 10; lp++)					/*Set SDcard in SPI-Mode, Reset*/
-		SPI(0xFF);								/*10 * 8bits = 80 clockpulses*/
-	SDCARD_CS=0;								/*SDcard Enabled*/
+	SSPCON1 = 0x32; //spiclk = Fosc/64 (init clock 100-400 kHz)
 
-	for(lp=0; lp<56000; lp++);					/*delay for a lot of milliseconds (least 16 bus clock cycles)*/
+	_M_CD = 1;								/*enable clock*/
+	MMC_CS = 1;								/*SDcard Disabled*/
 
-	Command_R1(CMD0,0,0);						/*CMD0: Reset all cards to IDLE state*/
-	if (response_1 !=1)
+	for (lp=0; lp<10; lp++)					/*Set SDcard in SPI-Mode, Reset*/
+		SPI(0xFF);							/*10 * 8bits = 80 clockpulses*/
+
+	for (lp=0; lp<56000; lp++);				/*delay for a lot of milliseconds (least 16 bus clock cycles)*/
+
+	MMC_CS = 0;								/*SDcard Enabled*/
+
+	Command_R1(CMD0,0,0);                   /*CMD0: Reset all cards to IDLE state*/
+	if (response_1 == 0x01)
 	{
+		timeout = 0;
+		while (1)
+		{
+			Command_R1(CMD55,0,0);
+			if (response_1 & 0x04)  //MMC card responses with invalid command (but not Kingston MMC 128MB)
+				break;
+
+			Command_R1(CMD41,0,0);
+			if (response_1 & 0x04)  //MMC card responses with invalid command
+				break;
+
+			if (response_1 == 0x00)
+			{
+				printf("SD-card detected\n\r");
+				Command_R1(CMD16,0x0000,0x0200); //set block size
+				DisableCard();
+				SSPCON1 = 0x30; //spiclk = Fosc/4 (max 25 MHz for SD-card)
+				return(1);
+			}
+			timeout++;
+			if (timeout == 1000)                        /*timeout mechanism*/
+			{
+				DisableCard();
+				printf("SD-card ACMD41 response timeout...\r");
+				return(0);
+			}
+		}
+
+		/*An MMC-card has been detected, handle accordingly*/
+		timeout = 0;
+		response_1 = 1;
+		while (response_1 != 0)
+		{
+			Command_R1(CMD1,0,0);           /*activate the cards init process*/
+			if (timeout == 1000)                /*timeout mechanism, specs: max 500ms*/
+			{
+				DisableCard();
+				printf("MMC-card CMD1 response timeout...\r");
+				return(0);
+			}
+			timeout++;
+		}
+		printf("MMC-card detected\n\r");
 		DisableCard();
-		printf("No card detected!\r");
-		return(FALSE);							/*error, quit routine*/
+		SSPCON1 = 0x30; //spiclk = Fosc/4 (max 20 MHz for MMC-card)
+		return(1);
 	}
-	else
-	{
-		Command_R1(CMD55,0,0);					/*when the response is 0x04 (illegal command), this must be an MMC-card*/
-		if (response_1 == 0x05)					/*determine MMC or SD*/
-		{	/*An MMC-card has been detected, handle accordingly*/
-			/*-------------------------------------------------*/
-			timeout = 0;
-			response_1 = 1;
-			while(response_1 != 0)
-			{
-				Command_R1(CMD1,0,0);			/*activate the cards init process*/	
-				if (timeout == 1000)				/*timeout mechanism*/
-				{
-					DisableCard();
-					return(FALSE);
-				}
-				timeout++;
-			}
-			printf("MMC-card detected\n\r");
-			DisableCard();
-			return(TRUE);
-		}
-		else
-		{	/*An SD-card has been detected, handle accordingly*/
-			/*-------------------------------------------------*/
-			timeout = 0;
-			response_1 = 1;
-			while(response_1 != 0)
-			{
-				Command_R1(CMD41,0,0);
-				Command_R1(CMD55,0,0);
-				if (timeout == 1000)						/*timeout mechanism*/
-				{
-					DisableCard();
-					return(FALSE);
-				}
-				timeout++;
-			}
-			printf("SD-card detected\n\r");
-			Command_R1(CMD16,0x000,0x0200); //set block size
-			//DisableCard();
-			SSPCON1=0x30; //spiclk =  1/16 sysclk
-			return(TRUE);					
-		}
-	}
+
+	DisableCard();
+	printf("No card detected!\r");
+	return(0);                          /*error, quit routine*/
 }
 
 /*Read single block (with block-size set by CMD16 to 512 by default)*/
-unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
+unsigned char MMC_Read(unsigned long lba, unsigned char *ReadData)
 {
 	unsigned short upper_lba, lower_lba;
-	unsigned char i;		
+	unsigned char i;
 	unsigned char *p;
-	
-	lba = lba * 512;								/*calculate byte address*/
-	upper_lba = (lba/65536);
-	lower_lba = (lba%65536);
+
+	if (lba == t_lba)
+		return(TRUE);
+
+	t_lba = lba;
+
+	lba = lba<<9;								/*calculate byte address*/
+	upper_lba = (unsigned short)(lba>>16);
+	lower_lba = (unsigned short)lba;
 
 	EnableCard();
 
 	Command_R1(CMD17, upper_lba, lower_lba);
-	
+
 	/*exit if invalid response*/
 	if (response_1 !=0)
 	{
@@ -207,12 +222,12 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 		DisableCard();
 		return(FALSE);
 	}
-	
+
 	/*wait for start of data transfer with timeout*/
 	timeout = 0;
 	while(SPI(0xFF) != 0xFE)
-	{					
-		if (timeout++ >= 50000)					
+	{
+		if (timeout++ >= 50000)
 		{
 			printf("MMC CMD17: no data token\r");
 			DisableCard();
@@ -226,17 +241,17 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 	do
 	{
 		SSPBUF = 0xff;
-		while (!BF);		
-		*(p++)=SSPBUF;	
+		while (!BF);
+		*(p++) = SSPBUF;
 		SSPBUF = 0xff;
-		while (!BF);		
-		*(p++)=SSPBUF;	
+		while (!BF);
+		*(p++) = SSPBUF;
 		SSPBUF = 0xff;
-		while (!BF);		
-		*(p++)=SSPBUF;	
+		while (!BF);
+		*(p++) = SSPBUF;
 		SSPBUF = 0xff;
-		while (!BF);		
-		*(p++)=SSPBUF;	
+		while (!BF);
+		*(p++) = SSPBUF;
 	}
 	while(--i);
 
@@ -246,21 +261,23 @@ unsigned char AtaReadSector(unsigned long lba, unsigned char *ReadData)
 	DisableCard();
 	return(TRUE);
 }
-    
+
 
 
 /*Write: 512 Byte-Mode, this will not work (read MMC and SD-card specs) with any other sector/block size then 512*/
-unsigned char AtaWriteSector(unsigned long lba, unsigned char *WriteData)
+unsigned char MMC_Write(unsigned long lba, unsigned char *WriteData)
 {
 	unsigned short upper_lba, lower_lba;
 	unsigned char i;
 	unsigned char *p;
 
+	t_lba = lba;
+
 	/* since the MMC and SD cards are byte addressable and the FAT relies on a sector address
-	   (where a sector is 512bytes big), we must multiply by 512 in order to get the byte address */
-	lba = lba * 512;
-	upper_lba = (lba/65536);
-	lower_lba = (lba%65536);
+	(where a sector is 512 bytes long), we must multiply by 512 in order to get the byte address */
+	lba = lba<<9;
+	upper_lba = (unsigned short)(lba>>16);
+	lower_lba = (unsigned short)lba;
 
 	EnableCard();
 
@@ -272,37 +289,36 @@ unsigned char AtaWriteSector(unsigned long lba, unsigned char *WriteData)
 		DisableCard();
 		return(FALSE);
 	}
-	
+
 	SPI(0xFF);	//One byte gap
-	//SPI(0xFF);
 	SPI(0xFE);	//Send Data token
 
 	//Send bytes for sector
 	p = WriteData;
-	i=128;
+	i = 128;
 	do
 	{
 		SSPBUF = *(p++);
-		while (!BF);		
+		while (!BF);
 		SSPBUF = *(p++);
-		while (!BF);		
+		while (!BF);
 		SSPBUF = *(p++);
-		while (!BF);		
+		while (!BF);
 		SSPBUF = *(p++);
-		while (!BF);		
+		while (!BF);
 	}
 	while (--i);
 
 	SPI(0xFF);	//Send CRC lo byte
 	SPI(0xFF);	//Send CRC hi byte
 
-	i = SPI(0xFF);	//Read packet response 
+	i = SPI(0xFF);	//Read packet response
 	//Status codes
 	//: 010 = Data accepted
 	//: 101 = Data rejected due to CRC error
 	//: 110 = Data rejected due to write error
 	i &= 0b00011111;
-	if (i != 0b00000101) 
+	if (i != 0b00000101)
 	{
 		printf("MMC CMD24: write error %02X\r",i);
 		DisableCard();
@@ -311,8 +327,8 @@ unsigned char AtaWriteSector(unsigned long lba, unsigned char *WriteData)
 
 	timeout = 0;
 	while (SPI(0xFF) == 0x00)	/*wait until the card has finished writing the data*/
-	{					
-		if (timeout++ >= 50000)					
+	{
+		if (timeout++ >= 50000)
 		{
 			printf("MMC CMD24: busy wait timeout\r");
 			DisableCard();
@@ -322,96 +338,60 @@ unsigned char AtaWriteSector(unsigned long lba, unsigned char *WriteData)
 	DisableCard();
 	return(TRUE);
 }
- 
+
 
 /*************************************************************************************/
 /*Internal functions*/
 /*************************************************************************************/
 
-
-
-
 /*Send a command to the SDcard*/
-Command_R0(char cmd,unsigned short AdrH,unsigned short AdrL)
+Command_R0(char cmd, unsigned short AdrH, unsigned short AdrL)
 {
-	crc_7=0;
-	SPI(0xFF);				/*flush SPI-bus*/
-
+	SPI(0xFF);						/*flush SPI-bus*/
 	SPI(cmd);
-	MmcAddCrc7(cmd);		/*update CRC*/
-	SPI(AdrH/256);			/*use upper 8 bits (everything behind the comma is discarded)*/
-	MmcAddCrc7(AdrH/256);	/*update CRC*/
-	SPI(AdrH%256);			/*use lower 8 bits (shows the remaining part of the devision)*/
-	MmcAddCrc7(AdrH%256);	/*update CRC*/
-	SPI(AdrL/256);			/*use upper 8 bits (everything behind the comma is discarded)*/
-	MmcAddCrc7(AdrL/256);	/*update CRC*/
-	SPI(AdrL%256);			/*use lower 8 bits (shows the remaining part of the devision)*/
-	MmcAddCrc7(AdrL%256);	/*update CRC*/
-
-	crc_7<<=1;				/*shift all bits 1 position to the left, to free position 0*/
-	crc_7++;				/*set LSB to '1'*/
-
-	SPI(crc_7);				/*transmit CRC*/
-	//SPI(0xFF);				/*flush SPI-bus, or int other words process command*/
-}
-
+	SPI((unsigned char)(AdrH>>8));	/*use upper 8 bits (everything behind the comma is discarded)*/
+	SPI((unsigned char)AdrH);		/*use lower 8 bits (shows the remaining part of the devision)*/
+	SPI((unsigned char)(AdrL>>8));	/*use upper 8 bits (everything behind the comma is discarded)*/
+	SPI((unsigned char)(AdrL));		/*use lower 8 bits (shows the remaining part of the devision)*/
+	SPI(0x95);						/*valid CRC is only required for CMD0*/
+};
 
 /*Send a command to the SDcard, a one byte response is expected*/
-Command_R1(char cmd,unsigned short AdrH,unsigned short AdrL)
+Command_R1(char cmd, unsigned short AdrH, unsigned short AdrL)
 {
 	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
-	do 
+	do
 		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
 	while (response_1==0xFF && --i);
 }
-
 
 /*Send a command to the SDcard, a two byte response is expected*/
-Command_R2(char cmd,unsigned short AdrH,unsigned short AdrL)
+Command_R2(char cmd, unsigned short AdrH, unsigned short AdrL)
 {
 	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
-	do	
+	do
 		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
 	while (response_1==0xFF && --i);
-	response_2 = SPI(0xFF);			
-}
 
+	response_2 = SPI(0xFF);
+}
 
 /*Send a command to the SDcard, a five byte response is expected*/
-Command_R3(char cmd,unsigned short AdrH,unsigned short AdrL)
+Command_R3(char cmd, unsigned short AdrH, unsigned short AdrL)
 {
 	unsigned char i = 100;
 	Command_R0(cmd, AdrH, AdrL);	/*send command*/
 	do
 		response_1 = SPI(0xFF);			/*return the reponse in the correct register*/
 	while (response_1==0xFF && --i);
-	response_2 = SPI(0xFF);			
-	response_3 = SPI(0xFF);			
-	response_4 = SPI(0xFF);			
-	response_5 = SPI(0xFF);			
+
+	response_2 = SPI(0xFF);
+	response_3 = SPI(0xFF);
+	response_4 = SPI(0xFF);
+	response_5 = SPI(0xFF);
 }
-
-
-/*calculate CRC7 checksum*/
-void MmcAddCrc7(unsigned char c)
-{
-	unsigned char i;
-	
-	i=8;
-	do
-	{
-		crc_7<<=1;
-		if(c&0x80)
-			crc_7^=0x09;
-		if(crc_7&0x80)
-			crc_7^=0x09;
-		c<<=1;
-	}
-	while(--i);
-}
-
 
 
 

@@ -1,14 +1,14 @@
-#ifndef _FAT16182_H_INCLUDED
-#define _FAT16182_H_INCLUDED
+#ifndef _FAT16_H_INCLUDED
+#define _FAT16_H_INCLUDED
 
-struct file2TYPE
+struct fileTYPE
 {
 	unsigned char name[12];   			/*name of file*/
 	unsigned char attributes;
 	unsigned short entry;				/*file-entry index in directory table*/
 	unsigned short sec;  				/*sector index in file*/
 	unsigned long len;					/*file size*/
-	unsigned long cluster;				/*current cluster*/	
+	unsigned long cluster;				/*current cluster*/
 };
 
 /*global sector buffer, data for read/write actions is stored here.
@@ -21,10 +21,10 @@ extern unsigned char secbuf[512];		/*sector buffer*/
 #define	FILESEEK_PREV			2		/*find previous file in directory*/
 
 /*functions*/
-unsigned char FindDrive2(void);
-unsigned char FileSearch2(struct file2TYPE *file, unsigned char mode);
-unsigned char FileNextSector2(struct file2TYPE *file);
-unsigned char FileRead2(struct file2TYPE *file);
-unsigned char FileWrite2(struct file2TYPE *file);
+unsigned char FindDrive(void);
+unsigned char FileSearch(struct fileTYPE *file, unsigned char mode);
+unsigned char FileNextSector(struct fileTYPE *file);
+unsigned char FileRead(struct fileTYPE *file);
+unsigned char FileWrite(struct fileTYPE *file);
 
 #endif

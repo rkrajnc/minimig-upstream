@@ -16,162 +16,254 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 //JB:
-// 2008-03-14		- moving beamcounter to a separate file
-//					- pal/ntsc switching, NTSC doesn't use short/long line toggling,all lines are short like in PAL (227 CCK's)
+//14-03-2008		- moving beamcounter to a separate file
+//					- pal/ntsc switching, NTSC doesn't use short/long line toggling,all lines are short like in PAL (227 CCKs)
 //					- composite blanking use hblank which is combined with vblank
+//2009-03-08		- cleanup
 
 //beam counters and sync generator
 module beamcounter
 (
 	input	clk,				//bus clock
 	input	reset,				//reset
-	input	interlace,			//interlace enable
 	input	ntsc,				//ntsc mode switch
-	input	[15:0]datain,		//bus data in
-	output	reg [15:0]dataout,//bus data out
-	input 	[8:1]regaddressin,//register address inputs
-	output	reg [8:0]hpos,	//horizontal (low resolution) beam counter
-	output	reg [10:0]vpos,	//vertical beam counter
-	output	reg _hsync,		//horizontal sync
-	output	reg _vsync,		//vertical sync
-	output	blank,				//video blanking
+	input	[15:0] datain,		//bus data in
+	output	reg [15:0] dataout,	//bus data out
+	input 	[8:1] regaddressin,	//register address inputs
+	output	reg [8:0] hpos,		//horizontal beam counter (140ns)
+	output	reg [10:0] vpos,	//vertical beam counter
+	output	reg _hsync,			//horizontal sync
+	output	reg _vsync,			//vertical sync
+	output	_csync,				//composite sync
+	output	reg blank,			//video blanking
 	output	vbl,				//vertical blanking
 	output	vblend,				//last line of vertival blanking
 	output	eol,				//start of video line (active during last pixel of previous line) 
-	output	eof					//start of video frame (active during last pixel of previous frame)
+	output	eof,				//start of video frame (active during last pixel of previous frame)
+	output	[8:0] htotal		//video line length
 );
 
+// local beam position counters
+//reg		[8:0] hpos;		// horizontal (low resolution) beam counter
+//reg		[10:0] vpos;	// vertical beam counter
+reg		ersy;
+reg		lace;
+reg		t_lace;
 
 //local signals for beam counters and sync generator
-reg		hblank;			//horizontal blanking
-wire	vblank;			//vertical blanking
+reg		long_frame;		// 1 : long frame (313 lines); 0 : normal frame (312 lines)
+reg		pal;			// pal mode switch
+reg		long_line;		// long line signal for NTSC compatibility (actually long lines are not supported yet)
+reg		vser;			// vertical sync serration pulses for composite sync
 
-reg		lof;			//1=long frame (313 lines), 0=normal frame (312 lines)
-reg		pal;			//pal mode switch
-reg		lol;			//long line signal for NTSC compatibility
+reg		[8:1] hposr;	// horizontal (low resolution) beam counter
+reg		[10:0] vposr;	// vertical beam counter
+
 
 //register names and adresses		
-parameter VPOSR = 9'h004;
-parameter VHPOSR = 9'h006;
-parameter BEAMCON0 = 9'h1DC;
+parameter	VPOSR    = 9'h004;
+parameter	VPOSW    = 9'h02A;
+parameter	VHPOSR   = 9'h006;
+parameter	VHPOSW   = 9'h02C;
+parameter	BEAMCON0 = 9'h1DC;
+parameter	BPLCON0  = 9'h100;
 
-parameter	hbstrt  = 17;			// horizontal blanking start
-parameter	hsstrt  = 29;			// front porch = 1.6us (29)
-parameter	hsstop  = 63;			// hsync pulse duration = 4.7us (63)
-parameter	hbstop  = 92;			// back porch = 4.7us (103) shorter blanking for overscan visibility
-parameter	hcenter = 254;			// position of vsync pulse during the long field of interlaced screen
-parameter	htotal  = 453;			// line length = 227 colour clocks in PAL (in NTSC 227.5 colour clocks: not supported)
-parameter	vsstrt  = 3;			//vertical sync start
-parameter	vsstop  = 5;			// pal vsync width: 2.5 lines (NTSC: 3 lines - not implemented)
-parameter	vbstrt  = 0;			//vertical blanking start
+parameter	hbstrt  = 17+4+4;	// horizontal blanking start
+parameter	hsstrt  = 29+4+4;	// front porch = 1.6us (29)
+parameter	hsstop  = 63-1+4+4;	// hsync pulse duration = 4.7us (63)
+parameter	hbstop  = 103-5+4;	// back porch = 4.7us (103) shorter blanking for overscan visibility
+parameter	hcenter = 256+4+4;	// position of vsync pulse during the long field of interlaced screen
+//parameter	htotal  = 453;	// 
+parameter	vsstrt  = 3;	// vertical sync start
+parameter	vsstop  = 5;	// PAL vsync width: 2.5 lines (NTSC: 3 lines - not implemented)
+parameter	vbstrt  = 0;	// vertical blanking start
 
-wire	[8:0]vtotal;		//total number of lines less one
-wire	[8:0]vbstop;		//vertical blanking stop
+wire	[8:0] vtotal;		// total number of lines less one
+wire	[8:0] vbstop;		// vertical blanking stop
 
-assign	vtotal  = pal ? 312-1 : 262-1;	//total number of lines (PAL: 312 lines, NTSC: 262)
-assign	vbstop  = pal ? 25 : 20;	//vertical blanking end (PAL 26 lines, NTSC vblank 21 lines)
-//A4k test: first visible line $1A (PAL) or $15 (NTSC)
-//sprites fetched on line $19 (PAL) or $14 (NTSC)
+wire	end_of_line;
+wire	end_of_frame;
+
+wire 	vpos_enable;		//enables change of vertical position counter
+wire 	vpos_equ_vtotal;	//vertical beam counter is equal to its maximum count (in interlaced mode it counts one line more)
+reg		extra_line;			//extra line (used in interlaced mode)
+wire	last_line;			//indicates the last line is displayed (in non-interlaced mode vpos equals to vtotal, in interlaced mode vpos equals to vtotal+1)
+
+
+//beam position output signals
+assign	htotal = 227*2-1;				// line length of 227 CCKs in PAL mode (NTSC line length of 227.5 CCKs is not supported)
+assign	vtotal = pal ? 312-1 : 262-1;	// total number of lines (PAL: 312 lines, NTSC: 262)
+assign	vbstop = pal ? 25 : 20;			// vertical blanking end (PAL 26 lines, NTSC vblank 21 lines)
+
+//first visible line $1A (PAL) or $15 (NTSC)
+//sprites are fetched on line $19 (PAL) or $14 (NTSC) - vblend signal used to tell Agnus to fetch sprites during the last vertical blanking line
+
 
 //--------------------------------------------------------------------------------------
+
+always @(posedge clk)
+	if (~ersy && hpos[0]) //genlock detection hack
+	begin
+		vposr[10:0] <= vpos[10:0];
+		hposr[8:1] <= hpos[8:1];	
+	end
+	
 //beamcounter read registers VPOSR and VHPOSR
-always @(regaddressin or lof or vpos or hpos or ntsc)
-	if(regaddressin[8:1]==VPOSR[8:1])
-		dataout[15:0] = {lof,ntsc?7'h30:7'h20,lol,4'b0000,vpos[10:8]};
-	else	if(regaddressin[8:1]==VHPOSR[8:1])
-		dataout[15:0] = {vpos[7:0],hpos[8:1]};
+always @(regaddressin or long_frame or long_line or vposr or hposr or ntsc)
+	if (regaddressin[8:1]==VPOSR[8:1])
+		dataout[15:0] = {long_frame,2'b01,ntsc,4'b0000,long_line,4'b0000,vposr[10:8]};
+	else if (regaddressin[8:1]==VHPOSR[8:1])
+		dataout[15:0] = {vposr[7:0],hposr[8:1]};
 	else
-		dataout[15:0]=0;
+		dataout[15:0] = 0;
+
+//write ERSY bit of bplcon0 register (External ReSYnchronization - genlock)
+always @(posedge clk)
+	if (reset)
+		ersy <= 0;
+	else if (regaddressin[8:1] == BPLCON0[8:1])
+		ersy <= datain[1];
 		
+//BPLCON0 register
+always @(posedge clk)
+	if (reset)
+		lace <= 0;
+	else if (regaddressin[8:1]==BPLCON0[8:1])
+		lace <= datain[2];
+	
 //BEAMCON0 register
 always @(posedge clk)
 	if (reset)
 		pal <= ~ntsc;
-	else if (regaddressin[8:1] == BEAMCON0[8:1])
+	else if (regaddressin[8:1]==BEAMCON0[8:1])
 		pal <= datain[5];
 		
-//--------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------//
+//                                                                                      //
+//   HORIZONTAL BEAM COUNTER                                                            //
+//                                                                                      //
+//--------------------------------------------------------------------------------------//
+
+//generate start of line signal
+assign end_of_line = hpos==htotal ? 1 : 0;
 
 //horizontal beamcounter (runs @ clk frequency!)
 always @(posedge clk)
-	if (eol)
+	if (end_of_line)
 		hpos <= 0;
 	else
 		hpos <= hpos + 1;
 
-//generate start of line signal
-assign eol = hpos==htotal ? 1 : 0;
-
 //long line signal (not used, only for better NTSC compatibility)
 always @(posedge clk)
-	if (eol)
+	if (end_of_line)
 		if (pal)
-			lol <= 0;
+			long_line <= 0;
 		else
-			lol <= ~lol;
+			long_line <= ~long_line;
 
-//horizontal sync and horizontal blanking
-always @(posedge clk)//sync
+//--------------------------------------------------------------------------------------//
+//                                                                                      //
+//   VERTICAL BEAM COUNTER                                                              //
+//                                                                                      //
+//--------------------------------------------------------------------------------------//
+
+//horizontal counter position when vertical counter changes
+assign vpos_enable = hpos==3 ? 1 : 0;
+
+//vertical position counter
+//vpos changes after hpos equals 3
+always @(posedge clk)
+	if (vpos_enable)
+		if (last_line)
+			vpos <= 0;
+		else
+			vpos <= vpos + 1;
+
+//temporary lace signal
+always @(posedge clk)
+	if (eof)
+		t_lace <= lace;
+		
+// long_frame - long frame signal used in interlaced mode
+always @(posedge clk)
+	if (end_of_frame)
+		if (t_lace)
+			long_frame <= ~long_frame;	// interlace
+		else
+			long_frame <= 0;
+
+//maximum position of vertical beam position
+assign vpos_equ_vtotal = vpos==vtotal ? 1 : 0;
+
+//extra line in interlaced mode	
+always @(posedge clk)
+	if (vpos_enable)
+		if (long_frame && vpos_equ_vtotal)
+			extra_line <= 1;
+		else
+			extra_line <= 0;
+
+//in non-interlaced display the last line is equal to vtotal
+//in interlaced mode every second frame is one line longer than vtotal
+assign last_line = long_frame ? extra_line : vpos_equ_vtotal;
+
+//generate end of frame signal
+assign end_of_frame = vpos_enable && last_line ? 1 : 0;
+
+//--------------------------------------------------------------------------------------//
+//                                                                                      //
+//  VIDEO SYNC GENERATOR                                                                //
+//                                                                                      //
+//--------------------------------------------------------------------------------------//
+
+//horizontal sync
+always @(posedge clk)
 	if (hpos==hsstrt)//start of sync pulse (front porch = 1.69us)
 		_hsync <= 0;
 	else if (hpos==hsstop)//end of sync pulse	(sync pulse = 4.65us)
 		_hsync <= 1;
-		
-always @(posedge clk)//blank
-	if(hpos==hbstrt)//start of blanking (active line=51.88us)
-		hblank <= 1;
-	else if (hpos==hbstop)//end of blanking (back porch=5.78us)
-		hblank <= vblank;
-
-//--------------------------------------------------------------------------------------
-
-//vertical beamcounter (triggered by eol signal from horizontal beamcounter)
-always @(posedge clk)
-	if (eof)
-		vpos <= 0;
-	else if (eol)
-		vpos <= vpos + 1;
-
-// lof - Long Frame signal
-always @(posedge clk)
-	if (eof)
-		if (interlace)
-			lof <= ~lof;	// interlace
-		else
-			lof <= 1;
-
-reg	 xln;		//extra line (used in interlaced mode)
-always @(posedge clk)
-	if (eol)
-		if (lof && vpos==vtotal)
-			xln <= 1;
-		else
-			xln <= 0;
-			
-//generate end of frame signal
-assign eof = (eol && vpos==vtotal && !lof) || (eol && xln && lof);
 
 //vertical sync and vertical blanking
 always @(posedge clk)
-	if ((vpos==vsstrt && hpos==hsstrt && !lof) || (vpos==vsstrt && hpos==hcenter && lof))
+	if ((vpos==vsstrt && hpos==hsstrt && !long_frame) || (vpos==vsstrt && hpos==hcenter && long_frame))
 		_vsync <= 0;
-	else if ((vpos==vsstop && hpos==hcenter && !lof) || (vpos==vsstop+1 && hpos==hsstrt && lof))
-		_vsync <= 1;
+	else if ((vpos==vsstop && hpos==hcenter && !long_frame) || (vpos==vsstop+1 && hpos==hsstrt && long_frame))
+		_vsync <= 1;		
 
+//apparently generating csync from vsync alligned with leading edge of hsync results in malfunction of the AD724 CVBS/S-Video encoder (no colour in interlaced mode)
+//to overcome this limitation semi (only present before horizontal sync pulses) vertical sync serration pulses are inserted into csync
+always @(posedge clk)//sync
+	if (hpos==htotal+hsstrt-hsstop+hsstrt)//start of sync pulse (front porch = 1.69us)
+		vser <= 1;
+	else if (hpos==hsstrt)//end of sync pulse	(sync pulse = 4.65us)
+		vser <= 0;
+		
+//composite sync
+assign _csync = (_hsync & _vsync) | vser; //composite sync with serration pulses
+
+//--------------------------------------------------------------------------------------//
+//                                                                                      //
+//  VIDEO BLANKING GENERATOR                                                            //
+//                                                                                      //
+//--------------------------------------------------------------------------------------//
+
+//vertical blanking
+assign vbl = vpos <= vbstop ? 1: 0;
 
 //vertical blanking end (last line)
 assign vblend = vpos==vbstop ? 1 : 0;
 
-assign vblank = vpos <= vbstop ? 1: 0;
+//composite display blanking		
+always @(posedge clk)
+	if (hpos==hbstrt)//start of blanking (active line=51.88us)
+		blank <= 1;
+	else if (hpos==hbstop)//end of blanking (back porch=5.78us)
+		blank <= vbl;
 
-//vbl output for sprite engine
-assign vbl = vblank;
 
-//--------------------------------------------------------------------------------------
-
-//composite blanking
-assign blank = hblank;
-
-//--------------------------------------------------------------------------------------
+//external signals assigment
+assign eol = vpos_enable; //eol is generated when hpos equals 3
+assign eof = end_of_frame;
 
 endmodule

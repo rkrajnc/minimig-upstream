@@ -21,26 +21,29 @@
 // It supports all OCS sprite modes.
 //
 // 12-06-2005		-started coding
-//				-first finished version
+//					-first finished version
 // 21-06-2005		-changed sprite priority logic and nsprite output
 // 02-10-2005		-sprites are now attached if odd,even or both sprites SPRXCTL bit 7 is set
 // 17-10-2005		-sprites were displayed one pixel too early, fixed.
 // JB:
-// 2008-07-14		- swapped shifta and shiftb in serialized output (fix for Zool2: copper directly writes to SPRxDATx registers)
+// 2008-07-14		- swapped shifta and shiftb in serialized output (fix for Zool2: copper writes to SPRxDATx registers)
+// 2009-01-26		- cleanup
+//					- added sprena signal
 
 module sprites
 (
 	input 	clk,					//bus clock	
 	input 	reset,		    		//reset
-	input	[8:1]regaddress,		//register address input
-	input	[8:0]horbeam,			//horizontal beam counter
-	input 	[15:0]datain, 		//bus data in
-	output 	[7:0]nsprite,		  	//sprite data valid signals 
-	output	reg [3:0]sprdata		//sprite data out
+	input	[8:1] regaddress,		//register address input
+	input	[8:0] hpos,			//horizontal beam counter
+	input 	[15:0] datain, 			//bus data in
+	input	sprena,					//sprite enable signal
+	output 	[7:0] nsprite,		  	//sprite data valid signals 
+	output	reg [3:0] sprdata		//sprite data out
 );
 
 //register names and adresses		
-parameter	SPRPOSCTLBASE=9'h140;	//sprite data, position and control register base address
+parameter	SPRPOSCTLBASE = 9'h140;	//sprite data, position and control register base address
 
 //local signals
 wire		selspr0;				//select sprite 0
@@ -52,14 +55,14 @@ wire		selspr5;				//select sprite 5
 wire		selspr6;				//select sprite 6
 wire		selspr7;				//select sprite 7
 
-wire		[1:0]sprdat0;			//data sprite 0
-wire		[1:0]sprdat1;			//data sprite 1
-wire		[1:0]sprdat2;			//data sprite 2
-wire		[1:0]sprdat3;			//data sprite 3
-wire		[1:0]sprdat4;			//data sprite 4
-wire		[1:0]sprdat5;			//data sprite 5
-wire		[1:0]sprdat6;			//data sprite 6
-wire		[1:0]sprdat7;			//data sprite 7
+wire		[1:0] sprdat0;			//data sprite 0
+wire		[1:0] sprdat1;			//data sprite 1
+wire		[1:0] sprdat2;			//data sprite 2
+wire		[1:0] sprdat3;			//data sprite 3
+wire		[1:0] sprdat4;			//data sprite 4
+wire		[1:0] sprdat5;			//data sprite 5
+wire		[1:0] sprdat6;			//data sprite 6
+wire		[1:0] sprdat7;			//data sprite 7
 
 wire		attach0;				//attach sprite 0,1
 wire		attach1;				//attach sprite 0,1
@@ -75,15 +78,15 @@ wire		attach7;				//attach sprite 6,7
 //sprite register address decoder
 wire	selsprx;
 
-assign selsprx=(SPRPOSCTLBASE[8:6]==regaddress[8:6])?1:0;//base address
-assign selspr0=(selsprx&&(regaddress[5:3]==0))?1:0;
-assign selspr1=(selsprx&&(regaddress[5:3]==1))?1:0;
-assign selspr2=(selsprx&&(regaddress[5:3]==2))?1:0;
-assign selspr3=(selsprx&&(regaddress[5:3]==3))?1:0;
-assign selspr4=(selsprx&&(regaddress[5:3]==4))?1:0;
-assign selspr5=(selsprx&&(regaddress[5:3]==5))?1:0;
-assign selspr6=(selsprx&&(regaddress[5:3]==6))?1:0;
-assign selspr7=(selsprx&&(regaddress[5:3]==7))?1:0;
+assign selsprx = (SPRPOSCTLBASE[8:6]==regaddress[8:6]) ? 1 : 0;//base address
+assign selspr0 = (selsprx&&(regaddress[5:3]==0)) ? 1 : 0;
+assign selspr1 = (selsprx&&(regaddress[5:3]==1)) ? 1 : 0;
+assign selspr2 = (selsprx&&(regaddress[5:3]==2)) ? 1 : 0;
+assign selspr3 = (selsprx&&(regaddress[5:3]==3)) ? 1 : 0;
+assign selspr4 = (selsprx&&(regaddress[5:3]==4)) ? 1 : 0;
+assign selspr5 = (selsprx&&(regaddress[5:3]==5)) ? 1 : 0;
+assign selspr6 = (selsprx&&(regaddress[5:3]==6)) ? 1 : 0;
+assign selspr7 = (selsprx&&(regaddress[5:3]==7)) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -94,7 +97,7 @@ sprshift sps0
 	.reset(reset),
 	.aen(selspr0),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat0),
 	.attach(attach0)
@@ -107,7 +110,7 @@ sprshift sps1
 	.reset(reset),
 	.aen(selspr1),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat1),
 	.attach(attach1)
@@ -120,7 +123,7 @@ sprshift sps2
 	.reset(reset),
 	.aen(selspr2),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat2),
 	.attach(attach2)
@@ -133,7 +136,7 @@ sprshift sps3
 	.reset(reset),
 	.aen(selspr3),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat3),
 	.attach(attach3)
@@ -146,7 +149,7 @@ sprshift sps4
 	.reset(reset),
 	.aen(selspr4),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat4),
 	.attach(attach4)
@@ -159,7 +162,7 @@ sprshift sps5
 	.reset(reset),
 	.aen(selspr5),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat5),
 	.attach(attach5)
@@ -172,7 +175,7 @@ sprshift sps6
 	.reset(reset),
 	.aen(selspr6),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat6),
 	.attach(attach6)
@@ -185,7 +188,7 @@ sprshift sps7
 	.reset(reset),
 	.aen(selspr7),
 	.address(regaddress[2:1]),
-	.horbeam(horbeam),
+	.hpos(hpos),
 	.datain(datain),
 	.sprdata(sprdat7),
 	.attach(attach7)
@@ -194,19 +197,19 @@ sprshift sps7
 //--------------------------------------------------------------------------------------
 
 //generate sprite data valid signals
-assign nsprite[0]=(sprdat0[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[1]=(sprdat1[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[2]=(sprdat2[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[3]=(sprdat3[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[4]=(sprdat4[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[5]=(sprdat5[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[6]=(sprdat6[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
-assign nsprite[7]=(sprdat7[1:0]!=2'b00)?1:0;//if any non-zero bit -> valid video data
+assign nsprite[0] = (sprena && sprdat0[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[1] = (sprena && sprdat1[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[2] = (sprena && sprdat2[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[3] = (sprena && sprdat3[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[4] = (sprena && sprdat4[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[5] = (sprena && sprdat5[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[6] = (sprena && sprdat6[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
+assign nsprite[7] = (sprena && sprdat7[1:0]!=2'b00) ? 1 : 0;//if any non-zero bit -> valid video data
 
 //--------------------------------------------------------------------------------------
 
 //sprite video priority logic and color decoder
-always @(	attach0 or attach1 or attach2 or attach3 or
+always @( attach0 or attach1 or attach2 or attach3 or
 		attach4 or attach5 or attach6 or attach7 or
 		sprdat0 or sprdat1 or sprdat2 or sprdat3 or
 		sprdat4 or sprdat5 or sprdat6 or sprdat7 or
@@ -276,10 +279,10 @@ module sprshift
 	input 	clk,					//bus clock	
 	input 	reset,		    		//reset
 	input	aen,					//address enable
-	input	[1:0]address,		   	//register address input
-	input	[8:0]horbeam,			//horizontal beam counter
-	input 	[15:0]datain, 		//bus data in
-	output	[1:0]sprdata,			//serialized sprite data out
+	input	[1:0] address,		   	//register address input
+	input	[8:0] hpos,				//horizontal beam counter
+	input 	[15:0] datain, 			//bus data in
+	output	[1:0] sprdata,			//serialized sprite data out
 	output	reg attach				//sprite is attached
 );
 
@@ -312,7 +315,7 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //generate load signal
-assign load=(armed&&(horbeam[8:0]==hstart[8:0]))?1:0;
+assign load = armed && hpos[8:0]==hstart[8:0] ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 

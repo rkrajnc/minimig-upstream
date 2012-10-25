@@ -1,4 +1,4 @@
-// Copyright 2008 by Jakub Bednarski
+// Copyright 2008, 2009 by Jakub Bednarski
 //
 // This file is part of Minimig
 //
@@ -46,16 +46,19 @@
 // 2008-07-10		- added disabling of AR when no ROM was uploaded
 // 2008-07-17		- code clean up
 // 2008-07-28		- code clean up
-
+// 2008-10-07		- improvements for 28MHz CPU
 
 module ActionReplay
 (
+	output	[2:0] test,
 	input	clk,
 	input	reset,
-	input	[23:1]cpuaddress,
-	input	[8:1]regaddress,
-	input	[15:0]datain,
-	output	[15:0]dataout,
+	input	[23:1] cpuaddress,
+	input	cpuclk,
+	input	_as,
+	input	[8:1] regaddress,
+	input	[15:0] datain,
+	output	[15:0] dataout,
 	input	cpurd,
 	input	cpuhwr,
 	input	cpulwr,
@@ -72,6 +75,9 @@ reg		freeze_del;
 wire	freeze_req;
 wire	int7_req;
 wire	int7_ack;
+reg		l_int7_req;
+reg		l_int7_ack;
+reg		l_int7;
 wire	reset_req;
 wire	break_req;
 reg		after_reset;
@@ -100,45 +106,63 @@ assign sel_ram = sel_cart & cpuaddress[18] & (cpuaddress[17:9]!=9'b001111_000);
 assign sel_custom = sel_cart & cpuaddress[18] & (cpuaddress[17:9]==9'b001111_000) & cpurd;
 assign sel_mode = sel_cart & ~|cpuaddress[18:1];
 assign sel_status = sel_cart & ~|cpuaddress[18:2] & cpurd;
-assign sel_ovl = ram_ovl & ~dma & (cpuaddress[23:19]==5'b0000_0) & cpurd;
+assign sel_ovl = ram_ovl & (cpuaddress[23:19]==5'b0000_0) & cpurd;
 assign selmem = (sel_rom&boot) | (((sel_rom&cpurd) | sel_ram | sel_ovl));
+
+//Action Replay is activated by writing to its ROM area during bootloading
+always @(posedge clk)
+	if (boot && cpuaddress[23:18]==6'b0100_00 && cpulwr)
+		aron <= 1;	//rom will miss first write but since 2 first words of rom are not readable it doesn't matter
 
 //delayed signal for edge dettection
 always @(posedge clk)
 	freeze_del <= freeze;
 
 //freeze button has been pressed
-assign freeze_req = freeze & ~freeze_del;
+assign freeze_req = freeze & ~freeze_del & ~active;
 
 //int7 request
-assign int7_req = aron & ~boot & ~active & (freeze_req | reset_req | break_req);
+assign int7_req = aron & ~boot & (freeze_req | reset_req | break_req);
 
-//Action Replay is activated by writing to its ROM area during bootloading
-always @(posedge clk)
-	if (boot && ~dma && cpuaddress[23:18]==6'b0100_00 && cpulwr)
-		aron <= 1;	//rom will miss first write but since 2 first words of rom are not readable it doesn't matter
+//level7 interrupt ack cycle, on Amiga interrupt vector number is read from kickstart rom
+//A[23:4] all high, A[3:1] vector number
+assign int7_ack = &cpuaddress & ~_as;
 
 //level 7 interrupt request logic
-always @(posedge clk)
+// interrupt request lines are sampled during S4->S5 transition (falling cpu clock edge)
+//always @(posedge clk)
+always @(posedge cpuclk)
 	if (reset)
 		int7 <= 0;
 	else if (int7_req)
 		int7 <= 1;
 	else if (int7_ack)
 		int7 <= 0;
+		
+always @(posedge clk)
+	{l_int7_req,l_int7_ack} <= {int7_req,int7_ack};
 
-//level7 interrupt ack cycle, on Amiga interrupt vector number is read from kickstart rom
-//A[23:4] all high, A[3:1] vector number
-assign int7_ack = cpuaddress[23:1]==23'h7FFFFF && cpurd ? 1 : 0;
-
-//triggers int7 when first CPU write after reset to memory location $8 
-assign reset_req = ~boot & (cpuaddress[23:1]==23'h04) & (cpuhwr|cpulwr) & after_reset;
-
-//set after reset, cleared by first INT7 req
 always @(posedge clk)
 	if (reset)
+		l_int7 <= 0;
+	else if (l_int7_req)
+		l_int7 <= 1;
+	else if (l_int7_ack && cpurd)
+		l_int7 <= 0;
+		
+assign test = {mode[1],mode[0],break_req};
+
+//triggers int7 when first CPU write after reset to memory location $8
+// AR rom checks if PC==$FC0144 or $F80160, other kickstarts need to path these values
+//_IPLx lines are sampled durring S4->S5 transition, _AS is asserted during S2, 
+//if we assert _IPLx lines too late the AR rom code won't properly recognize this request
+assign reset_req = ~boot & (cpuaddress[23:1]==23'h04) & ~_as & after_reset;
+
+//set after reset, cleared by first INT7 req
+always @(posedge cpuclk)
+	if (reset)
 		after_reset <= 1;
-	else if (reset_req)
+	else if (int7_ack)
 		after_reset <= 0;
 
 //chip ram overlay, when INT7 is active AR rom apears in chipram area
@@ -146,7 +170,7 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reset)
 		ram_ovl <= 0;
-	else if (int7 && int7_ack)//once again we don't know the state of CPU's FC signals
+	else if (l_int7 && l_int7_ack && cpurd) //once again we don't know the state of CPU's FCx signals
 		ram_ovl <= 1;
 	else if (sel_rom && (cpuaddress[2:1]==2'b11) && (cpuhwr|cpulwr))
 		ram_ovl <= 0;
@@ -158,24 +182,27 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reset)
 		active <= 0;
-	else if (int7 && int7_ack)//once again we don't know the state of CPU's FC signals
+	else if (l_int7 && l_int7_ack && cpurd)//once again we don't know the state of CPU's FC signals
 		active <= 1;
 	else if (sel_mode && (cpuaddress[2:1]==2'b00) && (cpuhwr|cpulwr))
 		active <= 0;
 
-//override chipram decoding (externally gated with cpurd)
+//override chipram decoding (externally gated with rd)
 assign ovr = ram_ovl;
 
 //===============================================================================================//
 
+// setting mode[1] enables breakpoint circuity
+// don't know yet why but exiting immediately from breakpoint with 'x' command doesn't enable brekpoints (mode=0)
+// preceeding 'x' with 'tr' works ok
 always @(posedge clk)
-	if (reset_req)
+	if (reset)
 		mode <= 2'b11;
 	else if (sel_mode && cpulwr)	//cpu write to mode register
 		mode <= datain[1:0];
 
 always @(posedge clk)
-	if (reset_req)
+	if (reset)
 		status <= 2'b11;
 	else if (freeze_req)			//freeze button pressed
 		status <= 2'b00;
@@ -209,10 +236,6 @@ assign dataout = custom_out | status_out;
 //===============================================================================================//
 
 //===============================================================================================//
-
-//address range $000-$3FF		
-assign adr_hit = cpuaddress[23:9]==15'h00 ? 1 : 0;
-
 ///TRACE:
 //150: 4A39 00BF E001   TST.B BFE001
 //156: 60F8             BRA   150
@@ -225,18 +248,14 @@ assign adr_hit = cpuaddress[23:9]==15'h00 ? 1 : 0;
 //138: 4E71             NOP
 
 //Action Replay is activated when memory at address $BFE001 is accessed from $000-$400
-reg [2:0]hit;
-always @(posedge clk)
-	if (reset)
-		hit <= 0;
-	else if (cpurd)
-	begin
-		hit[0] <= adr_hit && datain[15:0]==16'h4A39;	//TST.B opcode
-		hit[1] <= adr_hit && datain[15:0]==16'h00BF && hit[0];
-		hit[2] <= adr_hit && datain[15:0]==16'hE001 && hit[1];
-	end
 
-assign break_req = hit[2] & mode[1];
+reg	cpuaddress_hit;
 
+//address range access $000-$3FF		
+always @(posedge _as)
+	cpuaddress_hit <= cpuaddress[23:10]==14'h00 ? 1 : 0;
+
+//access of $BFE001 from $000-$3FF memory range
+assign break_req = mode[1] && cpuaddress_hit && cpuaddress==(24'hBFE001>>1) && !_as ? 1 : 0;
 
 endmodule

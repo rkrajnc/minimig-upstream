@@ -30,166 +30,193 @@
 // 07-01-2006		-cleaned up code
 // 21-02-2006		-improved audio state machine
 // 22-02-2006		-fixed dma interrupt timing, Turrican-3 theme now plays correct!
+//
+// -- JB --
+// 2008-10-12		- code clean-up
+// 2008-12-20		- changed DMA slot allocation
+// 2009-03-08		- horbeam removed
+//					- strhor signal added (cures problems with freezing of some games)
+//                  - corrupted Agony title song
+// 2009-03-17		- audio FSM rewritten to comply more exactly with HRM state diagram, Agony still has problems
+// 2009-03-26		- audio dma requests are latched and cleared at the start of every scan line, seemd to cure Agony problem
+//                  - Forgotten Worlds freezes at game intro screen due to missed audio irq
 
-module audio(clk,reset,horbeam,regaddress,datain,dmacon,audint,audpen,dmal,dmas,left,right);
-input 	clk;		    			//bus clock
-input 	reset;			   	//reset 
-input	[8:0]horbeam;			//horizontal beamcounter
-input 	[8:1]regaddress;		//register address input
-input	[15:0]datain;			//bus data in
-input	[3:0]dmacon;			//audio dma register input
-output	[3:0]audint;			//audio interrupt request
-input	[3:0]audpen;			//audio interrupt pending
-output	dmal;				//dma request 
-output	dmas;				//dma special 
-output	left;				//audio bitstream out left
-output	right;				//audio bitstream out right
+
+
+
+// Paula requests data from Agnus using DMAL line (high active state)
+// DMAL time slot allocation: (relative to first refresh slot referenced as $00)
+// $03,$05,$07 - all these slots are active when disk dma is inactive or there is no data in disk buffer to transfer
+// $04 - disk buffer has at least 3 words to transfer (transfer takes place in $08)
+// $06 - disk buffer has at least 2 words to transfer (transfer takes place in $0A)
+// $08 - disk buffer has at least 1 word to transfer (transfer takes place in $0C)
+// $09 - audio channel #0 location pointer reload request (active with data request) 
+// $0A - audio channle #0 dma data request (data transfered in slot $0E)
+// $0B - audio channel #1 location pointer reload request (active with data request) 
+// $0C - audio channle #1 dma data request (data transfered in slot $10)
+// $0D - audio channel #2 location pointer reload request (active with data request) 
+// $0E - audio channle #2 dma data request (data transfered in slot $12)
+// $0F - audio channel #3 location pointer reload request (active with data request) 
+// $10 - audio channle #3 dma data request (data transfered in slot $14)
+// minimum sampling period for audio channels (in CCK's):
+// #0 : 121/120
+// #1 : 122/121
+// #2 : 123/122
+// #3 : 124/123
+
+
+module audio
+(
+	input 	clk,		    	//bus clock
+	input 	cck,		    	//colour clock enable
+	input 	reset,			   	//reset 
+	input	strhor,				//horizontal strobe
+	input 	[8:1] regaddress,	//register address input
+	input	[15:0] datain,		//bus data in
+	input	[3:0] dmaena,		//audio dma register input
+	output	[3:0] audint,		//audio interrupt request
+	input	[3:0] audpen,		//audio interrupt pending
+	output	reg [3:0] dmal,		//dma request 
+	output	reg [3:0] dmas,		//dma special 
+	output	left,				//audio bitstream out left
+	output	right				//audio bitstream out right
+);
 
 //register names and addresses
-parameter	AUD0BASE=9'h0a0;
-parameter	AUD1BASE=9'h0b0;
-parameter	AUD2BASE=9'h0c0;
-parameter	AUD3BASE=9'h0d0;
+parameter	AUD0BASE = 9'h0a0;
+parameter	AUD1BASE = 9'h0b0;
+parameter	AUD2BASE = 9'h0c0;
+parameter	AUD3BASE = 9'h0d0;
 
 //local signals 
-reg		dmal;				//see above 
-reg		dmas;				//see above
-reg		tick;				//audio clock enable
-wire		[3:0]aen;				//address enable 0-3
-wire		[3:0]dmareq;			//dma request 0-3
-wire		[3:0]dmaspc;			//dma restart 0-3
-wire		[7:0]sample0;			//channel 0 audio sample 
-wire		[7:0]sample1;			//channel 1 audio sample 
-wire		[7:0]sample2;			//channel 2 audio sample 
-wire		[7:0]sample3;			//channel 3 audio sample 
-wire		[6:0]vol0;			//channel 0 volume 
-wire		[6:0]vol1;			//channel 1 volume 
-wire		[6:0]vol2;			//channel 2 volume 
-wire		[6:0]vol3;			//channel 3 volume 
+wire	[3:0] aen;			//address enable 0-3
+wire	[3:0] dmareq;		//dma request 0-3
+wire	[3:0] dmaspc;		//dma restart 0-3
+wire	[7:0] sample0;		//channel 0 audio sample 
+wire	[7:0] sample1;		//channel 1 audio sample 
+wire	[7:0] sample2;		//channel 2 audio sample 
+wire	[7:0] sample3;		//channel 3 audio sample 
+wire	[6:0] vol0;			//channel 0 volume 
+wire	[6:0] vol1;			//channel 1 volume 
+wire	[6:0] vol2;			//channel 2 volume 
+wire	[6:0] vol3;			//channel 3 volume 
 
 //--------------------------------------------------------------------------------------
 
 //address decoder
-assign aen[0]=(regaddress[8:4]==AUD0BASE[8:4])?1:0;
-assign aen[1]=(regaddress[8:4]==AUD1BASE[8:4])?1:0;
-assign aen[2]=(regaddress[8:4]==AUD2BASE[8:4])?1:0;
-assign aen[3]=(regaddress[8:4]==AUD3BASE[8:4])?1:0;
+assign aen[0] = (regaddress[8:4]==AUD0BASE[8:4]) ? 1 : 0;
+assign aen[1] = (regaddress[8:4]==AUD1BASE[8:4]) ? 1 : 0;
+assign aen[2] = (regaddress[8:4]==AUD2BASE[8:4]) ? 1 : 0;
+assign aen[3] = (regaddress[8:4]==AUD3BASE[8:4]) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
-//generate audio clock enable
+//DMA slot allocation is managed by Agnus 
+//#0 : 0E
+//#1 : 10
+//#2 : 12
+//#3 : 14
+
 always @(posedge clk)
-	if(reset)
-		tick<=0;
-	else
-		tick<=~tick;
-
-//--------------------------------------------------------------------------------------
-
-//dma request logic
-//slot 0x000010011 (channel #0)
-//slot 0x000010111 (channel #1)
-//slot 0x000011011 (channel #2)
-//slot 0x000011111 (channel #3)
-always @(horbeam or dmareq or dmaspc)
-begin
-	if((horbeam[8:4]==5'b00001) && (horbeam[1:0]==2'b11))
+	if (strhor)
 	begin
-		case(horbeam[3:2])
-			2'b00: dmal=dmareq[0];
-			2'b01: dmal=dmareq[1];
-			2'b10: dmal=dmareq[2];
-			2'b11: dmal=dmareq[3];
-		endcase
-		case(horbeam[3:2])
-			2'b00: dmas=dmaspc[0];
-			2'b01: dmas=dmaspc[1];
-			2'b10: dmas=dmaspc[2];
-			2'b11: dmas=dmaspc[3];
-		endcase
+		dmal <= dmareq;
+		dmas <= dmaspc;
 	end
-	else
-	begin
-		dmal=0;
-		dmas=0;
-	end
-end
-
-
+		
 //--------------------------------------------------------------------------------------
 
 //instantiate audio channel 0
-audiochannel ach0 (		.clk(clk),
-					.reset(reset),
-					.tick(tick),
-					.aen(aen[0]),
-					.den(dmacon[0]),
-					.regaddress(regaddress[3:1]),
-					.data(datain),
-					.volume(vol0),
-					.sample(sample0),
-					.intreq(audint[0]),
-					.intpen(audpen[0]),
-					.dmareq(dmareq[0]),
-					.dmas(dmaspc[0])	);
+audiochannel ach0
+(
+	.clk(clk),
+	.reset(reset),
+	.cck(cck),
+	.aen(aen[0]),
+	.dmaena(dmaena[0]),
+	.regaddress(regaddress[3:1]),
+	.data(datain),
+	.volume(vol0),
+	.sample(sample0),
+	.intreq(audint[0]),
+	.intpen(audpen[0]),
+	.dmareq(dmareq[0]),
+	.dmas(dmaspc[0]),
+	.strhor(strhor)
+);
 
 //instantiate audio channel 1
-audiochannel ach1 (		.clk(clk),
-					.reset(reset),
-					.tick(tick),
-					.aen(aen[1]),
-					.den(dmacon[1]),
-					.regaddress(regaddress[3:1]),
-					.data(datain),
-					.volume(vol1),
-					.sample(sample1),
-					.intreq(audint[1]),
-					.intpen(audpen[1]),
-					.dmareq(dmareq[1]),
-					.dmas(dmaspc[1])	);
+audiochannel ach1
+(
+	.clk(clk),
+	.reset(reset),
+	.cck(cck),
+	.aen(aen[1]),
+	.dmaena(dmaena[1]),
+	.regaddress(regaddress[3:1]),
+	.data(datain),
+	.volume(vol1),
+	.sample(sample1),
+	.intreq(audint[1]),
+	.intpen(audpen[1]),
+	.dmareq(dmareq[1]),
+	.dmas(dmaspc[1]),
+	.strhor(strhor)
+);
 
 //instantiate audio channel 2
-audiochannel ach2 (		.clk(clk),
-					.reset(reset),
-					.tick(tick),
-					.aen(aen[2]),
-					.den(dmacon[2]),
-					.regaddress(regaddress[3:1]),
-					.data(datain),
-					.volume(vol2),
-					.sample(sample2),
-					.intreq(audint[2]),
-					.intpen(audpen[2]),
-					.dmareq(dmareq[2]),
-					.dmas(dmaspc[2])	);
+audiochannel ach2 
+(	
+	.clk(clk),
+	.reset(reset),
+	.cck(cck),
+	.aen(aen[2]),
+	.dmaena(dmaena[2]),
+	.regaddress(regaddress[3:1]),
+	.data(datain),
+	.volume(vol2),
+	.sample(sample2),
+	.intreq(audint[2]),
+	.intpen(audpen[2]),
+	.dmareq(dmareq[2]),
+	.dmas(dmaspc[2]),
+	.strhor(strhor)	
+);
 
 //instantiate audio channel 3
-audiochannel ach3 (		.clk(clk),
-					.reset(reset),
-					.tick(tick),
-					.aen(aen[3]),
-					.den(dmacon[3]),
-					.regaddress(regaddress[3:1]),
-					.data(datain),
-					.volume(vol3),
-					.sample(sample3),
-					.intreq(audint[3]),
-					.intpen(audpen[3]),
-					.dmareq(dmareq[3]),
-					.dmas(dmaspc[3])	);
+audiochannel ach3
+(		
+	.clk(clk),
+	.reset(reset),
+	.cck(cck),
+	.aen(aen[3]),
+	.dmaena(dmaena[3]),
+	.regaddress(regaddress[3:1]),
+	.data(datain),
+	.volume(vol3),
+	.sample(sample3),
+	.intreq(audint[3]),
+	.intpen(audpen[3]),
+	.dmareq(dmareq[3]),
+	.dmas(dmaspc[3]),
+	.strhor(strhor)
+);
 
 //instantiate volume control and sigma/delta modulator
-sigmadelta dac0 (		.clk(clk),
-					.sample0(sample0),
-					.sample1(sample1),
-					.sample2(sample2),
-					.sample3(sample3),
-					.vol0(vol0),
-					.vol1(vol1),
-					.vol2(vol2),
-					.vol3(vol3),
-					.left(left),
-					.right(right)		);
+sigmadelta dac0 
+(
+	.clk(clk),
+	.sample0(sample0),
+	.sample1(sample1),
+	.sample2(sample2),
+	.sample3(sample3),
+	.vol0(vol0),
+	.vol1(vol1),
+	.vol2(vol2),
+	.vol3(vol3),
+	.left(left),
+	.right(right)	
+);
 
 //--------------------------------------------------------------------------------------
 
@@ -204,77 +231,87 @@ endmodule
 // stereo sigma/delta bitstream modulator
 // channel 1&2 --> left
 // channel 0&3 --> right
-module sigmadelta(clk,sample0,sample1,sample2,sample3,vol0,vol1,vol2,vol3,left,right);
-input 	clk;					//bus clock
-input	[7:0]sample0;			//sample 0 input
-input	[7:0]sample1;			//sample 1 input
-input	[7:0]sample2;			//sample 2 input
-input	[7:0]sample3;			//sample 3 input
-input	[6:0]vol0;			//volume 0 input
-input	[6:0]vol1;			//volume 1 input
-input	[6:0]vol2;			//volume 2 input
-input	[6:0]vol3;			//volume 3 input
-output	left;				//left bitstream output
-output	right;				//right bitsteam output
+module sigmadelta
+(
+	input 	clk,				//bus clock
+	input	[7:0] sample0,		//sample 0 input
+	input	[7:0] sample1,		//sample 1 input
+	input	[7:0] sample2,		//sample 2 input
+	input	[7:0] sample3,		//sample 3 input
+	input	[6:0] vol0,			//volume 0 input
+	input	[6:0] vol1,			//volume 1 input
+	input	[6:0] vol2,			//volume 2 input
+	input	[6:0] vol3,			//volume 3 input
+	output	left,				//left bitstream output
+	output	right				//right bitsteam output
+);
 
 //local signals
-reg		[14:0]acculeft;		//sigma/delta accumulator left		
-reg		[14:0]accuright;		//sigma/delta accumulator right
-wire		[7:0]leftsmux;			//left mux sample
-wire		[7:0]rightsmux;		//right mux sample
-wire		[6:0]leftvmux;			//left mux volum
-wire		[6:0]rightvmux;		//right mux volume
-wire		[13:0]ldata;			//left DAC data
-wire		[13:0]rdata; 			//right DAC data
+reg		[14:0] acculeft;		//sigma/delta accumulator left		
+reg		[14:0] accuright;		//sigma/delta accumulator right
+wire	[7:0] leftsmux;			//left mux sample
+wire	[7:0] rightsmux;		//right mux sample
+wire	[6:0] leftvmux;			//left mux volum
+wire	[6:0] rightvmux;		//right mux volume
+wire	[13:0] ldata;			//left DAC data
+wire	[13:0] rdata; 			//right DAC data
 reg		mxc;					//multiplex control
 
 //--------------------------------------------------------------------------------------
 
 //multiplexer control
 always @(posedge clk)
-		mxc<=~mxc;
+		mxc <= ~mxc;
 
 //sample multiplexer
-assign leftsmux=(mxc)?sample1:sample2;
-assign rightsmux=(mxc)?sample0:sample3;
+assign leftsmux = (mxc) ? sample1 : sample2;
+assign rightsmux = (mxc) ? sample0 : sample3;
 
 //volume multiplexer
-assign leftvmux=(mxc)?vol1:vol2;
-assign rightvmux=(mxc)?vol0:vol3;
+assign leftvmux = (mxc) ? vol1 : vol2;
+assign rightvmux = (mxc) ? vol0 : vol3;
 
 //left volume control
 //when volume MSB is set, volume is always maximum
-svmul sv0(	.sample(leftsmux),
-			.volume({	(leftvmux[6]|leftvmux[5]),
-					(leftvmux[6]|leftvmux[4]),
-					(leftvmux[6]|leftvmux[3]),
-					(leftvmux[6]|leftvmux[2]),
-					(leftvmux[6]|leftvmux[1]),
-					(leftvmux[6]|leftvmux[0])}),
-			.out(ldata)	);
+svmul sv0
+(
+	.sample(leftsmux),
+	.volume({	(leftvmux[6] | leftvmux[5]),
+				(leftvmux[6] | leftvmux[4]),
+				(leftvmux[6] | leftvmux[3]),
+				(leftvmux[6] | leftvmux[2]),
+				(leftvmux[6] | leftvmux[1]),
+				(leftvmux[6] | leftvmux[0]) }),
+	.out(ldata)
+);
 
 //right volume control
 //when volume MSB is set, volume is always maximum
-svmul sv1(	.sample(rightsmux),
-			.volume({	(rightvmux[6]|rightvmux[5]),
-					(rightvmux[6]|rightvmux[4]),
-					(rightvmux[6]|rightvmux[3]),
-					(rightvmux[6]|rightvmux[2]),
-					(rightvmux[6]|rightvmux[1]),
-					(rightvmux[6]|rightvmux[0])}),
-			.out(rdata)	);
+svmul sv1
+(
+	.sample(rightsmux),
+	.volume({	(rightvmux[6] | rightvmux[5]),
+				(rightvmux[6] | rightvmux[4]),
+				(rightvmux[6] | rightvmux[3]),
+				(rightvmux[6] | rightvmux[2]),
+				(rightvmux[6] | rightvmux[1]),
+				(rightvmux[6] | rightvmux[0])}),
+	.out(rdata)	
+	);
 
 //--------------------------------------------------------------------------------------
 
 //left sigma/delta modulator
 always @(posedge clk)
-	acculeft[14:0]<={1'b0,acculeft[13:0]}+{1'b0,~ldata[13],ldata[12:0]};
-assign left=acculeft[14];
+	acculeft[14:0] <= {1'b0,acculeft[13:0]} + {1'b0,~ldata[13],ldata[12:0]};
+	
+assign left = acculeft[14];
 
 //right sigma/delta modulator
 always @(posedge clk)
-	accuright[14:0]<={1'b0,accuright[13:0]}+{1'b0,~rdata[13],rdata[12:0]};
-assign right=accuright[14];
+	accuright[14:0] <= {1'b0,accuright[13:0]} + {1'b0,~rdata[13],rdata[12:0]};
+	
+assign right = accuright[14];
 
 endmodule
 
@@ -284,20 +321,22 @@ endmodule
 
 //this module multiplies a signed 8 bit sample with an unsigned 6 bit volume setting
 //it produces a 14bit signed result
-module svmul(sample,volume,out);
-input 	[7:0]sample;			//signed sample input
-input	[5:0]volume;			//unsigned volume input
-output	[13:0]out;			//signed product out
+module svmul
+(
+	input 	[7:0] sample,		//signed sample input
+	input	[5:0] volume,		//unsigned volume input
+	output	[13:0] out			//signed product out
+);
 
-wire		[13:0]sesample;   		//sign extended sample
-wire		[13:0]sevolume;		//sign extended volume
+wire	[13:0] sesample;   		//sign extended sample
+wire	[13:0] sevolume;		//sign extended volume
 
 //sign extend input parameters
-assign 	sesample[13:0]={sample[7],sample[7],sample[7],sample[7],sample[7],sample[7],sample[7:0]};
-assign	sevolume[13:0]={8'b00000000,volume[5:0]};
+assign 	sesample[13:0] = {{6{sample[7]}},sample[7:0]};
+assign	sevolume[13:0] = {8'b00000000,volume[5:0]};
 
 //multiply, synthesizer should infer multiplier here
-assign out[13:0]=sesample[13:0]*sevolume[13:0];
+assign out[13:0] = sesample[13:0] * sevolume[13:0];
 
 endmodule
 
@@ -306,289 +345,367 @@ endmodule
 //--------------------------------------------------------------------------------------
 
 //This module handles a single amiga audio channel. attached modes are not supported
-module audiochannel(clk,reset,tick,aen,den,regaddress,data,volume,sample,intreq,intpen,dmareq,dmas);
-input 	clk;					//bus clock	
-input 	reset;		    		//reset
-input	tick;				//audio clock enable
-input	aen;					//address enable
-input	den;					//dma enable
-input	[3:1]regaddress;		//register address input
-input 	[15:0]data; 			//bus data input
-output	[6:0]volume;			//channel volume output
-output	[7:0]sample;			//channel sample output
-output	intreq;				//interrupt request
-input	intpen;				//interrupt pending input
-output	dmareq;				//dma request
-output	dmas;				//dma special (restart)
+module audiochannel
+(
+	input 	clk,					//bus clock	
+	input 	reset,		    		//reset
+	input	cck,					//colour clock enable
+	input	aen,					//address enable
+	input	dmaena,					//dma enable
+	input	[3:1] regaddress,		//register address input
+	input 	[15:0] data, 			//bus data input
+	output	[6:0] volume,			//channel volume output
+	output	[7:0] sample,			//channel sample output
+	output	intreq,					//interrupt request
+	input	intpen,					//interrupt pending input
+	output	reg dmareq,				//dma request
+	output	reg dmas,				//dma special (restart)
+	input	strhor					//horizontal strobe
+);
 
 //register names and addresses
-parameter	AUDLEN=4'h4;
-parameter	AUDPER=4'h6;
-parameter	AUDVOL=4'h8;
-parameter	AUDDAT=4'ha;
+parameter	AUDLEN = 4'h4;
+parameter	AUDPER = 4'h6;
+parameter	AUDVOL = 4'h8;
+parameter	AUDDAT = 4'ha;
 
 //local signals
-reg		dmareq;				//see above
-reg		dmas;				//see above
-reg		intreq;				//see above
-reg		[15:0]audlen;			//audio length register
-reg		[15:0]audper;			//audio period register
-reg		[6:0]audvol;			//audio volume register
-reg		[15:0]auddat;			//audio data register
-reg		[15:0]percount;		//audio period counter
-reg		[15:0]lencount;		//audio length counter
-reg		[15:0]datbuf;			//audio data buffer
-reg		[2:0]audiostate;		//audio current state
-reg		[2:0]audionext;	   	//audio next state
-reg		intreq2;				//used to time interrupts
+reg		[15:0] audlen;			//audio length register
+reg		[15:0] audper;			//audio period register
+reg		[6:0] audvol;			//audio volume register
+reg		[15:0] auddat;			//audio data register
 
-reg		datld;				//load audio buffer from auddat
-reg		datsh;				//shift datbuf 8 bits to the left, shift in zero's
-reg		lendec;				//decrement length counter
-reg		lenload;				//load length counter
-reg		perload;				//load period counter
-reg		intrst;				//intreq2 latch reset
-reg		dma;					//request dma
-wire		lenfin;				//length counter is 1
-wire		perzero;				//period counter is zero
-wire		datwrite;				//data register is written
+reg		[15:0] datbuf;			//audio data buffer
+reg		[1:0] audiostate;		//audio current state
+reg		[1:0] audionext;	 	//audio next state
+
+wire	datwrite;				//data register is written
+reg		volcntrld;				//not used
+
+reg		pbufld1;				//load output sample from sample buffer
+
+reg		[15:0] percnt;			//audio period counter
+reg		percount;				//decrease period counter
+reg		percntrld;				//reload period counter
+wire	perfin;					//period counter expired
+
+reg		[15:0] lencnt;			//audio length counter
+reg		lencount;				//decrease length counter
+reg		lencntrld;				//reload length counter
+wire	lenfin;					//length counter expired
+
+reg 	AUDxDAT;				//audio data buffer was written
+wire	AUDxON;					//audio DMA channel is enabled
+reg		AUDxDR;					//audio DMA request
+reg		AUDxIR;					//audio interrupt request
+wire	AUDxIP;					//audio interrupt is pending
+
+reg		intreq2_set;
+reg		intreq2_clr;
+reg		intreq2;				//buffered interrupt request
+
+reg		dmasen;					//pointer register reloading request
+reg		penhi;					//enable high byte of sample buffer
+
 
 //--------------------------------------------------------------------------------------
  
 //length register bus write
 always @(posedge clk)
-	if(reset)
-		audlen[15:0]<=0;	
-	else if(aen && (regaddress[3:1]==AUDLEN[3:1]))
-		audlen[15:0]<=data[15:0];
+	if (reset)
+		audlen[15:0] <= 0;	
+	else if (aen && (regaddress[3:1]==AUDLEN[3:1]))
+		audlen[15:0] <= data[15:0];
 
 //period register bus write
 always @(posedge clk)
-	if(reset)
-		audper[15:0]<=0;	
-	else if(aen && (regaddress[3:1]==AUDPER[3:1]))
-		audper[15:0]<=data[15:0];
+	if (reset)
+		audper[15:0] <= 0;	
+	else if (aen && (regaddress[3:1]==AUDPER[3:1]))
+		audper[15:0] <= data[15:0];
 
 //volume register bus write
 always @(posedge clk)
-	if(reset)
-		audvol[6:0]<=0;	
-	else if(aen && (regaddress[3:1]==AUDVOL[3:1]))
-		audvol[6:0]<=data[6:0];
+	if (reset)
+		audvol[6:0] <= 0;	
+	else if (aen && (regaddress[3:1]==AUDVOL[3:1]))
+		audvol[6:0] <= data[6:0];
 
 //data register strobe
-assign datwrite=(aen && (regaddress[3:1]==AUDDAT[3:1]))?1:0;
+assign datwrite = (aen && (regaddress[3:1]==AUDDAT[3:1])) ? 1:0;
 
 //data register bus write
 always @(posedge clk)
-	if(reset)
-		auddat[15:0]<=0;	
-	else if(datwrite)
-		auddat[15:0]<=data[15:0];
+	if (reset)
+		auddat[15:0] <= 0;	
+	else if (datwrite)
+		auddat[15:0] <= data[15:0];
+
+always @(posedge clk)
+	if (datwrite)
+		AUDxDAT <= 1;
+	else if (cck)
+		AUDxDAT <= 0;
+	
+//--------------------------------------------------------------------------------------
+
+assign	AUDxON = dmaena;	//dma enable
+
+assign	AUDxIP = intpen;	//audio interrupt pending
+
+assign intreq = AUDxIR;		//audio interrupt request
 	
 //--------------------------------------------------------------------------------------
 
 //period counter 
 always @(posedge clk)
-	if(perload || perzero)//load period counter from audio period register
-		percount[15:0]<=audper[15:0];
-	else if(tick)//period counter count down
-		percount[15:0]<=percount[15:0]-1;
-assign perzero=(percount[15:0]==0)?1:0;
+	if (percntrld && cck)//load period counter from audio period register
+		percnt[15:0] <= audper[15:0];
+	else if (percount && cck)//period counter count down
+		percnt[15:0] <= percnt[15:0] - 1;
+		
+assign perfin = (percnt[15:0]==1 && cck) ? 1 : 0;
 
 //length counter 
 always @(posedge clk)
-	if(lenload)//load length counter from audio length register
-		lencount[15:0]<=audlen[15:0];
-	else if(lendec)//length counter count down
-		lencount[15:0]<=lencount[15:0]-1;
-assign lenfin=(lencount[15:0]==1)?1:0;
+	if (lencntrld && cck)//load length counter from audio length register
+		lencnt[15:0] <= audlen[15:0];
+	else if (lencount && cck)//length counter count down
+		lencnt[15:0] <= lencnt[15:0] - 1;
+		
+assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
 //audio buffer
 always @(posedge clk)
-	if(reset)
-		datbuf[15:0]<=0;
-	else if(datld)
-		datbuf[15:0]<=auddat[15:0];
-	else if(datsh)
-		datbuf[15:0]<={datbuf[7:0],8'h00};	
+	if (reset)
+		datbuf[15:0] <= 0;
+	else if (pbufld1 && cck)
+		datbuf[15:0] <= auddat[15:0];
 
-//sample output
-assign sample[7:0]=datbuf[15:8];
+assign sample[7:0] = penhi ? datbuf[15:8] : datbuf[7:0];
 
 //volume output
-assign volume[6:0]=audvol[6:0];
+assign volume[6:0] = audvol[6:0];
 
 //--------------------------------------------------------------------------------------
 
 //dma request logic
-//dma is requested by main state machine
-//dma is cleared when auddat is written
-//if length counter is being reloaded, dma restart is requested
 always @(posedge clk)
 begin
-	if(reset || datwrite)
+	if (reset)
 	begin
-		dmareq<=0;
-		dmas<=0;
+		dmareq <= 0;
+		dmas <= 0;
 	end
-	else if(dma)
+	else if (AUDxDR && cck)
 	begin
-		dmareq<=1;
-		dmas<=lenload;
+		dmareq <= 1;
+		dmas <= dmasen | lenfin;
+	end
+	else if (strhor) //dma request are cleared when transfered to Agnus
+	begin
+		dmareq <= 0;
+		dmas <= 0;
 	end
 end
 
-//intreq2 latch
-//this signal is used to properly request interrupts in dma mode
-//if data from dma restart request has come in --> intreq2 is true
+//buffered interrupt request
 always @(posedge clk)
-	if(reset||intrst)
-		intreq2<=0;
-	else if(dmas && den && datwrite)//(dmas=1 if restart request is pending)
-		intreq2<=1;
-
+	if (cck)
+		if (intreq2_set)
+			intreq2 <= 1;
+		else if (intreq2_clr)
+			intreq2 <= 0;
+	
 //audio states
-parameter AUDIDLE=0;
-parameter AUDGET=1;
-parameter AUDSTATE1=2;
-parameter AUDSTATE2=3;
-parameter AUDSTATE3=4;
+parameter AUDIO_STATE_0 = 0;
+parameter AUDIO_STATE_1 = 1;
+parameter AUDIO_STATE_2 = 2;
+parameter AUDIO_STATE_3 = 3;
 
 //audio channel state machine
 always @(posedge clk)
 begin
-	if(reset)
-		audiostate<=AUDIDLE;
-	else
-		audiostate<=audionext;
+	if (reset)
+		audiostate <= AUDIO_STATE_0;
+	else if (cck)
+		audiostate <= audionext;
 end
 
-always @(audiostate or den or datwrite or lenfin or intreq2 or perzero or intpen)
+//transition function
+always @(audiostate or AUDxON or AUDxDAT or AUDxIP or lenfin or perfin or intreq2)
 begin
-	case(audiostate)
+	case (audiostate)
+	
+		AUDIO_STATE_0: //audio FSM idle state
+		begin
+			intreq2_clr = 1;
+			intreq2_set = 0;
+			lencount = 0;
+			penhi = 0;
+			percount = 0;
+			percntrld = 1;
+						
+			if (AUDxON) //start of DMA driven audio playback
+			begin
+				audionext = AUDIO_STATE_1;
+				AUDxDR = 1;
+				AUDxIR = 0;
+				dmasen = 1;
+				lencntrld = 1;
+				pbufld1 = 0;
+				volcntrld = 0;	
+			end
+			else if (AUDxDAT && !AUDxON && !AUDxIP)	//CPU driven audio playback
+			begin
+				audionext = AUDIO_STATE_2;
+				AUDxDR = 0;				
+				AUDxIR = 1;
+				dmasen = 0;
+				lencntrld = 0;
+				pbufld1 = 1;
+				volcntrld = 1;
+			end
+			else
+			begin
+				audionext = AUDIO_STATE_0;
+				AUDxDR = 0;				
+				AUDxIR = 0;
+				dmasen = 0;
+				lencntrld = 0;
+				pbufld1 = 0;
+				volcntrld = 0;	
+			end
+		end
+
+		AUDIO_STATE_1: //audio DMA has been enabled
+		begin
+			dmasen = 0;
+			intreq2_clr = 1;
+			intreq2_set = 0;
+			lencntrld = 0;
+			penhi = 0;
+			percount = 0;
+			
+			if (AUDxON && AUDxDAT) //requested data had arrived
+			begin
+				audionext = AUDIO_STATE_2;
+				AUDxDR = 1;
+				AUDxIR = 1;
+				lencount = ~lenfin;
+				pbufld1 = 1;	//new data has been just received so put it in the output buffer		
+				percntrld = 1; 				
+				volcntrld = 1;
+			end
+			else if (!AUDxON) //audio DMA has been switched off so go to IDLE state
+			begin
+				audionext = AUDIO_STATE_0;
+				AUDxDR = 0;
+				AUDxIR = 0;
+				lencount = 0;
+				pbufld1 = 0;
+				percntrld = 0; 
+				volcntrld = 0;
+			end
+			else
+			begin
+				audionext = AUDIO_STATE_1;
+				AUDxDR = 0;
+				AUDxIR = 0;
+				lencount = 0;
+				pbufld1 = 0;				
+				percntrld = 0;
+				volcntrld = 0;
+			end
+		end
+
+		AUDIO_STATE_2: //first sample is being output
+		begin
+			AUDxDR = 0;
+			AUDxIR = 0;
+			dmasen = 0;
+			intreq2_clr = 0;
+			intreq2_set = lenfin & AUDxON & AUDxDAT;
+			lencount = ~lenfin & AUDxON & AUDxDAT;
+			lencntrld = lenfin & AUDxON & AUDxDAT;
+			pbufld1 = 0;
+			penhi = 1;
+			volcntrld = 0;
 		
-		//audio state machine idle state (state 000)
-		//mute output
-		//reload period counter
-		//start dma driven audio immediately if dma enabled
-		//start interrupt driven audio immediately when auddat is written
-		AUDIDLE:
-		begin
-			datld=0;
-			datsh=1;//this mutes sample output after max 2 clocks
-			intrst=0;
-			lendec=0;
-			lenload=1;//**dma restart enable**
-			perload=0;
-			intreq=0;
-			dma=den;
-			if(datwrite)//start interrupt driven audio
-				audionext=AUDSTATE1;
-			else if(den)//start dma driven audio
-				audionext=AUDGET;
+			if (perfin) //if period counter expired output other sample from buffer
+			begin
+				audionext = AUDIO_STATE_3;
+				percount = 0;
+				percntrld = 1;
+			end
 			else
-				audionext=AUDIDLE;	
+			begin
+				audionext = AUDIO_STATE_2;
+				percount = 1;
+				percntrld = 0;
+			end
 		end
 
-		//wait for first word of dma driven audio to arrive (state 101)
-		//reset intreq2 latch
-		//when it arrives, reload period counter, request interrupt and go to next state
-		//if dma is disabled, return to idle state
-		AUDGET:
+		AUDIO_STATE_3: //second sample is being output
 		begin
-			datld=0;
-			datsh=0;
-			intrst=1;
-			lendec=0;
-			lenload=0;
-			perload=1;
-			intreq=datwrite;
-			dma=0;
-			if(!den)
-				audionext=AUDIDLE;				
-			else if(datwrite)
-				audionext=AUDSTATE1;
+			dmasen = 0;
+			intreq2_set = lenfin & AUDxON & AUDxDAT;
+			lencount = ~lenfin & AUDxON & AUDxDAT;
+			lencntrld = lenfin & AUDxON & AUDxDAT;
+			penhi = 0;
+			volcntrld = 0;
+			
+			if (perfin && (AUDxON || !AUDxIP)) //period counter expired and audio DMA active
+			begin
+				audionext = AUDIO_STATE_2;
+				AUDxDR = AUDxON;
+				AUDxIR = (intreq2 & AUDxON) | ~AUDxON;
+				intreq2_clr = intreq2;
+				pbufld1 = 1;
+				percount = 0;
+				percntrld = 1;
+			end
+			else if (perfin && !AUDxON && AUDxIP) //period counter expired and audio DMA inactive
+			begin
+				audionext = AUDIO_STATE_0;
+				AUDxDR = 0;
+				AUDxIR = 0;
+				intreq2_clr = 0;
+				pbufld1 = 0;
+				percount = 0;
+				percntrld = 0;
+			end
 			else
-				audionext=AUDGET;	
+			begin
+				audionext = AUDIO_STATE_3;
+				AUDxDR = 0;
+				AUDxIR = 0;
+				intreq2_clr = 0;
+				pbufld1 = 0;
+				percount = 1;
+				percntrld = 0;
+			end
 		end
-
-		//state transition handling (transition 101->010 and 011->010)
-		//load data from auddat to sample buffer
-		//reset intreq2 latch
-		//decrement length counter if len>1 
-		//reload length counter if len=1
-		//request interrupt if dma disabled (interrupt driven mode)
-		//request interrupt if intreq2 occurred(dma driven mode)
-		//request new data by dma if dma enabled
-		AUDSTATE1:
-		begin
-			datld=1;
-			datsh=0;
-			intrst=1;
-			lendec=~lenfin;
-			lenload=lenfin;//**dma restart enable**
-			perload=0;
-			intreq=~den|intreq2;
-			dma=den;
-			audionext=AUDSTATE2;	
-		end
-
-		//first sample of word state (state 010)
-		//load second sample when period counter expires
-		//go to next state when period counter expires
-		AUDSTATE2:
-		begin
-			datld=0;
-			datsh=perzero;
-			intrst=0;
-			lendec=0;
-			lenload=0;
-			perload=0;
-			intreq=0;
-			dma=0;
-			if(perzero)//next state
-				audionext=AUDSTATE3;
-			else//stay here
-				audionext=AUDSTATE2;	
-		end
-
-		//second sample of word state (state 011)
-		//go to idle state when period counter expires and not (enabled or intterupt not pending)
-		//else go to next state if period counter expires 
-		AUDSTATE3:
-		begin
-			datld=0;
-			datsh=0;
-			intrst=0;
-			lendec=0;
-			lenload=0;
-			perload=0;
-			intreq=0;
-			dma=0;
-			if(perzero && !(den || !intpen))//see HRM state diagram
-				audionext=AUDIDLE;				
-			else if(perzero)
-				audionext=AUDSTATE1;
-			else
-				audionext=AUDSTATE3;	
-		end
-
-		//we should never come here (state 100,110,111)
+		
 		default:
 		begin
-			datld=1'bx;
-			datsh=1'bx;
-			intrst=1'bx;
-			lendec=1'bx;
-			lenload=1'bx;
-			perload=1'bx;
-			intreq=1'bx;
-			dma=1'bx;
-			audionext=AUDIDLE;	
-		end
+			audionext = AUDIO_STATE_0;
+			AUDxDR = 0;
+			AUDxIR = 0;
+			dmasen = 0;
+			intreq2_clr = 0;
+			intreq2_set = 0;
+			lencntrld = 0;
+			lencount = 0;
+			pbufld1 = 0;
+			penhi = 0;
+			percount = 0;
+			percntrld = 0;
+			volcntrld = 0;	
+		end		
+		
 	endcase
 end
 

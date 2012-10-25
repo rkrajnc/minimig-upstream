@@ -32,71 +32,71 @@ void ScanKeys(void);
 
 /*variables*/
 unsigned short systimer;	/*system timer*/
-	
+
 /*initialize hardware*/
 void HardwareInit(void)
 {
 	/*disable analog inputs*/
-	ADCON1=0b00000110;
-	
+	ADCON1 = 0b00000110;
+
 	/*initalize output register*/
-	PORTA=0b00100011;
-	PORTB=0b01100000;
-	PORTC=0b00010001;	
+	PORTA = 0b00100011;
+	PORTB = 0b01100000;
+	PORTC = 0b00010001;
 
 	/*enable PORTB weak pullup*/
-	RBPU=0;
-			
+	RBPU = 0;
+
 	/*initialize SPI*/
-	SSPSTAT=0x00;
-	SSPCON1=0x32; //changed from 1/16 to 1/64
+	SSPSTAT = 0x00;
+	SSPCON1 = 0x32; //changed from 1/16 to 1/64
 
 	/*initialize input/ouput configuration*/
-	TRISA=0b11001100;
-	TRISB=0b00001011;
-	TRISC=0b10010000;
-	
+	TRISA = 0b11001100;
+	TRISB = 0b00001011;
+	TRISC = 0b10010000;
+
 	/*initialize serial port*/
-	/*SPBRG=129;*/	/*9600 BAUD @ 20MHz*/
-	SPBRG=10;	/*115200 BAUD @ 20MHz*/
-	TXSTA=0x24;
-	RCSTA=0x90;
-	
+	/*SPBRG = 129;*/	/*9600 BAUD @ 20MHz*/
+	SPBRG = 10;	/*115200 BAUD @ 20MHz*/
+	TXSTA = 0x24;
+	RCSTA = 0x90;
+
 	/*init timer0, internal clk, prescaler 1:256*/
-	T0CON=0xc7;
-	
+	T0CON = 0xc7;
+
 	/*enable interrupt for timer 0*/
-	TMR0IE=1;
-	GIE=1;
+	TMR0IE = 1;
+	GIE = 1;
 }
 
 /*interrupt service routine*/
 void interrupt intservice(void)
 {
 	/*clear timer 0 interrupt flag*/
-	TMR0IF=0;
-	
+	TMR0IF = 0;
+
 	/*set timer to timeout every 10ms
-	@20Mhz --> instruction=200ns
-	200ns * 256 * 195 = 10ms*/
-	TMR0-=195;	
+	@20Mhz --> instruction = 200ns
+	200ns * 256 * 195  =  10ms*/
+	TMR0 -= 195;
 
 	/*increment system timer*/
-	systimer++;	
+	systimer++;
 }
 
 /*get system timer + offset (handy for lots of things)*/
 unsigned short GetTimer(unsigned short offset)
 {
 	unsigned short r;
-	
+
 	/*get system time SAFELY*/
-	GIE=0;
-	r=systimer;
-	GIE=1;
-	
+	GIE = 0;
+	r = systimer;
+	GIE = 1;
+
 	/*add offset*/
-	r+=offset;
+	r += offset;
 
 	return(r);
 }
@@ -106,26 +106,26 @@ t may be maximum 30000 ticks in the future*/
 unsigned char CheckTimer(unsigned short t)
 {
 	/*calculate difference*/
-	GIE=0;
-	t-=systimer;
-	GIE=1;
-	
+	GIE = 0;
+	t -= systimer;
+	GIE = 1;
+
 	/*check if <t> has passed*/
-	if(t>30000)
+	if (t>30000)
 		return(1);
 	else
 		return(0);
 }
 
 /*put out a chacter to the serial port*/
-void putch(unsigned char ch) 
+void putch(unsigned char ch)
 {
-	while(TRMT==0);
-	TXREG=ch;  	
+	while(TRMT == 0);
+	TXREG = ch;
 }
 
 /*SPI-bus*/
-unsigned char SPI(unsigned char d)		
+unsigned char SPI(unsigned char d)
 {
 	SSPBUF = d;
 	while (!BF);			/*Wait untill controller is ready*/
@@ -136,66 +136,66 @@ unsigned char SPI(unsigned char d)
 void ShiftFpga(unsigned char data)
 {
 	/*bit 0*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x80)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x80)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 1*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x40)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x40)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 2*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x20)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x20)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 3*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x10)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x10)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 4*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x08)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x08)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 5*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x04)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x04)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 6*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x02)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x02)
+		DIN = 1;
+	CCLK = 1;
 
 	/*bit 7*/
-	DIN=0;
-	CCLK=0;
-	if(data&0x01)
-		DIN=1;
-	CCLK=1;
+	DIN = 0;
+	CCLK = 0;
+	if (data&0x01)
+		DIN = 1;
+	CCLK = 1;
 }
 
 
 
 
 
-	
-	
-	
+
+
+

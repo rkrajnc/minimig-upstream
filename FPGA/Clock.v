@@ -22,15 +22,29 @@
 //This module generates all necessary clocks from the 4.433619 PAL clock
 //JB:
 // 2008-03-01	- added ddl for generating in phase system clock with 28MHz clock
+// 2008-09-23	- added c1 and c3 clock enable outputs
+// 2008-10-15	- adapted e clock enable to be in sync with cck
 
 module clock_generator
 (
-	input	mclk,		//4.433619 MHz master clock input
-	output	clk28m,	 	//28.37516 MHz clock output
-	output 	clk, 		//7.09379  MHz clock output
-	output 	clk90, 		//7.09379  MHz qudrature clock output
-	output 	e		  	//0.709379 MHz clock enable output (clk domain pulse)
+	input	mclk,		// 4.433619 MHz master clock input
+	output	clk28m,	 	// 28.37516 MHz clock output
+	output	reg c1,		// clk28m clock domain signal synchronous with clk signal
+	output	reg c3,		// clk28m clock domain signal synchronous with clk signal delayed by 90 degrees
+	input	cck,		// colour clock from Agnus hpos[0] (3.54 MHz)
+	output 	clk, 		// 7.09379  MHz clock output
+	output 	reg e		// 0.709379 MHz clock enable output (clk domain pulse)
 );
+
+//            __    __    __    __    __
+// clk28m  __/  \__/  \__/  \__/  \__/  
+//            ___________             __
+// clk     __/           \___________/  
+//            ___________             __
+// c1      __/           \___________/   <- clk28m domain
+//                  ___________
+// c3      ________/           \________ <- clk28m domain
+//
 
 	reg		[3:0]ediv;	//used to generate e clock enable
 
@@ -38,10 +52,8 @@ module clock_generator
 	wire	pll_c28m;
 	wire	dll_c28m;
 	wire	dll_c7m;
-
-	reg 	clk90_reg;		//quadrature clock buffer
    
-   IBUFG mclk_buf ( .I(mclk), .O(pll_mclk) );	
+	IBUFG mclk_buf ( .I(mclk), .O(pll_mclk) );	
 	
 	DCM #
 	(
@@ -94,19 +106,21 @@ module clock_generator
 	//global clock buffers
 	BUFG clk28m_buf ( .I(dll_c28m), .O(clk28m) );
 	BUFG clk_buf ( .I(dll_c7m), .O(clk) );
-	BUFG clk90_buf ( .I(clk90_reg), .O(clk90) );
-	
-//quadrature clock 
-always @(posedge clk28m)
-	clk90_reg <= clk;
 
-//generate e
+//generate e in sync with cck
 always @(posedge clk)
-	if (e)
-		ediv <= 9;
+	if (ediv[3] && ediv[0])	//if 9 reset counter
+		ediv <= 0;
 	else
-		ediv <= ediv - 1;
+		ediv <= ediv + 1;
 		
-assign e = (ediv==4'b0000) ? 1 : 0;
+always @(posedge clk)
+	e <= ediv[3] & ~cck;
 
+always @(posedge clk28m)
+	c3 <= clk;
+	
+always @(posedge clk28m)
+	c1 <= ~c3;
+	
 endmodule

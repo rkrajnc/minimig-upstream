@@ -33,55 +33,67 @@
 // 26-02-2008	- synchronous 28MHz version
 // 28-02-2008	- horizontal and vertical interpolation
 // 02-03-2008	- hfilter/vfilter inputs added, unused inputs removed
+// 2008-12-12	- useless scanline effect implemented
+// 2008-12-27	- clean-up
 
 module Amber
 (	
 	input	clk,
 	input 	clk28m,
-	input	[1:0]lr_filter,
-	input	[1:0]hr_filter,
-	input	hires,
+	input	[1:0] lr_filter,		//interpolation filters settings for low resolution
+	input	[1:0] hr_filter,		//interpolation filters settings for high resolution
+	input	[1:0] scanline,			//scanline effect enable
+	input	[8:0] htotal,			//video line length
+	input	hires,					//display is in hires mode (from bplcon0)
 	input	dblscan,				//enable VGA output (enable scandoubler)
 	input	osdblank,				//OSD overlay enable (blank normal video)
 	input	osdpixel,				//OSD pixel(video) data
-	input 	[3:0]redin, 			//red componenent video in
-	input 	[3:0]greenin,  		//green component video in
-	input 	[3:0]bluein,			//blue component video in
+	input 	[3:0] redin, 			//red componenent video in
+	input 	[3:0] greenin,  		//green component video in
+	input 	[3:0] bluein,			//blue component video in
 	input	_hsyncin,				//horizontal synchronisation in
 	input	_vsyncin,				//vertical synchronisation in
-	output 	reg [3:0]redout, 		//red componenent video out
-	output 	reg [3:0]greenout,  	//green component video out
-	output 	reg [3:0]blueout,		//blue component video out
+	input	_csyncin,				//composite synchronization in
+	output 	reg [3:0] redout, 		//red componenent video out
+	output 	reg [3:0] greenout,  	//green component video out
+	output 	reg [3:0] blueout,		//blue component video out
 	output	reg _hsyncout,			//horizontal synchronisation out
 	output	reg _vsyncout			//vertical synchronisation out
 );
 
 //local signals
-reg 	[3:0]red_del;
-reg 	[3:0]green_del;
-reg 	[3:0]blue_del;
+reg 	[3:0] t_red;
+reg 	[3:0] t_green;
+reg 	[3:0] t_blue;
 
-wire 	[4:0]red;
-wire	[4:0]green;
-wire 	[4:0]blue;
+reg 	[3:0] red_del;				//delayed by 70ns for horizontal interpolation
+reg 	[3:0] green_del;			//delayed by 70ns for horizontal interpolation
+reg 	[3:0] blue_del;				//delayed by 70ns for horizontal interpolation
 
-reg		_hsyncin_del;			//delayed horizontal synchronisation input
-reg		hss;					//horizontal sync start
+wire 	[4:0] red;					//signal after horizontal interpolation
+wire	[4:0] green;				//signal after horizontal interpolation
+wire 	[4:0] blue;					//signal after horizontal interpolation
 
-reg		hfilter;				//horizontal interpolation enable
-reg		vfilter;				//vertical interpolation enable
+reg		_hsyncin_del;				//delayed horizontal synchronisation input
+reg		hss;						//horizontal sync start
+wire	eol;						//end of scan-doubled line
+
+reg		hfilter;					//horizontal interpolation enable
+reg		vfilter;					//vertical interpolation enable
+	
+reg		scanline_ena;				//signal active when the scan-doubled line is displayed
 
 //-----------------------------------------------------------------------------//
 
 // local horizontal counters for scan doubling
-reg		[10:0]hposin;		//line buffer write pointer
-reg		[10:0]hposout;	//line buffer read pointer
-//reg		[10:0]htotal;		//line length (for variable line length)
+reg		[10:0] hposin;				//line buffer write pointer
+reg		[10:0] hposout;				//line buffer read pointer
 
+//delayed hsync for edge detection
 always @(posedge clk28m)
 	_hsyncin_del <= _hsyncin;
 
-//horizontal sync start	
+//horizontal sync start	(falling edge detection)
 always @(posedge clk28m)
 	hss <= ~_hsyncin & _hsyncin_del;
 
@@ -99,11 +111,6 @@ assign red	= hfilter ? redin + red_del : redin*2;
 assign green = hfilter ? greenin + green_del : greenin*2;
 assign blue	= hfilter ? bluein + blue_del : bluein*2;
 
-// horizontal line length
-//always @(posedge clk28m)
-//	if (hss)
-//		htotal <= hposin;
-
 // line buffer write pointer
 always @(posedge clk28m)
 	if (hss)
@@ -111,27 +118,37 @@ always @(posedge clk28m)
 	else
 		hposin <= hposin + 1;
 
+//end of scan-doubled line
+assign eol = hposout=={htotal[8:0],1'b1} ? 1 : 0;
+
 //line buffer read pointer
 always @(posedge clk28m)
-//	if (hss || hposout==htotal/2)//for variable line length use htotal/2
-	if (hss || hposout==907)
+	if (hss || eol)
 		hposout <= 0;
 	else
 		hposout <= hposout + 1;
 
 always @(posedge clk28m)
 	if (hss)
+		scanline_ena <= 0;
+	else if (eol)
+		scanline_ena <= 1;
+		
+//horizontal interpolation enable	
+always @(posedge clk28m)
+	if (hss)
 		hfilter <= hires ? hr_filter[0] : lr_filter[0];		//horizontal interpolation enable
 
+//vertical interpolation enable
 always @(posedge clk28m)
 	if (hss)
 		vfilter <= hires ? hr_filter[1] : lr_filter[1];		//vertical interpolation enable
 
-reg	[17:0]lbf[1023:0];	// line buffer for scan doubling (there are 908/910 hires pixels in every line)
-reg [17:0]lbfo;			// line buffer output register
-reg [17:0]lbfo2;			// compensantion for one clock delay of the second line buffer
-reg	[17:0]lbfd[1023:0];	// delayed line buffer for vertical interpolation
-reg [17:0]lbfdo;			// delayed line buffer output register
+reg	[17:0] lbf [1023:0];	// line buffer for scan doubling (there are 908/910 hires pixels in every line)
+reg [17:0] lbfo;			// line buffer output register
+reg [17:0] lbfo2;			// compensantion for one clock delay of the second line buffer
+reg	[17:0] lbfd [1023:0];	// delayed line buffer for vertical interpolation
+reg [17:0] lbfdo;			// delayed line buffer output register
 
 // line buffer write
 always @(posedge clk28m)
@@ -156,7 +173,8 @@ always @(posedge clk28m)
 // output pixel generation - OSD mixer and vertical interpolation
 always @(posedge clk28m)
 begin
-		_hsyncout <= dblscan ? lbfo2[17] : _hsyncin&_vsyncin;
+		_hsyncout <= dblscan ? lbfo2[17] : _csyncin;
+		_vsyncout <= dblscan ? _vsyncin : 1'b1;
 		
 		if (~dblscan)
 		begin  //pass through
@@ -164,22 +182,22 @@ begin
 			begin
 				if (osdpixel)	//osd text colour
 				begin
-					redout    <= 4'b1110;
-					greenout  <= 4'b1110;
-					blueout   <= 4'b1110;
+					t_red    <= 4'b1110;
+					t_green  <= 4'b1110;
+					t_blue   <= 4'b1110;
 				end
 				else //osd background
 				begin
-					redout    <= redin / 2;
-					greenout  <= greenin / 2;
-					blueout   <= 4'b0100 + bluein / 2;
+					t_red    <= redin / 4;
+					t_green  <= greenin / 4;
+					t_blue   <= 4'b1000 + bluein / 4;
 				end
 			end
 			else //no osd
 			begin
-					redout    <= redin;
-					greenout  <= greenin;
-					blueout   <= bluein;
+					t_red    <= redin;
+					t_green  <= greenin;
+					t_blue   <= bluein;
 			end
 		end
 		else
@@ -188,42 +206,47 @@ begin
 			begin
 				if (lbfo2[15])	//osd text colour
 				begin
-					redout    <= 4'b1110;
-					greenout  <= 4'b1110;
-					blueout   <= 4'b1110;
+					t_red    <= 4'b1110;
+					t_green  <= 4'b1110;
+					t_blue   <= 4'b1110;
 				end
 				else	//osd background
 					if (vfilter)
 					begin //dimmed transparent background with vertical interpolation
-						redout    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
-						greenout  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
-						blueout   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) /8;
+						t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 16;
+						t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 16;
+						t_blue   <= 4'b1000 + ( lbfo2[4:0] + lbfdo[4:0] ) / 16;
 					end
 					else
 					begin //dimmed transparent background without vertical interpolation
-						redout    <= lbfo2[14:11] / 2;
-						greenout  <= lbfo2[9:6] / 2;
-						blueout   <= 4'b0100 + lbfo2[4:1] / 2;
+						t_red    <= lbfo2[14:11] / 4;
+						t_green  <= lbfo2[9:6] / 4;
+						t_blue   <= 4'b1000 + lbfo2[4:1] / 4;
 					end
 			end
 			else	//no osd
 				if (vfilter)
 				begin //vertical interpolation
-					redout    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
-					greenout  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
-					blueout   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
+					t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
+					t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
+					t_blue   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
 				end
 				else
 				begin //no vertical interpolation
-					redout    <= lbfo2[14:11];
-					greenout  <= lbfo2[9:6];
-					blueout   <= lbfo2[4:1];
+					t_red    <= lbfo2[14:11];
+					t_green  <= lbfo2[9:6];
+					t_blue   <= lbfo2[4:1];
 				end
 		end
 end
 
-// vsync buffer
+//scanline effect
 always @(posedge clk28m)
-	_vsyncout <= _vsyncin;
+	if (dblscan && scanline_ena && scanline[1])
+		{redout,greenout,blueout} <= 12'h000;
+	else if (dblscan && scanline_ena && scanline[0])
+		{redout,greenout,blueout} <= {1'b0,t_red[3:1],1'b0,t_green[3:1],1'b0,t_blue[3:1]};
+	else
+		{redout,greenout,blueout} <= {t_red,t_green,t_blue};
 
 endmodule

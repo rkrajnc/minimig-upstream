@@ -29,16 +29,21 @@
 // 15-01-2006		-fixed sensitivity list
 // 12-11-2006		-debugging for new Minimig rev1.0 board
 // 17-11-2006		-removed debugging and added decode for $C0000 ram
+//
+// JB:
+// 2008-10-06	- added decoders for IDE and GAYLE register range
+// 2008-10-15	- signal name change cpuok -> dbr
 
 module gary
 (
 	input	clk,					//bus clock
+	input	cck,					//colour clock enable
 	input	e,						//e clock enable
-	input 	[23:12]cpuaddress,	//cpu address inputs
+	input 	[23:12]cpuaddress,		//cpu address inputs
 	input	cpurd,					//cpu read
 	input	cpuhwr,					//cpu high write
 	input	cpulwr,					//cpu low write
-	output	reg cpuok,				//cpu slot ok
+	output	reg dbr,				//cpu slot ok
 	input	dma,					//agnus needs bus
 	input	dmawr,					//agnus does a write cycle
 	input	dmapri,					//agnus blitter has priority
@@ -47,47 +52,37 @@ module gary
 	output	rd,						//bus read
 	output	hwr,					//bus high write
 	output	lwr,					//bus low write
-	output 	reg selreg,  			//select chip register bank
-	output 	reg selchip, 			//select chip memory
-	output	reg selslow,			//select slowfast memory ($C0000)
+	output 	selreg,  				//select chip register bank
+	output 	reg [3:0] selchip, 		//select chip memory
+	output	[2:0] selslow,			//select slowfast memory ($C0000)
 	output 	selciaa,				//select cia A
 	output 	selciab, 				//select cia B
-	output 	reg selkick,	    	//select kickstart rom
-	output	reg selboot				//select boot room
+	output 	reg selkick,		    //select kickstart rom
+	output	reg selboot,			//select boot room
+	output	selide,					//select $DAxxxx
+	output	selgayle				//select $DExxxx
 );
-
-//local signals
-reg		ecpu;			//e clock synchronized to CPU available cycles
-
-//--------------------------------------------------------------------------------------
-
-//synchronize e clock to CPU available cycles
-always @(posedge clk)
-	if(!dma)
-		ecpu<=e;
-	else if(dma && e)
-		ecpu<=e;
 
 //--------------------------------------------------------------------------------------
 
 //read write control signals
-assign rd=cpurd|(~dmawr&dma);
-assign hwr=cpuhwr|(dmawr&dma);
-assign lwr=cpulwr|(dmawr&dma);
+assign rd  = cpurd  | (~dmawr & dma);
+assign hwr = cpuhwr | ( dmawr & dma);
+assign lwr = cpulwr | ( dmawr & dma);
 
 //--------------------------------------------------------------------------------------
-
+		
 //bus master logic
-always @(	dma or dmapri or ecpu or selchip or selreg or selciaa or selciab)
+always @(dma or dmapri or e or selciaa or selciab or cck or cpuaddress)
 begin
-	if(dma)//bus slot allocated to agnus
-		cpuok=0;
-	else if((selreg||selchip) && dmapri)//cpu wait state, dma has priority in register and chipram area
-		cpuok=0;
-	else if((selciaa||selciab) && !ecpu)//cpu wait state, slow access to CIA's
-		cpuok=0;
+	if (dma)// || (selreg||selchip||selslow))//bus slot allocated to agnus
+		dbr = 1;
+	else if ((cpuaddress[23:21]==3'b000 || cpuaddress[23:21]==3'b110) && dmapri)//cpu wait state, dma has priority in register and chipram area
+		dbr = 1;
+	else if ((selciaa||selciab) && !e)//cpu wait state, slow access to CIA's
+		dbr = 1;
 	else//bus slot allocated to cpu
-		cpuok=1;
+		dbr = 0;
 end
 
 //--------------------------------------------------------------------------------------
@@ -95,74 +90,61 @@ end
 //chipram, kickstart and bootrom address decode
 always @(dma or cpuaddress or boot or ovl)
 begin
-	if(dma)//agnus always accesses chipram
+	if (dma)//agnus always accesses chipram
 	begin
-		selchip=1;
-		selkick=0;
-		selboot=0;
+		selchip = 1;
+		selkick  = 0;
+		selboot = 0;
 	end
-	else if(cpuaddress[23:19]==5'b11111)//kickstart
+	else if (cpuaddress[23:19]==5'b1111_1)//kickstart $F8xxxx
 	begin
-		selchip=0;
-		selkick=1;
-		selboot=0;
+		selchip = 0;
+		selkick  = 1;
+		selboot = 0;
 	end
-	else if((cpuaddress[23:21]==3'b000) && boot)//chipram area in boot mode
+	else if ((cpuaddress[23:21]==3'b000) && boot)//chipram area in boot mode
 	begin
-		if(cpuaddress[20:12]==0)//lower part bootrom area
+		if (cpuaddress[20:12]==0)//lower part bootrom area
 		begin
-			selchip=0;
-			selkick=0;
-			selboot=1;
+			selchip = 0;
+			selkick  = 0;
+			selboot  = 1;
 		end
 		else//upper part chipram area
 		begin
-			selchip=1;
-			selkick=0;
-			selboot=0;
+			selchip = 1;
+			selkick  = 0;
+			selboot = 0;
 		end
 	end
-	else if((cpuaddress[23:21]==3'b000) && !boot)//chipram area in normal mode
+	else if ((cpuaddress[23:21]==3'b000) && !boot)//chipram area in normal mode
 	begin
-		selchip=~ovl;//chipram when no rom overlay
-		selkick=ovl;//kickstart when rom overlay
-		selboot=0;
+		selchip = ~ovl;//chipram when no rom overlay
+		selkick  = ovl;//kickstart when rom overlay
+		selboot = 0;
 	end
 	else//no kickstart, bootrom or chipram selected
 	begin
-		selchip=0;
-		selkick=0;
-		selboot=0;
+		selchip = 0;
+		selkick  = 0;
+		selboot = 0;
 	end
 end
 
 //chip register bank and slowram address decode
-always @(cpuaddress or dma)
-begin
-	if((cpuaddress[23:19]==5'b11000) && !dma)//slow ram at $C00000 - $C7FFFF
-	begin
-		selreg=0;
-		selslow=1;
-	end
-	else if ((cpuaddress[23:21]==3'b110) && !dma)//chip registers at &C80000 - $DFFFFF
-	begin
-		selreg=1;
-		selslow=0;
-	end
-	else
-	begin
-		selreg=0;
-		selslow=0;
-	end
-end
 
-//assign selreg=((cpuaddress[23:21]==3'b110) && !dma)?1:0;
-//assign selslow=0;
+assign selslow = (cpuaddress[23:20]==4'b1100 || cpuaddress[23:19]==5'b1101_0) && !dma ? 1 : 0;		//slow ram at $C00000 - $D7FFFF
+
+assign selide = (cpuaddress[23:16]==8'b1101_1010) && !dma ? 1 : 0;		//IDE registers at &DA0000 - $DAFFFF	
+
+assign selgayle = (cpuaddress[23:16]==8'b1101_1110) && !dma ? 1 : 0;	//GAYLE registers at &DE0000 - $DEFFFF
+
+assign selreg = (cpuaddress[23:16]==8'b1101_1111) && !dma ? 1 : 0;		//chip registers at &DF0000 - $DFFFFF
 
 //cia a address decode
-assign selciaa=((cpuaddress[23:21]==3'b101) && !cpuaddress[12] && !dma)?1:0;
+assign selciaa = (cpuaddress[23:21]==3'b101) && !cpuaddress[12] && !dma ? 1 : 0;
 
 //cia b address decode
-assign selciab=((cpuaddress[23:21]==3'b101) && !cpuaddress[13] && !dma)?1:0;
+assign selciab = (cpuaddress[23:21]==3'b101) && !cpuaddress[13] && !dma ? 1 : 0;
 
 endmodule
