@@ -497,7 +497,6 @@ assign _ready 	= (_sel[3] | ~(drives[1] & drives[0]))
 				& (_sel[1] | ~(drives[1] | drives[0])) 
 				& (_sel[0]);
 
-
 //--------------------------------------------------------------------------------------
 	
 //disk data byte and status read

@@ -38,6 +38,12 @@
 // 2009-05-25	- ram, cpu and custom chips bus multiplexer
 // 2009-09-01	- fixed sel_kick
 // 2010-08-15	- clean-up
+//
+// SB:
+// 2010-10-18	- added special memory config like in A500 Rev.6 with 512kb + 512kb of memory
+//
+// AMR:
+// 2012-03-23  - Added select for Akiko
 
 module gary
 (
@@ -50,7 +56,7 @@ module gary
 	output	[15:0] custom_data_in,
 	input	[15:0] ram_data_out,
 	output	[15:0] ram_data_in,
-//	input	a1k,
+	input	a1k,
 	input	cpu_rd,					//cpu read
 	input	cpu_hwr,				//cpu high write
 	input	cpu_lwr,				//cpu low write
@@ -94,7 +100,7 @@ assign ram_data_in = (dbr) ? custom_data_out : cpu_data_out;
 
 assign custom_data_in = (dbr) ? ram_data_out : cpu_rd ? 16'hFFFF : cpu_data_out;
 
-assign cpu_data_in = (dbr) ? 16'h00_00 : (custom_data_out | ram_data_out | {16{sel_bank_1}});
+assign cpu_data_in = dbr ? 16'h00_00 : (custom_data_out | ram_data_out | {16{sel_bank_1}});
 
 //read write control signals
 assign ram_rd  = (dbr) ? ~dbwe : cpu_rd;
@@ -104,7 +110,7 @@ assign ram_lwr = (dbr) ?  dbwe : cpu_lwr;
 //--------------------------------------------------------------------------------------
 
 // ram address multiplexer (512KB bank)		
-assign ram_address_out = dbr ? dma_address_in[18:1] : cpu_address_in[18:1];
+assign ram_address_out = (dbr) ? dma_address_in[18:1] : cpu_address_in[18:1];
 
 //--------------------------------------------------------------------------------------
 
@@ -139,6 +145,9 @@ assign t_sel_slow[0] = (cpu_address_in[23:19]==5'b1100_0) ? 1'b1 : 1'b0; //$C000
 assign t_sel_slow[1] = (cpu_address_in[23:19]==5'b1100_1) ? 1'b1 : 1'b0; //$C80000 - $CFFFFF
 assign t_sel_slow[2] = (cpu_address_in[23:19]==5'b1101_0) ? 1'b1 : 1'b0; //$D00000 - $D7FFFF
 
+// 512kb extra rom area at $e0 and $f0 write able only at a1k chipset mode
+//assign t_sel_slow[2] = (cpu_address_in[23:19]==5'b1110_0 || cpu_address_in[23:19]==5'b1111_0) && (a1k | cpu_rd) ? 1'b1 : 1'b0; //$E00000 - $E7FFFF & $F00000 - $F7FFFF
+
 assign sel_xram = ((t_sel_slow[0] & (memory_config[2] | memory_config[3]))
 				| (t_sel_slow[1] & memory_config[3])
 				| (t_sel_slow[2] & memory_config[2] & memory_config[3]));
@@ -152,7 +161,7 @@ assign sel_gayle = (hdc_ena && cpu_address_in[23:12]==12'b1101_1110_0001) ? 1'b1
 
 assign sel_reg = (cpu_address_in[23:21]==3'b110) ? (~(sel_xram | sel_rtc | sel_ide | sel_gayle)) : 1'b0;		//chip registers at $DF0000 - $DFFFFF
 
-assign sel_cia = (cpu_address_in[23:16]==8'b1011_1111) ? 1'b1 : 1'b0;
+assign sel_cia = (cpu_address_in[23:21]==3'b101) ? 1'b1 : 1'b0;
 
 //cia a address decode
 assign sel_cia_a = (sel_cia & ~cpu_address_in[12]);

@@ -812,15 +812,15 @@ always @*
 			addmod = 0;
 			submod = 0;
 			dma_req = 0;
-			
+
 			blt_next = BLT_IDLE;
 		end
-		
+
 	endcase
 
 // init blitter pipeline (reload height counter)
 assign init = blt_state==BLT_INIT ? 1'b1 : 1'b0;
-	
+
 // indicates last cycle of a single sequence	
 assign next_word = blt_state==BLT_C && !used || blt_state==BLT_D || blt_state==BLT_L2 || blt_state==BLT_L4 ? 1'b1 : 1'b0;
 
@@ -830,7 +830,7 @@ always @(posedge clk)
 		store_result <= 0;
 	else
 		store_result <= enable && next_word;
-		
+
 // blitter busy flag is cleared immediately after last source data is fetched (if D channel is not enabled) or the last but one result is stored
 // signal 'done' is used to clear the 'busy' and 'start' flags
 assign done = (blt_state==BLT_C && !used || blt_state==BLT_D) && last_word && last_line || blt_state==BLT_L4 && last_line ? enable : 1'b0;
@@ -838,9 +838,9 @@ assign done = (blt_state==BLT_C && !used || blt_state==BLT_D) && last_word && la
 always @(posedge clk)
 	if (enable)
 		if (blt_state==BLT_INIT)
-			first_pixel = 1'b1;
+			first_pixel <= 1'b1;
 		else if (blt_state==BLT_L4)
-			first_pixel = ~sign_del;
+			first_pixel <= ~sign_del;
 
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTCON1[8:1])

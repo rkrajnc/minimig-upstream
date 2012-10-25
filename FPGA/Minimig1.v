@@ -137,6 +137,14 @@
 // 2011-04-04	- added pwm controlled power-led at "off" state and active Turbo mode (thanks Herzi for the idea)
 // 2011-04-10	- added readable VPOSW and VHPOSW register (fix for RSI slideshow)
 // 11-04-2011	- autofire function toggle able via capslock / led status
+// 2011-04-24	- fixed CIA TOD read
+// 2011-07-21	- changed '#' key scan code, thanks Chris
+//
+// TobiFlex(TF):
+// 2012-02-12  - change sigma/delta module
+//
+// SB:
+// 2012-03-23	- fixed sprite enable signal (coppermaster demo)
 
 module Minimig1
 (
@@ -167,8 +175,8 @@ module Minimig1
 	input	cts,				// rs232 clear to send
 	output	rts,				// rs232 request to send
 	// I/O
-	input	[5:0]_joy1,			// joystick 1 [fire2,fire,up,down,left,right] (default mouse port)
-	input	[5:0]_joy2,			// joystick 2 [fire2,fire,up,down,left,right] (default joystick port)
+	input	[5:0]_joy1,			// joystick 1 [fire1,fire,up,down,left,right] (default mouse port)
+	input	[5:0]_joy2,			// joystick 2 [fire1,fire,up,down,left,right] (default joystick port)
 	input	_15khz,				// scandoubler disable
 	output	pwrled,				// power led
 	inout	msdat,				// PS2 mouse data
@@ -242,30 +250,30 @@ wire		[8:1] reg_address; 		// main register address bus
 // rest of local signals
 wire		kbdrst;					// keyboard reset
 wire		reset_out;				// reset from reset generator
-reg			reset;					// reset from the CPU
-wire		clk;					// bus clock
+reg		reset;					// reset from the CPU
+wire		clk;						// bus clock
 wire		clk28m;					// 28MHz clock for Amber (and ECS Denise in future)
 wire		c1,c3;					// clock enable signals
 wire		[9:0] eclk;				// E clock enable
-wire		dbr;					// data bus request, Agnus tells CPU that she is using the bus
-wire		dbwe;					// data bus write enable, Agnus tells the RAM it's writing data
-wire		dbs;					// data bus slow down, used for slowing down CPU access to chip, slow and custor register address space
-wire		xbs;					// cross bridge access (memory and custom registers)
-wire		ovl;					// kickstart overlay enable
-wire		_led;					// power led
+wire		dbr;						// data bus request, Agnus tells CPU that she is using the bus
+wire		dbwe;						// data bus write enable, Agnus tells the RAM it's writing data
+wire		dbs;						// data bus slow down, used for slowing down CPU access to chip, slow and custor register address space
+wire		xbs;						// cross bridge access (memory and custom registers)
+wire		ovl;						// kickstart overlay enable
+wire		_led;						// power led
 wire		boot;    				// bootrom overlay enable
-wire		[3:0] sel_chip;			// chip ram select
-wire		[2:0] sel_slow;			// slow ram select
+wire		[3:0] sel_chip;		// chip ram select
+wire		[2:0] sel_slow;		// slow ram select
 wire		sel_kick;				// rom select
-wire		sel_cia;				// CIA address space
-wire		sel_reg;				// chip register select
+wire		sel_cia;					// CIA address space
+wire		sel_reg;					// chip register select
 wire		sel_cia_a;				// cia A select
 wire		sel_cia_b;				// cia B select
 wire		sel_boot;				// boot rom select
-wire		int2;					// intterrupt 2
-wire		int3;					// intterrupt 3 
-wire		int6;					// intterrupt 6
-wire		[7:0] osd_ctrl;			// OSD control
+wire		int2;						// intterrupt 2
+wire		int3;						// intterrupt 3 
+wire		int6;						// intterrupt 6
+wire		[7:0] osd_ctrl;		// OSD control
 wire		kb_lmb;
 wire		kb_rmb;
 wire		[5:0] kb_joy2;
@@ -280,9 +288,9 @@ wire		index;					// disk index interrupt
 
 // local video signals
 wire		blank;					// blanking signal
-wire		sol;					// start of video line
-wire		sof;					// start of video frame
-wire		vbl_int;				// vertical blanking interrupt
+wire		sol;						// start of video line
+wire		sof;						// start of video frame
+wire		vbl_int;					// vertical blanking interrupt
 wire		strhor_denise;			// horizontal strobe for Denise
 wire		strhor_paula;			// horizontal strobe for Paula
 wire		[3:0]red_i;				// denise red (internal)
@@ -372,12 +380,13 @@ reg	led_dim;
 assign pwrled = (_led & (led_dim | ~turbo)) ? 1'b0 : 1'b1; // led dim at off-state and active turbo mode
 //assign pwrled = _led ? 1'b0 : 1'b1;
 
-// power-led pwm 
+// power led pwm 
 always @(posedge clk)
+	if (_hsync)
 		led_cnt <= led_cnt + 1;
 
 always @(posedge clk)
-	if (_hsync)
+	if	(!_hsync)
 		led_dim <= |led_cnt;
 
 // drive step sound emulation
@@ -397,7 +406,7 @@ assign sol_pulse = sol & ~sol_del; // rising edge detection
 
 reg	[3:0] drv_cnt;
 always @(posedge clk)
-	if (drv_cnt != 0 && sol_pulse || drv_cnt == 0 && step_pulse && ~boot) // count only sol pulses when counter is not zero or step pulses and bootloader is not active
+	if (drv_cnt != 0 && sol_pulse || drv_cnt == 0 && step_pulse && !boot && _change) // count only sol pulses when counter is not zero or step pulses and bootloader is not active
 		drv_cnt <= drv_cnt + 1;
 
 reg	drvsnd;
@@ -565,7 +574,8 @@ userio USERIO1
 	.bootrst(bootrst)
 );
 
-assign cpu_speed = (chipset_config[0]);
+assign cpu_speed = (chipset_config[0] & ~int7 & ~freeze & ~ovr);
+//assign cpu_speed = (chipset_config[0]);
 
 // instantiate Denise
 Denise DENISE1
@@ -633,7 +643,7 @@ ciaa CIAA1
 	.kbdrst(kbdrst),
 	.kbddat(kbddat),
 	.kbdclk(kbdclk),
-	.keyboard_disabled(keyboard_disabled),
+	.keyboard_disabled({keyboard_disabled}),
 	.osd_ctrl(osd_ctrl),
 	._lmb(kb_lmb),
 	._rmb(kb_rmb),
@@ -667,6 +677,7 @@ ciab CIAB1
 m68k_bridge CPU1 
 (
 	.clk28m(clk28m),
+	.blk(scanline[1]),
 	.c1(c1),
 	.c3(c3),
 	.cck(cck),
@@ -762,7 +773,7 @@ ActionReplay CART1
 );
 
 // level 7 interrupt for CPU
-assign _cpu_ipl = (int7) ? 3'b000 : _iplx;	// m68k interrupt request
+assign _cpu_ipl = (int7)  ?  3'b000 : _iplx;	// m68k interrupt request
 
 // instantiate gary
 gary GARY1 
@@ -791,6 +802,7 @@ gary GARY1
 	.ram_hwr(ram_hwr),
 	.ram_lwr(ram_lwr),
 	.ecs(chipset_config[3]),
+	.a1k(chipset_config[2]),
 	.sel_chip(sel_chip),
 	.sel_slow(sel_slow),
 	.sel_kick(sel_kick),
@@ -828,9 +840,8 @@ gayle GAYLE1
 	.hdd_status_wr(hdd_status_wr),
 	.hdd_data_wr(hdd_data_wr),
 	.hdd_data_rd(hdd_data_rd)
-	
 );
-	
+
 // instantiate boot rom
 bootrom BOOTROM1 
 (	
@@ -1160,7 +1171,7 @@ always @(posedge clk28m)
 assign data_out[15:0] = (enable && rd) ? data[15:0] : 16'b0000000000000000;
 
 // data bus output buffers
-assign data[15:0] = doe ? data_in[15:0] : 16'bzzzzzzzzzzzzzzzz;
+assign data[15:0] = (doe) ? data_in[15:0] : 16'bzzzzzzzzzzzzzzzz;
 
 endmodule
 
@@ -1199,6 +1210,7 @@ endmodule
 module m68k_bridge
 (
 	input	clk28m,					// 28 MHz system clock
+	input	blk,
 	input	c1,						// clock enable signal
 	input	c3,						// clock enable signal
 	input	clk,					// bus clock
@@ -1279,8 +1291,8 @@ reg		_ta;					// transfer acknowledge
 // CPU speed mode is allowed to change only when there is no bus access
 always @(posedge clk)
 	if (_as)
-		turbo <= (cpu_speed);
-		
+		turbo <= cpu_speed;
+
 // latched valid peripheral address
 always @(posedge clk)
 	lvpa <= vpa;
@@ -1388,7 +1400,7 @@ assign size_match = ((cache_data_hi_out[8] | _uds) & (cache_data_lo_out[8] | _ld
 
 // indicates that requested data is in cache	
 wire cache_hit;
-assign cache_hit = (turbo & ~_as & cacheable & tag_match & size_match & r_w);
+assign cache_hit = (!blk & turbo & ~_as & cacheable & tag_match & size_match & r_w);
 
 // ------------------------------------------------------------------------------------------------------------------------------------------- //
 
@@ -1459,7 +1471,7 @@ assign doe = (r_w & ~_as);
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------- //
 
-// data_out multiplexer and latch 	
+// data_out multiplexer and latch
 always @(data)
 	data_out <= data;
 	
@@ -1470,7 +1482,7 @@ always @(clk or data_in)
 // ----------------------------------------------------------------------------------------------------------------------------------------------------- //
 
 // CPU data bus tristate buffers and output data multiplexer
-assign data[15:0] = doe ? cache_hit ? cache_out : ldata_in[15:0] : 16'bz;
+assign data[15:0] = (doe) ? cache_hit ? cache_out : ldata_in[15:0] : 16'bzzzz_zzzz_zzzz_zzzz;
 
 always @(posedge clk)
 	address_out[23:1] <= address[23:1];

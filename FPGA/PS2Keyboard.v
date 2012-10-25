@@ -45,6 +45,10 @@
 // 2009-05-24	- clean-up & renaming
 // 2010-08-18	- joystick emulation
 
+// SB:
+// 2011-04-09	- added autofire lock function using capslock
+// 2011-07-21	- changed '#' key scan code, thanks Chris
+
 module ps2keyboard
 (
 	input 	clk,		   		//bus clock
@@ -255,7 +259,7 @@ begin
 end
 
 //instantiate keymap to convert ps2 scan codes to amiga raw key codes
-wire ctrl,aleft,aright,caps;
+wire ctrl, aleft, aright, caps;
 ps2keyboardmap km1
 (
 	.clk(clk),
@@ -356,8 +360,8 @@ endmodule
 module ps2keyboardmap
 (
 	input 	clk,		    	//clock
-	input	reset,				//reset
-	input	enable,				//enable
+	input		reset,				//reset
+	input		enable,				//enable
 	input 	[7:0] ps2key,		//ps2 key code input
 	output	valid,				//amiga key code valid (strobed when new valid keycode at output) 
 	output	[7:0] akey,			//amiga key code output
@@ -379,6 +383,7 @@ localparam JOY2KEY_LEFT  = 7'h2D;
 localparam JOY2KEY_RIGHT = 7'h2F;
 localparam JOY2KEY_FIRE0 = 7'h0F;
 localparam JOY2KEY_FIRE1 = 7'h43;
+//localparam JOY2KEY_FIRE2 = 7'h3C; // KP .
 localparam JOY1KEY_FIRE0 = 7'h5C;
 localparam JOY1KEY_FIRE1 = 7'h5D;
 
@@ -629,7 +634,7 @@ begin
 			9'h05a:		keyrom[15:0] <= 16'h8044;//ENTER
 			9'h05b:		keyrom[15:0] <= 16'h801b;//]
 			9'h05c:		keyrom[15:0] <= 16'h0000;
-			9'h05d:		keyrom[15:0] <= 16'h800d;//BACKSLASH
+			9'h05d:		keyrom[15:0] <= 16'h802B;//international enter cut out (German '#' key), Amiga scancode $2B
 			9'h05e:		keyrom[15:0] <= 16'h0000;
 			9'h05f:		keyrom[15:0] <= 16'h0000;
 			9'h060:		keyrom[15:0] <= 16'h0000;

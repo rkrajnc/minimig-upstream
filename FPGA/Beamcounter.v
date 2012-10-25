@@ -96,12 +96,12 @@ parameter	vbstrt  = 0;	// vertical blanking start
 wire	[10:0] vtotal;		// total number of lines less one
 wire	[8:0] vbstop;		// vertical blanking stop
 
-reg		end_of_line;
+reg	end_of_line;
 wire	end_of_frame;
 
 reg 	vpos_inc;			// increase vertical position counter
 wire 	vpos_equ_vtotal;	// vertical beam counter is equal to its maximum count (in interlaced mode it counts one line more)
-reg		extra_line;			// extra line (used in interlaced mode)
+reg	extra_line;			// extra line (used in interlaced mode)
 wire	last_line;			// indicates the last line is displayed (in non-interlaced mode vpos equals to vtotal, in interlaced mode vpos equals to vtotal+1)
 
 

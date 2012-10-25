@@ -68,6 +68,9 @@
 // SB:
 // 2011-01-18 - fixed sound output, no more high pitch noise at game Gods
 
+// TobiFlex(TF):
+// 2012-02-12 - change sigma/delta module
+
 module audio
 (
 	input 	clk,		    		//bus clock
@@ -92,18 +95,18 @@ parameter	AUD1BASE = 9'h0b0;
 parameter	AUD2BASE = 9'h0c0;
 parameter	AUD3BASE = 9'h0d0;
 
-//local signals 
+//local signals
 wire	[3:0] aen;			//address enable 0-3
 wire	[3:0] dmareq;		//dma request 0-3
 wire	[3:0] dmaspc;		//dma restart 0-3
-wire	[7:0] sample0;		//channel 0 audio sample 
-wire	[7:0] sample1;		//channel 1 audio sample 
-wire	[7:0] sample2;		//channel 2 audio sample 
-wire	[7:0] sample3;		//channel 3 audio sample 
-wire	[6:0] vol0;			//channel 0 volume 
-wire	[6:0] vol1;			//channel 1 volume 
-wire	[6:0] vol2;			//channel 2 volume 
-wire	[6:0] vol3;			//channel 3 volume 
+wire	[7:0] sample0;		//channel 0 audio sample
+wire	[7:0] sample1;		//channel 1 audio sample
+wire	[7:0] sample2;		//channel 2 audio sample
+wire	[7:0] sample3;		//channel 3 audio sample
+wire	[6:0] vol0;			//channel 0 volume
+wire	[6:0] vol1;			//channel 1 volume
+wire	[6:0] vol2;			//channel 2 volume
+wire	[6:0] vol3;			//channel 3 volume
 
 //--------------------------------------------------------------------------------------
 
@@ -169,8 +172,8 @@ audiochannel ach1
 );
 
 //instantiate audio channel 2
-audiochannel ach2 
-(	
+audiochannel ach2
+(
 	.clk(clk),
 	.reset(reset),
 	.cck(cck),
@@ -189,7 +192,7 @@ audiochannel ach2
 
 //instantiate audio channel 3
 audiochannel ach3
-(		
+(
 	.clk(clk),
 	.reset(reset),
 	.cck(cck),
@@ -220,7 +223,7 @@ sigmadelta dac0
 	.vol3(vol3),
 	.strhor(strhor),
 	.left(left),
-	.right(right)	
+	.right(right)
 );
 
 //--------------------------------------------------------------------------------------
@@ -253,7 +256,7 @@ module sigmadelta
 );
 
 //local signals
-reg		[14:0] acculeft;		//sigma/delta accumulator left		
+reg		[14:0] acculeft;		//sigma/delta accumulator left
 reg		[14:0] accuright;		//sigma/delta accumulator right
 wire	[7:0] leftsmux;			//left mux sample
 wire	[7:0] rightsmux;		//right mux sample
@@ -261,16 +264,29 @@ wire	[6:0] leftvmux;			//left mux volum
 wire	[6:0] rightvmux;		//right mux volume
 wire	[13:0] ldata;			//left DAC data
 wire	[13:0] rdata; 			//right DAC data
+reg	[13:0]ldatatmp;		//left DAC data
+reg	[13:0]rdatatmp; 		//right DAC data
+reg	[14:0]ldatasum;		//left DAC data
+reg	[14:0]rdatasum; 		//right DAC data
 reg		mxc;					//multiplex control
 
 //--------------------------------------------------------------------------------------
 
 //multiplexer control
 always @(posedge clk)
-	if (strhor)
-		mxc <= 0;
-	else
+	begin
 		mxc <= ~mxc;
+		if (mxc)
+		begin
+			ldatatmp <= ldata;
+			rdatatmp <= rdata;
+		end
+		else
+		begin
+			ldatasum <= {ldata[13], ldata} + {ldatatmp[13], ldatatmp};
+			rdatasum <= {rdata[13], rdata} + {rdatatmp[13], rdatatmp};
+		end
+	end
 
 //sample multiplexer
 assign leftsmux = mxc ? sample1 : sample2;
@@ -305,28 +321,21 @@ svmul sv1
 				(rightvmux[6] | rightvmux[2]),
 				(rightvmux[6] | rightvmux[1]),
 				(rightvmux[6] | rightvmux[0]) })),
-	.out(rdata)	
+	.out(rdata)
 	);
 
 //--------------------------------------------------------------------------------------
-
 //left sigma/delta modulator
 always @(posedge clk)
-	if (strhor)
-		acculeft[14:0] <= 0;
-	else
-		acculeft[14:0] <= ({1'b0,acculeft[13:0]} + {1'b0,~ldata[13],ldata[12:0]});
+		acculeft[12:1] <= (acculeft[12:1] + {acculeft[12],acculeft[12],~ldatasum[14],ldatasum[13:5]});
 
-assign left = acculeft[14];
+assign left = acculeft[12];
 
 //right sigma/delta modulator
 always @(posedge clk)
-	if (strhor)
-		accuright[14:0] <= 0;
-	else
-		accuright[14:0] <= ({1'b0,accuright[13:0]} + {1'b0,~rdata[13],rdata[12:0]});
+		accuright[12:1] <= (accuright[12:1] + {accuright[12],accuright[12],~rdatasum[14],rdatasum[13:5]});
 
-assign right = accuright[14];
+assign right = accuright[12];
 
 endmodule
 
@@ -347,7 +356,7 @@ wire	[13:0] sesample;   		//sign extended sample
 wire	[13:0] sevolume;			//sign extended volume
 
 //sign extend input parameters
-assign 	sesample[13:0] = {{6{sample[7]}},sample[7:0]};
+assign	sesample[13:0] = {{6{sample[7]}},sample[7:0]};
 assign	sevolume[13:0] = ({8'b00000000,volume[5:0]});
 
 //multiply, synthesizer should infer multiplier here - fixed by ASC (boing4000)
@@ -362,7 +371,7 @@ endmodule
 //This module handles a single amiga audio channel. attached modes are not supported
 module audiochannel
 (
-	input 	clk,					//bus clock	
+	input 	clk,					//bus clock
 	input 	reset,		    		//reset
 	input	cck,					//colour clock enable
 	input	aen,					//address enable
@@ -442,7 +451,7 @@ always @(posedge clk)
 //volume register bus write
 always @(posedge clk)
 	if (reset)
-		audvol[6:0] <= 7'b000_0000;	
+		audvol[6:0] <= 7'b000_0000;
 	else if (aen && (reg_address_in[3:1]==AUDVOL[3:1]))
 		audvol[6:0] <= (data[6:0]);
 
@@ -469,7 +478,7 @@ assign	AUDxON = (dmaena);	//dma enable
 assign	AUDxIP = (intpen);	//audio interrupt pending
 
 assign intreq = (AUDxIR);		//audio interrupt request
-	
+
 //--------------------------------------------------------------------------------------
 
 //period counter 
@@ -478,16 +487,16 @@ always @(posedge clk)
 		percnt[15:0] <= (audper[15:0]);
 	else if (percount && cck)//period counter count down
 		percnt[15:0] <= (percnt[15:0] - 1);
-		
+
 assign perfin = (percnt[15:0]==1 && cck) ? 1 : 0;
 
-//length counter 
+//length counter
 always @(posedge clk)
 	if (lencntrld && cck)//load length counter from audio length register
 		lencnt[15:0] <= (audlen[15:0]);
 	else if (lencount && cck)//length counter count down
 		lencnt[15:0] <= (lencnt[15:0] - 1);
-		
+
 assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
@@ -533,7 +542,7 @@ always @(posedge clk)
 			intreq2 <= 1;
 		else if (intreq2_clr)
 			intreq2 <= 0;
-	
+
 //audio states
 parameter AUDIO_STATE_0 = 3'b000;
 parameter AUDIO_STATE_1 = 3'b001;

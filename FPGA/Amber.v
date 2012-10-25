@@ -17,7 +17,7 @@
 //
 //
 //
-// This is Amber 
+// This is Amber
 // Amber is a scandoubler to allow connection to a VGA monitor. 
 // In addition, it can overlay an OSD (on-screen-display) menu.
 // Amber also has a pass-through mode in which
@@ -40,10 +40,10 @@
 // 2009-08-31	- scanlines synthesis option
 // 2010-05-30	- htotal changed
 
-`define SCANLINES
+//`define SCANLINES
 
 module Amber
-(	
+(
 	input 	clk28m,
 	input	[1:0] lr_filter,		//interpolation filters settings for low resolution
 	input	[1:0] hr_filter,		//interpolation filters settings for high resolution
@@ -138,8 +138,12 @@ always @(posedge clk28m)
 		scanline_ena <= 0;
 	else if (eol)
 		scanline_ena <= 1;
+
+reg	do_scanline;
+always @(posedge clk28m)
+	do_scanline <= scanline[0] & scanline_ena;
 		
-//horizontal interpolation enable	
+//horizontal interpolation enable
 always @(posedge clk28m)
 	if (hss)
 		hfilter <= hires ? hr_filter[0] : lr_filter[0];		//horizontal interpolation enable
@@ -193,8 +197,8 @@ begin
 				end
 				else //osd background
 				begin
-					t_red    <= red_in / 2;
-					t_green  <= green_in / 2;
+					t_red    <= 4'b0000 + red_in / 2;
+					t_green  <= 4'b0000 + green_in / 2;
 					t_blue   <= 4'b0100 + blue_in / 2;
 				end
 			end
@@ -218,34 +222,74 @@ begin
 				else	//osd background
 					if (vfilter)
 					begin //dimmed transparent background with vertical interpolation
-						t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
-						t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
-						t_blue   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8;
+						if (do_scanline)
+						begin
+							t_red    <= (4'b0000 + ( lbfo2[14:10] + lbfdo[14:10] ) / 8) / 2;
+							t_green  <= (4'b0000 + ( lbfo2[9:5] + lbfdo[9:5] ) / 8) / 2;
+							t_blue   <= (4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8) / 2;
+						end
+						else
+						begin
+							t_red    <= 4'b0000 + ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
+							t_green  <= 4'b0000 + ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
+							t_blue   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8;
+						end
 					end
 					else
 					begin //dimmed transparent background without vertical interpolation
-						t_red    <= lbfo2[14:11] / 2;
-						t_green  <= lbfo2[9:6] / 2;
-						t_blue   <= 4'b0100 + lbfo2[4:1] / 2;
+						if (do_scanline)
+						begin
+							t_red    <= (4'b0000 + lbfo2[14:11] / 2) / 2;
+							t_green  <= (4'b0000 + lbfo2[9:6] / 2) / 2;
+							t_blue   <= (4'b0100 + lbfo2[4:1] / 2) / 2;
+						end
+						else
+						begin
+							t_red    <= 4'b0000 + lbfo2[14:11] / 2;
+							t_green  <= 4'b0000 + lbfo2[9:6] / 2;
+							t_blue   <= 4'b0100 + lbfo2[4:1] / 2;
+						end
 					end
 			end
 			else	//no osd
 				if (vfilter)
 				begin //vertical interpolation
-					t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
-					t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
-					t_blue   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
+					if (do_scanline)
+					begin
+						t_red    <= (( lbfo2[14:10] + lbfdo[14:10] ) / 4) / 2;
+						t_green  <= (( lbfo2[9:5] + lbfdo[9:5] ) / 4) / 2;
+						t_blue   <= (( lbfo2[4:0] + lbfdo[4:0] ) / 4) / 2;
+					end
+					else
+					begin
+						t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
+						t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
+						t_blue   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
+					end
 				end
 				else
 				begin //no vertical interpolation
-					t_red    <= lbfo2[14:11];
-					t_green  <= lbfo2[9:6];
-					t_blue   <= lbfo2[4:1];
+					if (do_scanline)
+					begin
+						t_red    <= lbfo2[14:11] / 2;
+						t_green  <= lbfo2[9:6] / 2;
+						t_blue   <= lbfo2[4:1] / 2;
+					end
+					else
+					begin
+						t_red    <= lbfo2[14:11];
+						t_green  <= lbfo2[9:6];
+						t_blue   <= lbfo2[4:1];
+					end
 				end
 		end
 end
 
+always @(posedge clk28m)
+		{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
+
 //scanlines effect
+/*
 `ifdef SCANLINES 
 always @(posedge clk28m)
 	if (dblscan && scanline_ena && scanline[1])
@@ -258,5 +302,5 @@ always @(posedge clk28m)
 always @(t_red or t_green or t_blue)
 	{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
 `endif
-
+*/
 endmodule

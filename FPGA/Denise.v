@@ -55,6 +55,9 @@
 // 2009-12-16	- added ECS enable input (only chip id is affected)
 // 2009-12-20	- DIWHIGH is written only in ECS mode
 // 2010-04-22	- ECS border blank implemented
+//
+// SB:
+// 2012-03-23	- fixed sprite enable signal (coppermaster demo)
 
 module Denise
 (
@@ -77,13 +80,13 @@ module Denise
 	output	reg hires				// hires
 );
 
-//register names and adresses		
+//register names and adresses
 parameter DIWSTRT  = 9'h08E;
 parameter DIWSTOP  = 9'h090;
 parameter DIWHIGH  = 9'h1E4;
-parameter BPLCON0  = 9'h100;  		
-parameter BPLCON2  = 9'h104; 
-parameter BPLCON3  = 9'h106; 
+parameter BPLCON0  = 9'h100;
+parameter BPLCON2  = 9'h104;
+parameter BPLCON3  = 9'h106;
 parameter DENISEID = 9'h07C;
 parameter BPL1DAT  = 9'h110;
 
@@ -97,7 +100,7 @@ reg		[3:0] l_bpu;			// latched bitplane enable
 reg		enaecs;					// enable ECS features like border blank (bplcon0.0)
 reg		[15:0] bplcon2;			// bplcon2 (playfield video priority) register
 reg		[15:0] bplcon3;			// bplcon3 register (border blank)
-wire 	brdrblnk;				// border blank enable
+wire 	brdrblnk;					// border blank enable
 
 reg		[8:0] hdiwstrt;			// horizontal display window start position
 reg		[8:0] hdiwstop;			// horizontal display window stop position
@@ -137,13 +140,6 @@ always @(posedge clk)
 
 //--------------------------------------------------------------------------------------
 
-// sprite display enable signal - sprites are visible after the first write to the BPL1DAT register in a scanline
-always @(posedge clk)
-	if (reset || strhor)
-		display_ena <= 0;
-	else if (reg_address_in[8:1]==BPL1DAT[8:1])
-		display_ena <= 1;
-
 // bpu is updated when bpl1dat register is written
 always @(posedge clk)
 	if (reg_address_in[8:1]==BPL1DAT[8:1])
@@ -168,7 +164,7 @@ always @(posedge clk)
 		dblpf <= data_in[10];
 		bpu <= {data_in[4],data_in[14:12]};
 		enaecs <= data_in[0];
-	end	
+	end
 
 // BPLCON2 register
 always @(posedge clk)
@@ -184,10 +180,17 @@ always @(posedge clk)
 	else if (reg_address_in[8:1]==BPLCON3[8:1])
 		bplcon3[15:0] <= data_in[15:0];
 
+// sprite display enable signal - sprites are visible after the first write to the BPL1DAT register in a scanline
+always @(posedge clk)
+	if (reset || hpos[8:0]==8)
+		display_ena <= 0;
+	else if (reg_address_in[8:1]==BPL1DAT[8:1])
+		display_ena <= 1;
+
 assign brdrblnk = bplcon3[5];
-		
+
 // DIWSTART and DIWSTOP registers (vertical and horizontal limits of display window)
-	
+
 // HDIWSTRT
 always @(posedge clk)
 	if (reg_address_in[8:1]==DIWSTRT[8:1])
@@ -222,14 +225,14 @@ always @(posedge clk)
 	else if (hpos[8:0]==hdiwstop[8:0])
 		window <= 0;
 
-reg window_ena;		
+reg window_ena;
 always @(posedge clk)
 	window_ena <= window;
-	
+
 //--------------------------------------------------------------------------------------
 
 // instantiate bitplane module
-bitplanes bplm0 
+bitplanes bplm0
 (
 	.clk(clk),
 	.clk28m(clk28m),
@@ -240,7 +243,7 @@ bitplanes bplm0
 	.hires(hires),
 	.shres(shres & ecs),
 	.hpos(hpos),
-	.bpldata(bpldata_out)	
+	.bpldata(bpldata_out)
 );
 
 assign bpldata[1] = l_bpu > 0 ? bpldata_out[1] : 1'b0;
@@ -257,7 +260,7 @@ playfields plfm0
 	.dblpf(dblpf),
 	.bplcon2(bplcon2[6:0]),
 	.nplayfield(nplayfield),
-	.plfdata(plfdata)	
+	.plfdata(plfdata)
 );
 
 // instantiate sprite module
@@ -265,13 +268,12 @@ sprites sprm0
 (
 	.clk(clk),
 	.reset(reset),
-	.ecs(1'b0),
 	.reg_address_in(reg_address_in),
 	.hpos(hpos),
 	.data_in(data_in),
 	.sprena(display_ena),
 	.nsprite(nsprite),
-	.sprdata(sprdata)	
+	.sprdata(sprdata)
 );
 
 // instantiate video priority logic module
@@ -280,7 +282,7 @@ sprpriority spm0
 	.bplcon2(bplcon2[5:0]),
 	.nplayfield(nplayfield),
 	.nsprite(nsprite),
-	.sprsel(sprsel)	
+	.sprsel(sprsel)
 );
 
 // instantiate colour look up table
@@ -303,7 +305,7 @@ hamgenerator ham0
 	.reg_address_in(reg_address_in),
 	.data_in(data_in[11:0]),
 	.bpldata(bpldata),
-	.rgb(ham_rgb)		
+	.rgb(ham_rgb)
 );
 
 // instantiate collision detection module
@@ -315,7 +317,7 @@ collision col0
 	.data_in(data_in),
 	.data_out(col_out),
 	.bpldata(bpldata),
-	.nsprite(nsprite)	
+	.nsprite(nsprite)
 );
 
 //--------------------------------------------------------------------------------------
@@ -449,7 +451,7 @@ begin
 	else if (pf1front && nplayfield[1]) // else if pf1 in front and valid data, select playfields
 		sprsel = 0;
 	else if (pf2front && nplayfield[2]) // else if pf2 in front and valid data, select playfields
-		sprsel = 0;	 
+		sprsel = 0;
 	else // else select sprites
 		sprsel = 1;
 end
@@ -472,8 +474,8 @@ module hamgenerator
 	output	reg [11:0] rgb			// RGB output
 );
 
-//register names and adresses		
-parameter COLORBASE = 9'h180;  		// colour table base address
+//register names and adresses
+parameter COLORBASE = 9'h180;		// colour table base address
 
 //local signals
 reg 	[11:0] colortable [15:0];	// colour table
@@ -482,12 +484,12 @@ wire	[11:0] selcolor;			// selected colour output from colour table
 //--------------------------------------------------------------------------------------
 
 //writing of HAM colour table from bus (implemented using dual port distributed ram)
-always @(posedge clk)
+always @(posedge clk28m)
 	if (reg_address_in[8:5]==COLORBASE[8:5])
 		colortable[reg_address_in[4:1]] <= data_in[11:0];
 
 //reading of colour table
-assign selcolor = colortable[bpldata[3:0]];   
+assign selcolor = colortable[bpldata[3:0]];
 
 //--------------------------------------------------------------------------------------
 
@@ -495,10 +497,10 @@ assign selcolor = colortable[bpldata[3:0]];
 always @(posedge clk28m)
 begin
 	case (bpldata[5:4])
-		2'b00://load rgb output with colour from table	
+		2'b00://load rgb output with colour from table
 			rgb <= selcolor;
 		2'b01://hold green and red, modify blue
-			rgb  <= {rgb[11:4],bpldata[3:0]};	
+			rgb  <= {rgb[11:4],bpldata[3:0]};
 		2'b10://hold green and blue, modify red
 			rgb <= {bpldata[3:0],rgb[7:0]};
 		2'b11://hold blue and red, modify green
@@ -523,7 +525,7 @@ module collision
 	input	[7:0] nsprite	
 );
 
-//register names and adresses		
+//register names and adresses
 parameter CLXCON = 9'h098;
 parameter CLXDAT = 9'h00E;
 

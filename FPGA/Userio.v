@@ -58,7 +58,7 @@
 //
 // SB:
 //	06-03-2011	- added autofire without key press & permanent fire at KP0
-// 11-04-2011	- autofire function toggle able via capslock / led status
+// 11-04-2011	- autofire toggle able via capslock / led status
 
 module userio
 (
@@ -126,13 +126,15 @@ parameter JOY1DAT = 9'h00c;
 parameter POTINP  = 9'h016;
 parameter JOYTEST = 9'h036;
 
-parameter KEY_MENU  = 8'h69;
-parameter KEY_ESC   = 8'h45;
-parameter KEY_ENTER = 8'h44;
-parameter KEY_UP    = 8'h4C;
-parameter KEY_DOWN  = 8'h4D;
-parameter KEY_LEFT  = 8'h4F;
-parameter KEY_RIGHT = 8'h4E;
+parameter KEY_MENU   = 8'h69;
+parameter KEY_ESC    = 8'h45;
+parameter KEY_ENTER  = 8'h44;
+parameter KEY_UP     = 8'h4C;
+parameter KEY_DOWN   = 8'h4D;
+parameter KEY_LEFT   = 8'h4F;
+parameter KEY_RIGHT  = 8'h4E;
+parameter KEY_PGUP   = 8'h6c;
+parameter KEY_PGDOWN = 9'h6d;
 
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
@@ -167,7 +169,7 @@ always @(posedge clk)
 
 always @(posedge clk)
 	if (sof)
-		_xjoy2[5:0] <= _joy2[5:0];	
+		_xjoy2[5:0] <= _joy2[5:0];
 
 // port 2 joystick disable in osd
 always @(posedge clk)
@@ -193,6 +195,10 @@ always @(joy2enable or _xjoy2 or osd_ctrl)
 			t_osd_ctrl = KEY_LEFT;
 		else if (~_xjoy2[0])
 			t_osd_ctrl = KEY_RIGHT;
+		else if (~_xjoy2[1] && ~_xjoy2[3])
+			t_osd_ctrl = KEY_PGUP;
+		else if (~_xjoy2[0] && ~_xjoy2[2])
+			t_osd_ctrl = KEY_PGDOWN;
 		else
 			t_osd_ctrl = osd_ctrl;
 	else
@@ -225,8 +231,8 @@ always @(reg_address_in or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mrigh
 		data_out[15:0] = 16'h00_00;
 
 // assign fire outputs to cia A
-assign _fire1 = _sjoy2[4];
 assign _fire0 = _sjoy1[4] & _mleft & _lmb;
+assign _fire1 = _sjoy2[4];
 
 // JB: some trainers writes to JOYTEST register to reset current mouse counter
 assign test_load = reg_address_in[8:1]==JOYTEST[8:1] ? 1 : 0;
@@ -321,7 +327,7 @@ module osd
 	output	reg [3:0] chipset_config = 0,
 	output	reg [3:0] floppy_config = 0,
 	output	reg [1:0] scanline = 0,
-	output	reg	[2:0] ide_config = 0,		// enable hard disk support
+	output	reg [2:0] ide_config = 0,		// enable hard disk support
 	output	reg [1:0] autofire_config = 0,
 	output	usrrst,
 	output	bootrst
@@ -356,12 +362,10 @@ always @(posedge clk)
 	begin
 		chipset_config[1] <= t_chipset_config[1];
 		ide_config <= t_ide_config;
+		memory_config <= t_memory_config;
 	end
 
 always @(posedge clk)
-		memory_config <= t_memory_config;
-
-always @(t_chipset_config)
 begin
 	chipset_config[3:2] <= t_chipset_config[3:2];
 	chipset_config[0] <= t_chipset_config[0];
