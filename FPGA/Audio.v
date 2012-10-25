@@ -65,6 +65,8 @@
 // #2 : 123 (122)
 // #3 : 124 (123)
 
+// SB:
+// 2011-01-18 - fixed sound output, no more high pitch noise at game Gods
 
 module audio
 (
@@ -207,7 +209,7 @@ audiochannel ach3
 //instantiate volume control and sigma/delta modulator
 sigmadelta dac0 
 (
-	.clk(clk),
+	.clk(clk28m),
 	.sample0(sample0),
 	.sample1(sample1),
 	.sample2(sample2),
@@ -236,7 +238,7 @@ endmodule
 // channel 0&3 --> right
 module sigmadelta
 (
-	input 	clk,				//bus clock
+	input clk,					//bus clock
 	input	[7:0] sample0,		//sample 0 input
 	input	[7:0] sample1,		//sample 1 input
 	input	[7:0] sample2,		//sample 2 input
@@ -302,28 +304,39 @@ svmul sv1
 				(rightvmux[6] | rightvmux[3]),
 				(rightvmux[6] | rightvmux[2]),
 				(rightvmux[6] | rightvmux[1]),
-				(rightvmux[6] | rightvmux[0])})),
+				(rightvmux[6] | rightvmux[0]) })),
 	.out(rdata)	
 	);
 
 //--------------------------------------------------------------------------------------
 
+//noise offset generator
+//reg	[17:0] lfsr = 0;
+//reg	noise;
+
+/*
+always @(posedge clk)
+	begin
+		lfsr <= ({lfsr, lfsr[17] ~^ lfsr[10]});
+		noise <= (lfsr[0]);
+	end
+*/
 //left sigma/delta modulator
 always @(posedge clk)
 	if (strhor)
-		acculeft[14:0] <= 15'b000_0000_0000_0000;
+		acculeft[14:0] <= 0;
 	else
 		acculeft[14:0] <= ({1'b0,acculeft[13:0]} + {1'b0,~ldata[13],ldata[12:0]});
-	
+
 assign left = acculeft[14];
 
 //right sigma/delta modulator
 always @(posedge clk)
 	if (strhor)
-		accuright[14:0] <= 15'b000_0000_0000_0000;
+		accuright[14:0] <= 0;
 	else
 		accuright[14:0] <= ({1'b0,accuright[13:0]} + {1'b0,~rdata[13],rdata[12:0]});
-	
+
 assign right = accuright[14];
 
 endmodule
@@ -336,19 +349,19 @@ endmodule
 //it produces a 14bit signed result
 module svmul
 (
-	input 	[7:0] sample,		//signed sample input
-	input	[5:0] volume,		//unsigned volume input
+	input		[7:0] sample,		//signed sample input
+	input		[5:0] volume,		//unsigned volume input
 	output	[13:0] out			//signed product out
 );
 
 wire	[13:0] sesample;   		//sign extended sample
-wire	[13:0] sevolume;		//sign extended volume
+wire	[13:0] sevolume;			//sign extended volume
 
-//sign extend input parameters - fixed by ASC (boing4000)
-assign 	sesample[13:0] = ({{6{sample[7]}},sample[7:0]});
+//sign extend input parameters
+assign 	sesample[13:0] = ({1'b0,{6{sample[7]}},sample[7:0]});
 assign	sevolume[13:0] = ({8'b00000000,volume[5:0]});
 
-//multiply, synthesizer should infer multiplier here
+//multiply, synthesizer should infer multiplier here - fixed by ASC (boing4000)
 assign out[13:0] = ({sesample[13:0] * sevolume[13:0]});
 
 endmodule

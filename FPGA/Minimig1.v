@@ -130,7 +130,9 @@
 // 2010-08-15	- added joystick emulation
 //
 // SB:
-// 2010-12-22  - better drive step sound at 31KHz mode
+// 2010-12-22	- better drive step sound at 31KHz mode
+// 2011-03-06	- changed autofire function to handless mode
+// 2011-03-08	- added dip and fat agnus DIWSTRT handling (fix RoboCop2)
 
 module Minimig1
 (
@@ -396,29 +398,29 @@ assign gpio = drvsnd ? 1'b1 : 1'b0;
 // NTSC/PAL switching is controlled by OSD menu, change requires reset to take effect
 always @(posedge clk)
 	if (reset)
-		ntsc <= chipset_config[1];
+		ntsc <= (chipset_config[1]);
 
 // vertical sync for the MCU
 reg vsync_del = 1'b0; 	// delayed vsync signal for edge detection
 reg	vsync_t = 1'b0;		// toggled vsync output
 
 always @(posedge clk)
-	vsync_del <= _vsync_i;
+	vsync_del <= (_vsync_i);
 	
 always @(posedge clk)
 	if (~_vsync_i && vsync_del)
-		vsync_t <= ~vsync_t;
+		vsync_t <= (~vsync_t);
 
-assign init_b = vsync_t;
+assign init_b = (vsync_t);
 
 //--------------------------------------------------------------------------------------
 
 // instantiate agnus
 Agnus AGNUS1
 (
-	.clk(clk),
-	.clk28m(clk28m),
-	.cck(cck),
+	.clk({clk}),
+	.clk28m({clk28m}),
+	.cck({cck}),
 	.reset(reset),
 	.aen(sel_reg),
 	.rd(cpu_rd),
@@ -441,7 +443,7 @@ Agnus AGNUS1
 	.strhor_denise(strhor_denise),
 	.strhor_paula(strhor_paula),
 	.htotal(htotal),
-	.int3(int3),
+	.int3({int3}),
 	.audio_dmal(audio_dmal),
 	.audio_dmas(audio_dmas),
 	.disk_dmal(disk_dmal),
@@ -457,9 +459,9 @@ Agnus AGNUS1
 // instantiate paula
 Paula PAULA1
 (
-	.clk(clk),
-	.clk28m(clk28m),
-	.cck(cck),
+	.clk({clk}),
+	.clk28m({clk28m}),
+	.cck({cck}),
 	.reset(reset),
 	.reg_address_in(reg_address),
 	.data_in(custom_data_in),
@@ -471,8 +473,8 @@ Paula PAULA1
 	.strhor(strhor_paula),
 	.vblint(vbl_int),
 	.int2(int2|gayle_irq),
-	.int3(int3),
-	.int6(int6),
+	.int3({int3}),
+	.int6({int6}),
 	._ipl(_iplx),
 	.audio_dmal(audio_dmal),
 	.audio_dmas(audio_dmas),
@@ -551,16 +553,16 @@ userio USERIO1
 	.bootrst(bootrst)
 );
 
-assign cpu_speed = chipset_config[0];
+assign cpu_speed = (chipset_config[0]);
 
 // instantiate Denise
 Denise DENISE1
 (		
-	.clk28m(clk28m),
-	.clk(clk),
+	.clk28m({clk28m}),
+	.clk({clk}),
 	.c1(c1),
 	.c3(c3),
-	.cck(cck),
+	.cck({cck}),
 	.reset(reset),
 	.strhor(strhor_denise),
 	.reg_address_in(reg_address),
@@ -590,14 +592,14 @@ Amber AMBER1
 	.red_in(red_i),
 	.blue_in(blue_i),
 	.green_in(green_i),
-	._hsync_in(_hsync_i),
-	._vsync_in(_vsync_i),
-	._csync_in(_csync_i),
+	._hsync_in({_hsync_i}),
+	._vsync_in({_vsync_i}),
+	._csync_in({_csync_i}),
 	.red_out(red),
 	.blue_out(blue),
 	.green_out(green),
-	._hsync_out(_hsync),
-	._vsync_out(_vsync)
+	._hsync_out({_hsync}),
+	._vsync_out({_vsync})
 );
 
 // instantiate cia A
@@ -612,8 +614,8 @@ ciaa CIAA1
 	.data_in(cpu_data_out[7:0]),
 	.data_out(cia_data_out[7:0]),
 	.tick(_vsync_i),
-	.eclk(eclk[9]),
-	.irq(int2),
+	.eclk({eclk[9]}),
+	.irq({int2}),
 	.porta_in({_fire1,_fire0,_ready,_track0,_wprot,_change}),
 	.porta_out({_led,ovl}),
 	.kbdrst(kbdrst),
@@ -642,7 +644,7 @@ ciab CIAB1
 	.tick(_hsync_i),
 	.eclk(eclk[9]),
 	.flag(index),
-	.irq(int6),
+	.irq({int6}),
 	.porta_in({1'b0,cts,1'b0}),
 	.porta_out({dtr,rts}),
 	.portb_out({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
@@ -653,10 +655,10 @@ ciab CIAB1
 // instantiate cpu bridge
 m68k_bridge CPU1 
 (
-	.clk28m(clk28m),
+	.clk28m({clk28m}),
 	.c1(c1),
 	.c3(c3),
-	.cck(cck),
+	.cck({cck}),
 	.clk(clk),
 	.cpu_clk(cpu_clk),
 	.eclk(eclk),
@@ -749,7 +751,7 @@ ActionReplay CART1
 );
 
 // level 7 interrupt for CPU
-assign _cpu_ipl = int7 ? 3'b000 : _iplx;	// m68k interrupt request
+assign _cpu_ipl = (int7) ? 3'b000 : _iplx;	// m68k interrupt request
 
 // instantiate gary
 gary GARY1 
@@ -767,6 +769,7 @@ gary GARY1
 	.cpu_hwr(cpu_hwr),
 	.cpu_lwr(cpu_lwr),
 	.ovl(ovl),
+//	.a1k(chipset_config[2]),
 	.boot(boot),
 	.dbr(dbr),
 	.dbwe(dbwe),
@@ -843,11 +846,11 @@ syscontrol CONTROL1
 // instantiate clock generator
 clock_generator CLOCK1
 (	
-	.mclk(mclk),
-	.clk28m(clk28m),	// 28.37516 MHz clock output
+	.mclk({mclk}),
+	.clk28m({clk28m}),	// 28.37516 MHz clock output
 	.c1(c1),			// clock enable signal
 	.c3(c3),			// clock enable signal
-	.cck(cck),			// colour clock enable
+	.cck({cck}),			// colour clock enable
 	.clk(clk),			// 7.09379  MHz clock output
 	.cpu_clk(cpu_clk),
 	.turbo(turbo),
@@ -858,16 +861,16 @@ clock_generator CLOCK1
 //-------------------------------------------------------------------------------------
 
 // data multiplexer
-assign cpu_data_in[15:0] = gary_data_out[15:0]
+assign cpu_data_in[15:0] = (gary_data_out[15:0]
 						 | boot_data_out[15:0]
 						 | cia_data_out[15:0]
 						 | ar3_data_out[15:0]
-						 | gayle_data_out[15:0];
+						 | gayle_data_out[15:0]);
 
-assign custom_data_out[15:0] = agnus_data_out[15:0]
+assign custom_data_out[15:0] = (agnus_data_out[15:0]
 							 | paula_data_out[15:0]
 							 | denise_data_out[15:0]
-							 | user_data_out[15:0];
+							 | user_data_out[15:0]);
 
 //--------------------------------------------------------------------------------------
 
@@ -876,19 +879,18 @@ assign sdo = (!_scs[0] || !_scs[1]) ? (paula_sdo | user_sdo) : 1'bz;
 
 //--------------------------------------------------------------------------------------
 
-reg	rst_sel = 1'b0;
-
-always @(posedge clk)
-	rst_sel <= ~rst_sel;
+//reg	rst_sel = 1'b0;
+//always @(posedge clk)
+//	rst_sel <= ~rst_sel;
 
 // cpu reset output
 //assign _cpu_reset = rst_sel ? ~reset_out : 1'bz;
-assign _cpu_reset = ~reset_out;
+assign _cpu_reset = (~reset_out);
 
 // input reset from the CPU control bus
 always @(posedge clk)
 //	if (~rst_sel)
-		reset <= ~_cpu_reset;
+		reset <= (~_cpu_reset);
 	
 //--------------------------------------------------------------------------------------
 
@@ -927,7 +929,7 @@ module syscontrol
 // local signals
 reg		smrst;					// registered input
 reg		_boot = 0;
-reg		[1:0] rst_cnt = 0;		// reset timer SHOULD BE CLEARED BY CONFIG
+reg		[2:0] rst_cnt = 0;		// reset timer SHOULD BE CLEARED BY CONFIG
 wire	_rst;					// local reset signal
 
 // asynchronous mrst input synchronizer
@@ -941,7 +943,7 @@ always @(posedge clk)
 	else if (!_rst && cnt)
 		rst_cnt <= rst_cnt + 1;
 
-assign _rst = rst_cnt[1];
+assign _rst = rst_cnt[2];
 
 // boot control
 always @(posedge clk)
@@ -1268,7 +1270,7 @@ reg		_ta;					// transfer acknowledge
 // CPU speed mode is allowed to change only when there is no bus access
 always @(posedge clk)
 	if (_as)
-		turbo <= cpu_speed;
+		turbo <= (cpu_speed);
 		
 // latched valid peripheral address
 always @(posedge clk)
@@ -1283,10 +1285,10 @@ always @(posedge clk)
 
 // latched CPU bus control signals
 always @(posedge clk)
-	{lr_w,l_as,l_dtack} <= {r_w,_as,_dtack};
+	{lr_w,l_as,l_dtack} <= ({r_w,_as,_dtack});
 
 always @(posedge clk28m)
-	{l_uds,l_lds} <= {_uds,_lds};
+	{l_uds,l_lds} <= ({_uds,_lds});
 
 // ------------------------------------------------------------------------------------------------------------------------------------------- //
 /*
@@ -1298,18 +1300,18 @@ always @(posedge clk28m)
 
 reg t_as; // sampled _as for capturing bus data
 always @(posedge cpu_clk)
-	t_as <= _as;
+	t_as <= (_as);
 
 reg t_dtack; // sampled _dtack for capturing bus data
 always @(negedge cpu_clk)
-	t_dtack <= _dtack | t_as | ~t_dtack;
+	t_dtack <= (_dtack | t_as | ~t_dtack);
 	
 // cached memory ranges
 wire [3:0] cache_bank;
-assign cache_bank[0] = address[23:19] == 5'b1100_0 ? VCC : GND;	// SLOW RAM $C00000-$C7FFFF
-assign cache_bank[1] = address[23:19] == 5'b1100_1 ? VCC : GND;	// SLOW RAM $C80000-$CFFFFF	
-assign cache_bank[2] = address[23:19] == 5'b1101_0 ? VCC : GND;	// SLOW RAM $D00000-$D7FFFF	
-assign cache_bank[3] = address[23:19] == 5'b1111_1 ? VCC : GND;	// KICK ROM $F80000-$FFFFFF	
+assign cache_bank[0] = (address[23:19] == 5'b1100_0) ? VCC : GND;	// SLOW RAM $C00000-$C7FFFF
+assign cache_bank[1] = (address[23:19] == 5'b1100_1) ? VCC : GND;	// SLOW RAM $C80000-$CFFFFF	
+assign cache_bank[2] = (address[23:19] == 5'b1101_0) ? VCC : GND;	// SLOW RAM $D00000-$D7FFFF	
+assign cache_bank[3] = (address[23:19] == 5'b1111_1) ? VCC : GND;	// KICK ROM $F80000-$FFFFFF	
 
 // enable caching of selected memory range
 wire [3:0] bank_enable;
@@ -1319,7 +1321,7 @@ assign bank_enable[2] = &memory_config[3:2];
 assign bank_enable[3] = VCC;
 				
 wire cacheable; // indicates if the selected address is cacheable	
-assign cacheable = |(cache_bank & bank_enable);	
+assign cacheable = |(cache_bank & bank_enable);
 
 // cache tag ram
 reg [8:0] cache_tag [2047:0];
@@ -1328,14 +1330,14 @@ reg [8:0] cache_tag_out;
 always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable) // write address tag during any access to cacheable memory
-			cache_tag[address[11:1]] <= address[20:12];
+			cache_tag[address[11:1]] <= (address[20:12]);
 	  
 always @(negedge cpu_clk) // ram read
-	cache_tag_out <= cache_tag[address[11:1]];
+	cache_tag_out <= (cache_tag[address[11:1]]);
 	
 // tag addres comparator
 wire tag_match; // tag address matches the current one (possible cache hit)
-assign tag_match = cache_tag_out[8:0] == address[20:12] ? VCC : GND;
+assign tag_match = (cache_tag_out[8:0] == address[20:12]) ? VCC : GND;
 
 // cache data ram (high byte)
 reg [8:0] cache_data_hi [2047:0]; // byte valid bit + 8 data bits
@@ -1347,10 +1349,10 @@ reg [8:0] cache_data_hi_out;
 always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable && (!_uds || !tag_match))
-			cache_data_hi[address[11:1]] <= {~_uds, data[15:8]}; // msb as byte valid flag
+			cache_data_hi[address[11:1]] <= ({~_uds, data[15:8]}); // msb as byte valid flag
 	  
 always @(negedge cpu_clk) // ram read
-	cache_data_hi_out <= cache_data_hi[address[11:1]];
+	cache_data_hi_out <= (cache_data_hi[address[11:1]]);
 
 // cache data ram (low byte)
 reg [8:0] cache_data_lo [2047:0]; // byte valid bit + 8 data bits
@@ -1362,28 +1364,28 @@ reg [8:0] cache_data_lo_out;
 always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable && (!_lds || !tag_match))
-			cache_data_lo[address[11:1]] <= {~_lds, data[7:0]}; // msb as byte valid flag
+			cache_data_lo[address[11:1]] <= ({~_lds, data[7:0]}); // msb as byte valid flag
 	  
 always @(negedge cpu_clk) // ram read
-	cache_data_lo_out <= cache_data_lo[address[11:1]];
+	cache_data_lo_out <= (cache_data_lo[address[11:1]]);
 
 // cache data output
 wire [15:0] cache_out;
-assign cache_out = {cache_data_hi_out[7:0], cache_data_lo_out[7:0]};
+assign cache_out = ({cache_data_hi_out[7:0], cache_data_lo_out[7:0]});
 
 // checks if requested single byte or both bytes are in cache
 wire size_match;
-assign size_match = (cache_data_hi_out[8] | _uds) & (cache_data_lo_out[8] | _lds);	
+assign size_match = ((cache_data_hi_out[8] | _uds) & (cache_data_lo_out[8] | _lds));
 
 // indicates that requested data is in cache	
 wire cache_hit;
-assign cache_hit = turbo & ~_as & cacheable & tag_match & size_match & r_w;
+assign cache_hit = (turbo & ~_as & cacheable & tag_match & size_match & r_w);
 
 // ------------------------------------------------------------------------------------------------------------------------------------------- //
 
 // latched _as line (active low) used in turbo mode (active only if cache missed access)
 always @(posedge clk)
-	l_as28m <= _as | cache_hit;
+	l_as28m <= (_as | cache_hit);
 	
 // data transfer acknowledge in normal mode
 reg _ta_n;
@@ -1432,19 +1434,19 @@ always @(posedge cpu_clk or posedge _as)
 		_ta_t <= GND;
 		
 // actual _dtack generation (from 7MHz synchronous bus access and cache hit access)
-assign _dtack = _ta_n & _ta_t & ~cache_hit;
+assign _dtack = (_ta_n & _ta_t & ~cache_hit);
 
 // synchronous control signals
-assign enable = (~l_as & ~l_dtack & ~cck & ~turbo) | (~l_as28m & l_dtack & ~(dbr & xbs) & ~nrdy & turbo);
-assign rd = enable & lr_w;
+assign enable = ((~l_as & ~l_dtack & ~cck & ~turbo) | (~l_as28m & l_dtack & ~(dbr & xbs) & ~nrdy & turbo));
+assign rd = (enable & lr_w);
 // in turbo mode l_uds and l_lds may be delayed by 35 ns
-assign hwr = enable & ~lr_w & ~l_uds;
-assign lwr = enable & ~lr_w & ~l_lds;
+assign hwr = (enable & ~lr_w & ~l_uds);
+assign lwr = (enable & ~lr_w & ~l_lds);
 // blitter slow down signalling, asserted whenever CPU is missing bus access to chip ram, slow ram and custom registers 
-assign bls = dbs & ~l_as & l_dtack;
+assign bls = (dbs & ~l_as & l_dtack);
 
 // generate data buffer output enable
-assign doe = r_w & ~_as;
+assign doe = (r_w & ~_as);
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------- //
 

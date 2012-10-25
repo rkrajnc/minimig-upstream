@@ -145,7 +145,9 @@
 // 2009-12-27	- OCS Denise compatible display window generation
 // 2010-04-13	- undocumented 7 bitplane mode implemented
 // 2010-06-29	- added more magic to ddf logic
-// 2010-10-28	- vdiwena is reset by eof
+
+//SB:
+// 2011-03-08	- added DIP and FatAgnus handling of scanline 0 (fix for RoboCop2 game)
 
 module Agnus
 (
@@ -370,15 +372,15 @@ always @(reg_address or blit_busy or blit_zero or dmacon)
 	if (reg_address[8:1]==DMACONR[8:1])
 		dmaconr[15:0] <= {1'b0, blit_busy, blit_zero, dmacon[12:0]};
 	else
-		dmaconr <= 16'h0000;
+		dmaconr <= 0;
 
 //dma control register write
 always @(posedge clk)
 	if (reset)
-		dmacon <= 16'h0000;
+		dmacon <= 0;
 	else if (reg_address[8:1]==DMACON[8:1])
 	begin
-		if (data_in[15]==1'b1)
+		if (data_in[15])
 			dmacon[12:0] <= dmacon[12:0] | data_in[12:0];
 		else
 			dmacon[12:0] <= dmacon[12:0] & ~data_in[12:0];	
@@ -448,8 +450,9 @@ bpldma_engine bpd1
 	.clk(clk),
 	.reset(reset),
 	.ecs(ecs),
+	.a1k(a1k),
+	.sof(sof),
 	.dmaena(bplen),
-	.eof(sof),
 	.vpos(vpos),
 	.hpos(hpos),
 	.dma(dma_bpl),
@@ -509,7 +512,6 @@ always @(posedge clk)
 		else if (bls_cnt[1:0] != BLS_CNT_MAX)
 			bls_cnt <= bls_cnt + 1;
 
-
 //instantiate blitter
 blitter bl1
 (
@@ -524,7 +526,6 @@ blitter bl1
 	.zero(blit_zero),
 	.busy(blit_busy),
 	.int3(int3),
-	.a1k(a1k),
 	.data_in(data_in),
 	.data_out(data_blt),
 	.reg_address_in(reg_address),
@@ -599,8 +600,9 @@ module bpldma_engine
 	input 	clk,		    			// bus clock
 	input	reset,						// reset
 	input	ecs,						// ddfstrt/ddfstop ECS bits enable
+	input	a1k,							// DIP Agnus feature
+	input	sof,							// start of frame
 	input	dmaena,						// enable dma input
-	input	eof,						// end of frame
 	input	[10:0] vpos,				// vertical position counter
 	input	[8:0] hpos,					// agnus internal horizontal position counter (advanced by 4 CCK)
 	output	dma,						// true if bitplane dma engine uses it's cycle
@@ -698,7 +700,7 @@ always @(posedge clk)
 		vdiwstrt[10:8] <= 3'b000; // reset V10-V9 when writing DIWSTRT
 	else if (reg_address_in[8:1]==DIWHIGH[8:1] && ecs) // ECS
 		vdiwstrt[10:8] <= data_in[2:0];
-		
+
 // diwstop
 always @(posedge clk)
 	if (reg_address_in[8:1]==DIWSTOP[8:1])
@@ -712,11 +714,11 @@ always @(posedge clk)
 
 // vertical display window enable		
 always @(posedge clk)
-	if (eof || vpos[10:0]==vdiwstop[10:0])
+	if (sof && ~a1k || vpos[10:0]==0 && a1k || vpos[10:0]==vdiwstop[10:0]) // DIP Agnus can't start display DMA at scanline 0
 		vdiwena <= GND;
 	else if (vpos[10:0]==vdiwstrt[10:0])
 		vdiwena <= VCC;
-		
+
 //--------------------------------------------------------------------------------------
 
 wire	[2:0] bplptr_sel;	// bitplane pointer select
@@ -819,28 +821,28 @@ reg hard_start;
 reg hard_stop;
 
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (hpos[8:1]=={ddfstrt[8:3], ddfstrt[2] & ecs, 1'b0})
 			soft_start <= VCC;
 		else
 			soft_start <= GND;
 
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (hpos[8:1]=={ddfstop[8:3], ddfstop[2] & ecs, 1'b0})
 			soft_stop <= VCC;
 		else
 			soft_stop <= GND;
 
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (hpos[8:1]==8'h18)
 			hard_start <= VCC;
 		else
 			hard_start <= GND;
 
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (hpos[8:1]==8'hD8)
 			hard_stop <= VCC;
 		else
@@ -848,7 +850,7 @@ always @(posedge clk)
 
 // softena : software display data fetch window
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (soft_start && (ecs || vdiwena && dmaena) && !ddfstrt_sel) // OCS: display can start only when vdiwena condition is true
 			softena <= VCC;
 		else if (soft_stop || !ecs && hard_stop)
@@ -856,7 +858,7 @@ always @(posedge clk)
 		 
 // hardena : hardware limits of display data fetch
 always @(posedge clk)
-	if (hpos[0]==1'b1)
+	if (hpos[0])
 		if (hard_start)
 			hardena <= VCC;
 		else if (hard_stop)
@@ -882,7 +884,7 @@ always @(posedge clk)
 
 // this signal enables bitplane DMA sequencer
 always @(posedge clk)
-	if (hpos[0]==1'b1) //cycle alligment
+	if (hpos[0]) //cycle alligment
 		if (ddfena && vdiwena && !hpos[1] && dmaena_delayed[0]) // bitplane DMA starts at odd timeslot
 			ddfrun <= 1;
 		else if ((ddfend || !vdiwena) && ddfseq==7) // cleared at the end of last bitplane DMA cycle
@@ -890,7 +892,7 @@ always @(posedge clk)
 			
 // bitplane fetch dma sequence counter (1 bitplane DMA sequence lasts 8 CCK cycles)
 always @(posedge clk)
-	if (hpos[0]==1'b1) // cycle alligment
+	if (hpos[0]) // cycle alligment
 		if (ddfrun) // if enabled go to the next state
 			ddfseq <= ddfseq + 1;
 		else
@@ -898,7 +900,7 @@ always @(posedge clk)
 
 // the last sequence of the bitplane DMA (time to add modulo)
 always @(posedge clk)
-	if (hpos[0]==1'b1 && ddfseq==7)
+	if (hpos[0] && ddfseq==7)
 		if (ddfend) // cleared if set
 			ddfend <= 0;
 		else if (!ddfena) // set during the last bitplane dma sequence
@@ -915,10 +917,10 @@ always @(shres or hires or ddfseq)
 		plane = {1'b0,~ddfseq[0],~ddfseq[1]};
 	else // low resolution (140ns pixel clock)
 		plane = {~ddfseq[0],~ddfseq[1],~ddfseq[2]};
-
+		
 // corrected number of selected planes
 assign planes = bpu[2:0]==3'b111 ? 3'b100 : bpu[2:0];
-
+		
 // generate dma signal
 // for a dma to happen plane must be less than BPU, dma must be enabled and data fetch must be true
 assign dma = ddfrun && dmaena_delayed[1] && hpos[0] && plane[2:0] < planes[2:0] ? 1'b1 : 1'b0;
@@ -929,7 +931,7 @@ assign dma = ddfrun && dmaena_delayed[1] && hpos[0] && plane[2:0] < planes[2:0] 
 always @(address_out or bpl1mod or bpl2mod or plane[0] or mod)
 	if (mod)
 	begin
-		if (plane[0]==1'b1) // even plane modulo
+		if (plane[0]) // even plane modulo
 			newpt[20:1] = address_out[20:1] + {{5{bpl2mod[15]}},bpl2mod[15:1]} + 1;
 		else // odd plane modulo
 			newpt[20:1] = address_out[20:1] + {{5{bpl1mod[15]}},bpl1mod[15:1]} + 1;
@@ -1062,9 +1064,9 @@ reg		dmastate_in;				//input to memory
 
 reg		[2:0] sprsel;				//memory selection
 
-//sprite selection signal (in real amiga sprites are evaluated concurrently,
+//sprite selection signal (in real amiga sprites are evaluated concurently,
 //in our solution to save resources they are evaluated sequencially but 8 times faster (28MHz clock)
-always @(negedge clk28m)
+always @(posedge clk28m)
 	if (sprsel[2]==hpos[0])		//sprsel[2] is synced with hpos[0]
 		sprsel <= sprsel + 1;
 

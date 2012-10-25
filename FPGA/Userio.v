@@ -54,7 +54,10 @@
 // 2009-12-18	- clean-up
 // 2010-08-16	- joystick emulation
 // 2010-08-16	- autofire
-//				- lmb & rmb emulation
+//					- lmb & rmb emulation
+//
+// SB:
+//	06-03-2011	- add autofire without key press & permanent fire at KP0
 
 module userio
 (
@@ -113,6 +116,7 @@ wire	[15:0] test_data;			// mouse counter test value
 wire	[1:0] autofire_config;
 reg		[1:0] autofire_cnt;
 reg		autofire;
+reg		sel_autofire;			// select autofire and permanent fire
 
 // register names and adresses		
 parameter JOY0DAT = 9'h00a;
@@ -132,7 +136,6 @@ parameter KEY_RIGHT = 8'h4E;
 //--------------------------------------------------------------------------------------
 
 //autofire pulses generation
-
 always @(posedge clk)
 	if (sof)
 		if (autofire_cnt == 1)
@@ -144,8 +147,12 @@ always @(posedge clk)
 	if (sof)
 		if (autofire_config == 0)
 			autofire <= 1'b0;
-		else if (autofire_cnt == 1)
+		else if (autofire_cnt == 1 && _xjoy2[4] == 1)
 			autofire <= ~autofire;
+
+// autofire 
+always @(posedge clk)
+	sel_autofire <= _xjoy2[4] ? autofire : 0;
 
 // disable keyboard when OSD is displayed
 always @(key_disable)
@@ -166,7 +173,8 @@ always @(posedge clk)
 	else if (_xjoy2[5:0] == 6'b11_1111)
 		joy2enable <= 1;
 
-assign _sjoy2[5:0] = joy2enable ? _xjoy2[5:0] | (autofire << 4) : 6'b11_1111;
+//	autofire is permanent active if enabled, can be overwritten any time by normal fire button
+assign _sjoy2[5:0] = joy2enable ? {_xjoy2[5], sel_autofire ^ _xjoy2[4], _xjoy2[3:0]} : 6'b11_1111;
 
 always @(joy2enable or _xjoy2 or osd_ctrl)
 	if (~joy2enable)

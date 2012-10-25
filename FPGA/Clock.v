@@ -113,8 +113,8 @@ module clock_generator
 	DCM #
 	(
 		.CLKDV_DIVIDE(2.0), // Divide by: 1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5,6.0,6.5,7.0,7.5,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0 or 16.0
-		.CLKFX_DIVIDE(2),   // Can be any integer from 1 to 32
-		.CLKFX_MULTIPLY(14), // Can be any integer from 2 to 32
+		.CLKFX_DIVIDE(4),   // Can be any integer from 1 to 32
+		.CLKFX_MULTIPLY(28), // Can be any integer from 2 to 32
 		.CLKIN_DIVIDE_BY_2("FALSE"), // TRUE/FALSE to enable CLKIN divide by two feature
 		.CLKIN_PERIOD(140.0),  // Specify period of input clock
 		.CLKOUT_PHASE_SHIFT("NONE"), // Specify phase shift of NONE, FIXED or VARIABLE
@@ -148,26 +148,26 @@ always @(posedge clk)
 	if (e_cnt[3] && e_cnt[0])
 		e_cnt[3:0] <= 0;
 	else
-		e_cnt[3:0] <= e_cnt[3:0] + 1;
+		e_cnt[3:0] <= (e_cnt[3:0] + 1);
 
 // CCK clock output
-assign cck = ~e_cnt[0];
+assign cck = (!e_cnt[0]);
 		
-assign eclk[0] = ~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 0
-assign eclk[1] = ~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 1
-assign eclk[2] = ~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] & ~e_cnt[0]; // e_cnt == 2
-assign eclk[3] = ~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] &  e_cnt[0]; // e_cnt == 3
-assign eclk[4] = ~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 4
-assign eclk[5] = ~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 5
-assign eclk[6] = ~e_cnt[3] &  e_cnt[2] &  e_cnt[1] & ~e_cnt[0]; // e_cnt == 6
-assign eclk[7] = ~e_cnt[3] &  e_cnt[2] &  e_cnt[1] &  e_cnt[0]; // e_cnt == 7
-assign eclk[8] =  e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 8
-assign eclk[9] =  e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 9
+assign eclk[0] = (~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]); // e_cnt == 0
+assign eclk[1] = (~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 1
+assign eclk[2] = (~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] & ~e_cnt[0]); // e_cnt == 2
+assign eclk[3] = (~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] &  e_cnt[0]); // e_cnt == 3
+assign eclk[4] = (~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]); // e_cnt == 4
+assign eclk[5] = (~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 5
+assign eclk[6] = (~e_cnt[3] &  e_cnt[2] &  e_cnt[1] & ~e_cnt[0]); // e_cnt == 6
+assign eclk[7] = (~e_cnt[3] &  e_cnt[2] &  e_cnt[1] &  e_cnt[0]); // e_cnt == 7
+assign eclk[8] = ( e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]); // e_cnt == 8
+assign eclk[9] = ( e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 9
 		
 always @(posedge clk28m)
-	c3 <= clk;
+	c3 <= (clk);
 	
 always @(posedge clk28m)
-	c1 <= ~c3;
+	c1 <= (~c3);
 	
 endmodule

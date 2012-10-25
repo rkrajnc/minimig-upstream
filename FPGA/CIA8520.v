@@ -127,7 +127,7 @@ reg		tick_del;			// required for edge detection
 wire	pra,prb,ddra,cra,talo,tahi,crb,tblo,tbhi,tdlo,tdme,tdhi,icrs,sdr;
 wire	enable;
 
-assign enable = aen & (rd | wr);
+assign enable = (aen & (rd | wr));
 
 // decoder
 assign	pra  = (enable && rs==4'h0) ? 1'b1 : 1'b0;
@@ -633,11 +633,11 @@ always @(posedge clk)
 	end
 
 // generate irq output (interrupt request)
-assign irq 	= (icrmask[0] & icr[0]) 
+assign irq 	= ((icrmask[0] & icr[0]) 
 			| (icrmask[1] & icr[1])
 			| (icrmask[2] & icr[2])
 			| (icrmask[3] & icr[3])
-			| (icrmask[4] & icr[4]);
+			| (icrmask[4] & icr[4]));
 
 endmodule
 

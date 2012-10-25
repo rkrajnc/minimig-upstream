@@ -85,7 +85,6 @@ module blitter
 	input	enadma,						// no other dma channel is granted the bus
 	output	reqdma,						// blitter requests dma cycle
 	input	ackdma,						// agnus dma priority logic grants dma cycle
-	input	a1k,
 	output	we,							// write enable (blitter writes to memory)
 	output	reg zero,					// blitter zero status
 	output	reg busy,					// blitter busy status
@@ -134,7 +133,6 @@ parameter BLT_L4   = 5'b11000;
 //local signals
 reg		[15:0] bltcon0;			// blitter control register 0
 wire	[3:0] ash;				// bltcon0 aliases
-wire	[3:0] bsh;				// bltcon1 aliases
 wire	usea;
 wire	useb;
 wire	usec;
@@ -142,6 +140,7 @@ wire	used;
 reg		enad;					// do not disable D channel
 
 reg		[15:0] bltcon1;			// blitter control register 1
+wire	[3:0] bsh;				// bltcon1 aliases
 wire	desc;					// enable descending mode (and not line mode)
 wire	line;					// enable line mode
 wire	ife;					// enable inclusive fill mode
@@ -219,101 +218,101 @@ wire	dma_ack;
 always @(posedge clk)
 	if (reset)
 		bltcon0[15:12] <= 0;
-	else if (enable==1'b1 && incash==1'b1) // increment ash (line mode)
-		bltcon0[15:12] <= (bltcon0[15:12] + 4'b0001);
-	else if (enable==1'b1 && decash==1'b1) // decrement ash (line mode)
-		bltcon0[15:12] <= (bltcon0[15:12] - 4'b0001);
+	else if (enable && incash) // increment ash (line mode)
+		bltcon0[15:12] <= bltcon0[15:12] + 4'b0001;
+	else if (enable && decash) // decrement ash (line mode)
+		bltcon0[15:12] <= bltcon0[15:12] - 4'b0001;
 	else if (reg_address_in[8:1]==BLTCON0[8:1])
-		bltcon0[15:12] <= (data_in[15:12]);
+		bltcon0[15:12] <= data_in[15:12];
 
-assign	ash[3:0] = (bltcon0[15:12]);
+assign ash[3:0] = bltcon0[15:12];
 
 //bltcon0: USE part
 always @(posedge clk)
 	if (reset)
 		bltcon0[11:8] <= 0;
 	else if (reg_address_in[8:1]==BLTCON0[8:1])
-		bltcon0[11:8] <= (data_in[11:8]);
+		bltcon0[11:8] <= data_in[11:8];
 
 // writing blitcon0 while a blit is active disables D channel (not always but it's very likely)
 always @(posedge clk)
-	if (init==1'b1)
+	if (init)
 		enad <= 1'b1;
 	else if (reg_address_in[8:1]==BLTCON0[8:1] && busy)
-		enad <= 1'b0;
-
-assign {usea, useb, usec, used} = ({bltcon0[11:9], bltcon0[8] & enad}); // DMA channels enable		
+		enad <= 1'b0;	
+		
+assign {usea, useb, usec, used} = {bltcon0[11:9], bltcon0[8] & enad}; // DMA channels enable		
 
 //bltcon0: LF part
 always @(posedge clk)
 	if (reset)
 		bltcon0[7:0] <= 0;
 	else if (reg_address_in[8:1]==BLTCON0[8:1] || reg_address_in[8:1]==BLTCON0L[8:1] && ecs)
-		bltcon0[7:0] <= (data_in[7:0]);
+		bltcon0[7:0] <= data_in[7:0];
 		
 //bltcon1: BSH part
 always @(posedge clk)
 	if (reset)
 		bltcon1[15:12] <= 0;
-	else if (enable==1'b1 && decbsh==1'b1) // decrement bsh (line mode - texturing)
-		bltcon1[15:12] <= (bltcon1[15:12] - 4'b0001);
+	else if (enable && decbsh) // decrement bsh (line mode - texturing)
+		bltcon1[15:12] <= bltcon1[15:12] - 4'b0001;
 	else if (reg_address_in[8:1]==BLTCON1[8:1])
-		bltcon1[15:12] <= (data_in[15:12]);
+		bltcon1[15:12] <= data_in[15:12];
 
-assign	bsh[3:0] = (bltcon1[15:12]);
+assign bsh[3:0] = bltcon1[15:12];
 
 //bltcon1: the rest
 always @(posedge clk)
 	if (reset)
 		bltcon1[11:0] <= 0;
 	else if (reg_address_in[8:1]==BLTCON1[8:1])
-		bltcon1[11:0] <= (data_in[11:0]);
+		bltcon1[11:0] <= data_in[11:0];
 
-assign line = (bltcon1[0]); // line mode
-assign desc = (~line & bltcon1[1]); // descending blit mode		
-assign efe = (~line & bltcon1[4]); // exclusive fill mode
-assign ife = (~line & bltcon1[3]); // inclusive fill mode
+assign line = bltcon1[0]; // line mode
+assign desc = ~line & bltcon1[1]; // descending blit mode		
+assign efe = ~line & bltcon1[4]; // exclusive fill mode
+assign ife = ~line & bltcon1[3]; // inclusive fill mode
 
 //--------------------------------------------------------------------------------------
 
 //bltafwm register (first word mask for channel A)
 always @(posedge clk)
 	if (reset)
-		bltafwm[15:0] <= 16'h00_00;
+		bltafwm[15:0] <= 0;
 	else if (reg_address_in[8:1]==BLTAFWM[8:1])
-		bltafwm[15:0] <= (data_in[15:0]);
+		bltafwm[15:0] <= data_in[15:0];
 
 //bltalwm register (last word mask for channel A)
 always @(posedge clk)
 	if (reset)
-		bltalwm[15:0] <= 16'h00_00;
+		bltalwm[15:0] <= 0;
 	else if (reg_address_in[8:1]==BLTALWM[8:1])
-		bltalwm[15:0] <= (data_in[15:0]);
+		bltalwm[15:0] <= data_in[15:0];
 
 //channel A mask select
 always @(bltafwm or bltalwm or first_word or last_word)
 	if (first_word && last_word)
 		bltamask[15:0] = (bltafwm[15:0] & bltalwm[15:0]);
-	else if (first_word)
-		bltamask[15:0] = (bltafwm[15:0]);	
 	else if (last_word)
-		bltamask[15:0] = (bltalwm[15:0]);
+		bltamask[15:0] = bltalwm[15:0];
+	else if (first_word)
+		bltamask[15:0] = bltafwm[15:0];
 	else
-		bltamask[15:0] = (16'hFF_FF);
+		bltamask[15:0] = 16'hFF_FF;
 		
 //bltadat register
 always @(posedge clk)
 	if (reset)
-		bltadat[15:0] <= 16'h00_00;
+		bltadat[15:0] <= 0;
 	else if (reg_address_in[8:1]==BLTADAT[8:1])
-		bltadat[15:0] <= (data_in[15:0]);
+		bltadat[15:0] <= data_in[15:0];
 
 //channel A 'old' register
 always @(posedge clk)
 	if (enable)
-		if (init==1'b1)
-			bltaold[15:0] <= 16'h00_00;
-		else if (next_word==1'b1 && line==1'b0) // in line mode this register is equal zero all the time
+		if (init)
+			bltaold[15:0] <= 0;
+		else if (next_word && !line) // in line mode this register is equal zero all the time
 			bltaold[15:0] <= (bltadat[15:0] & bltamask[15:0]);
 
 //channel A barrel shifter
@@ -328,21 +327,21 @@ barrel_shifter barrel_shifter_A
 
 //channel A holding register
 always @(posedge clk)
-	if (enable==1'b1)
-		bltahold[15:0] <= (shiftaout[15:0]);
+	if (enable)
+		bltahold[15:0] <= shiftaout[15:0];
 
 //--------------------------------------------------------------------------------------
 
 //bltbdat register
 always @(posedge clk)
 	if (reset)
-		bltbdat[15:0] <= 16'h00_00;
+		bltbdat[15:0] <= 0;
 	else if (reg_address_in[8:1]==BLTBDAT[8:1])
-		bltbdat[15:0] <= (data_in[15:0]);
+		bltbdat[15:0] <= data_in[15:0];
 		
 reg bltbold_init;
 always @(posedge clk)
-	if (reset==1'b1 || (done==1'b1))
+	if (reset || done)
 		bltbold_init <= 1'b1;
 	else if (reg_address_in[8:1]==BLTBDAT[8:1])
 		bltbold_init <= 1'b0;
@@ -350,10 +349,10 @@ always @(posedge clk)
 //channel B 'old' register
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTBDAT[8:1])
-		if (bltbold_init==1'b1)
-			bltbold[15:0] <= 16'h00_00;
+		if (bltbold_init)
+			bltbold[15:0] <= 0;
 		else
-			bltbold[15:0] <= (bltbdat[15:0]);
+			bltbold[15:0] <= bltbdat[15:0];
 			
 reg bltbdat_wrtn;		
 always @(posedge clk)
@@ -374,34 +373,28 @@ barrel_shifter barrel_shifter_B
 
 //channel B holding register
 always @(posedge clk)
-	if (line==1'b1)
-		bltbhold[15:0] <= ({16{shiftbout[0]}}); // in line mode only one selected bit of BLTBDAT register (LSB) is used for texturing
-	else if (bltbdat_wrtn==1'b1)
-		bltbhold[15:0] <= (shiftbout[15:0]);
+	if (line)
+		bltbhold[15:0] <= {16{shiftbout[0]}}; // in line mode only one selected bit of BLTBDAT register (LSB) is used for texturing
+	else if (bltbdat_wrtn)
+		bltbhold[15:0] <= shiftbout[15:0];
 	
 //--------------------------------------------------------------------------------------
 
 //bltcdat register
 always @(posedge clk)
-	if (reset)
-		bltcdat[15:0] <= 16'h00_00;
-	else if (reg_address_in[8:1]==BLTCDAT[8:1])
-		bltcdat[15:0] <= (data_in[15:0]);
+	if (reg_address_in[8:1]==BLTCDAT[8:1])
+		bltcdat[15:0] <= data_in[15:0];
 		
 //--------------------------------------------------------------------------------------
 
  
 always @(posedge clk)
-	if (reset)
-		last_word_del <= 0;
-	else if (next_word && enable)
-		last_word_del <= (last_word);
+	if (next_word && enable)
+		last_word_del <= last_word;
 
 always @(posedge clk)
-	if (reset)
-		first_word_del <= 0;
-	else if (next_word==1'b1 && enable==1'b1)
-		first_word_del <= (first_word); // used in fill mode for selecting initial fci state
+	if (next_word && enable)
+		first_word_del <= first_word; // used in fill mode for selecting initial fci state
 
 //--------------------------------------------------------------------------------------
 
@@ -428,32 +421,28 @@ bltfill bltfl1
 );
 
 //fill carry input
-assign fci = (first_word_del) ? (bltcon1[2]) : (fcy);
+assign fci = first_word_del ? bltcon1[2] : fcy;
 
 // carry out latch (updated at the same time as channel D holding register)
 always @(posedge clk)
-	if (reset)
-		fcy <= 0;
-	else if (store_result)
+	if (store_result)
 		fcy <= fco;
 
 // channel D holding register (updated one cycle later after a write to other holding registers)
 always @(posedge clk)
-	if (reset)
-		bltdhold[15:0] <= 0;
-	else if (store_result==1'b1)
-		bltdhold[15:0] <= (fill_out[15:0]);
+	if (store_result)
+		bltdhold[15:0] <= fill_out[15:0];
 
 // channel D 'zero' flag
 always @(posedge clk)
-	if (enable==1'b1 && init==1'b1)
+	if (enable && init)
 		zero <= 1;
 	else if (store_result && |fill_out[15:0])
 		zero <= 0;
 
 //channel D data output
-assign data_out[15:0] = (ackdma && chsel[1:0]==CHD) ? (bltdhold[15:0]) : 16'h00_00;
-assign we = (ackdma && chsel[1:0]==CHD) ? 1'b1 : 1'b0;
+assign data_out[15:0] = ackdma && chsel[1:0]==CHD ? bltdhold[15:0] : 16'h00_00;
+assign we = ackdma && chsel[1:0]==CHD ? 1'b1 : 1'b0;
 
 //--------------------------------------------------------------------------------------
 
@@ -463,64 +452,62 @@ always @(posedge clk)
 		busy <= 0;
 	else if (reg_address_in[8:1]==BLTSIZE[8:1] || reg_address_in[8:1]==BLTSIZH[8:1] && ecs) // set immediately after a write to BLTSIZE or BLTSIZH (ECS)
 		busy <= 1;
-	else if (done==1'b1) // cleared when the blit is done
+	else if (done) // cleared when the blit is done
 		busy <= 0;
 
 // blitter finish interrupt request
-assign int3 = (done);
+assign int3 = done;
 
 // FSM start control (one bus clock cycle delay for cycle exact compatibility)
 always @(posedge clk)
-	if (reset==1'b1 || done==1'b1)
+	if (reset || done)
 		start <= 0;
-	else if (clkena==1'b1 && busy==1'b1)
+	else if (clkena && busy)
 		start <= 1;
 
 // blit width register (backup)
 always @(posedge clk)
-	if (reset)
-		width[10:0] <= 0;
-	else if (reg_address_in[8:1]==BLTSIZE[8:1]) // OCS
-		width[10:0] <= ({4'b0000, ~|data_in[5:0], data_in[5:0]});
-	else if (reg_address_in[8:1]==BLTSIZH[8:1] && ecs==1'b1) // ECS
-		width[10:0] <= (data_in[10:0]); 
+	if (reg_address_in[8:1]==BLTSIZE[8:1]) // OCS
+		width[10:0] <= {4'b0000, ~|data_in[5:0], data_in[5:0]};
+	else if (reg_address_in[8:1]==BLTSIZH[8:1] && ecs) // ECS
+		width[10:0] <= data_in[10:0];
 
-assign width_cnt_dec = (enable & next_word);
-assign width_cnt_rld = (enable & next_word & last_word | init & enable);
+assign width_cnt_dec = enable & next_word;
+assign width_cnt_rld = enable & next_word & last_word | init & enable;
 
 // blit width counter
 always @(posedge clk)
 	if (width_cnt_rld) // reload counter
-		width_cnt[10:0] <= (width[10:0]);
+		width_cnt[10:0] <= width[10:0];
 	else if (width_cnt_dec) // decrement counter
-		width_cnt[10:0] <= (width_cnt[10:0] - 1);
+		width_cnt[10:0] <= width_cnt[10:0] - 1;
 
-assign last_word = (width_cnt[10:0]==1) ? 1'b1 : 1'b0;
-assign first_word = (width_cnt[10:0]==width[10:0]) ? 1'b1 : 1'b0;
-assign last_line = (height_cnt[14:0]==1) ? 1'b1 : 1'b0;
+assign last_word = width_cnt[10:0]==1 ? 1'b1 : 1'b0;
+assign first_word = width_cnt[10:0]==width[10:0] ? 1'b1 : 1'b0;
+assign last_line = height_cnt[14:0]==1 ? 1'b1 : 1'b0;
 
 // ECS large blit height holding register 
 always @(posedge clk)
 	if (reset)
 		height[14:0] <= 0;
 	else if (reg_address_in[8:1]==BLTSIZV[8:1]) // ECS BLTSIZV register
-		height[14:0] <= (data_in[14:0]);
+		height[14:0] <= data_in[14:0];
 		
 // blit height counter
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTSIZE[8:1]) // OCS
-		height_cnt[14:0] <= ({4'b0000, ~|data_in[15:6], data_in[15:6]});
-	else if (reg_address_in[8:1]==BLTSIZH[8:1] && ecs==1'b1) // ECS
-		height_cnt[14:0] <= (height[14:0]);
-	else if (enable==1'b1 && next_word==1'b1 && last_word==1'b1) // decrement height counter
-		height_cnt[14:0] <= (height_cnt[14:0] - 1);
+		height_cnt[14:0] <= {4'b0000, ~|data_in[15:6], data_in[15:6]};
+	else if (reg_address_in[8:1]==BLTSIZH[8:1] && ecs) // ECS
+		height_cnt[14:0] <= height[14:0];
+	else if (enable && next_word && last_word) // decrement height counter
+		height_cnt[14:0] <= height_cnt[14:0] - 1;
 		
 // pipeline is full (first set of sources has been fetched)
 always @(posedge clk)
-	if (enable==1'b1)
-		if (init==1'b1)
+	if (enable)
+		if (init)
 			pipeline_full <= 0;
-		else if (next_word==1'b1)
+		else if (next_word)
 			pipeline_full <= 1;
 			
 //--------------------------------------------------------------------------------------
@@ -546,26 +533,26 @@ address_generator address_generator_1
 // custom register address output
 always @(chsel)
 	case (chsel)
-		CHA : reg_address_out = (BLTADAT[8:1]);
-		CHB : reg_address_out = (BLTBDAT[8:1]);
-		CHC : reg_address_out = (BLTCDAT[8:1]);
-		CHD : reg_address_out = (BLTDDAT[8:1]);
+		CHA : reg_address_out = BLTADAT[8:1]; 
+		CHB : reg_address_out = BLTBDAT[8:1]; 
+		CHC : reg_address_out = BLTCDAT[8:1]; 
+		CHD : reg_address_out = BLTDDAT[8:1]; 
 	endcase
 
 //--------------------------------------------------------------------------------------
 
-assign 	enable = (enadma & clkena);
-assign 	reqdma = (dma_req & enable);
-assign	dma_ack = (ackdma);
+assign 	enable = enadma & clkena;
+assign 	reqdma = dma_req & enable;
+assign	dma_ack = ackdma;
 
 // blitter FSM
 always @(posedge clk)
 	if (reset)
-		blt_state <= (BLT_IDLE);
+		blt_state <= BLT_IDLE;
 	else
-		blt_state <= (blt_next);
+		blt_state <= blt_next;
 
-always @*//(enable or start or line or blt_state or useb or usec or ife or efe or used or last_word or last_line or clkena or desc or dma_ack or blt_next)
+always @*
 	case (blt_state)
 	
 		BLT_IDLE:
@@ -580,13 +567,13 @@ always @*//(enable or start or line or blt_state or useb or usec or ife or efe o
 			submod = 1'bX;
 			dma_req = 1'b0;
 
-			if (enable==1'b1)
-				if (start==1'b1)
-					blt_next = (BLT_INIT);
+			if (enable)
+				if (start)
+					blt_next = BLT_INIT;
 				else
-					blt_next = (BLT_IDLE);
+					blt_next = BLT_IDLE;
 			else
-				blt_next = (BLT_IDLE);
+				blt_next = BLT_IDLE;
 		end
 				
 		BLT_INIT:
@@ -601,104 +588,104 @@ always @*//(enable or start or line or blt_state or useb or usec or ife or efe o
 			submod = 1'bX;
 			dma_req = 1'b0;
 			
-			if (enable==1'b1)
-				if (line==1'b1)
-					blt_next = (BLT_L1); // go to first line draw cycle
+			if (enable)
+				if (line)
+					blt_next = BLT_L1; // go to first line draw cycle
 				else
-					blt_next = (BLT_A);
+					blt_next = BLT_A;
 			else
-				blt_next = (BLT_INIT);
+				blt_next = BLT_INIT;
 		end
 		
 		BLT_A: // first blit cycle (channel A source data fetch or empty cycle)
 		begin
-			chsel = (CHA);
-			ptrsel = (CHA);
-			modsel = (CHA);
-			enaptr = (dma_ack);
-			incptr = (~desc);
-			decptr = (desc);
-			addmod = (~desc & last_word); // add or substract modulo when last word in a line is fetched
-			submod = (desc & last_word);
-			dma_req = (usea); // empty cycle if channel A is not enabled
+			chsel = CHA;
+			ptrsel = CHA;
+			modsel = CHA;
+			enaptr = dma_ack;
+			incptr = ~desc;
+			decptr = desc;
+			addmod = ~desc & last_word; // add or substract modulo when last word in a line is fetched
+			submod = desc & last_word;
+			dma_req = usea; // empty cycle if channel A is not enabled
 
-			if (enable==1'b1)
-				if (useb==1'b1)
+			if (enable)			
+				if (useb)
 					blt_next = BLT_B;
-				else if (usec==1'b1 || ife==1'b1 || efe==1'b1) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
-					blt_next = (BLT_C);
+				else if (usec || ife || efe) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
+					blt_next = BLT_C;
 				else
-					blt_next = (BLT_D);
+					blt_next = BLT_D;
 			else
-				blt_next = (BLT_A);
+				blt_next = BLT_A;
 		end
 		
 		BLT_B: // second blit cycle (always channel B fetch - if channel B is not enabled this cycle is skipped)
 		begin
-			chsel = (CHB);
-			ptrsel = (CHB);
-			modsel = (CHB);
-			enaptr = (dma_ack);
-			incptr = (~desc);
-			decptr = (desc);
-			addmod = (~desc & last_word);
-			submod = (desc & last_word);
+			chsel = CHB;
+			ptrsel = CHB;
+			modsel = CHB;
+			enaptr = dma_ack;
+			incptr = ~desc;
+			decptr = desc;
+			addmod = ~desc & last_word;
+			submod = desc & last_word;
 			dma_req = 1'b1; // we can only reach this state if channel B is enabled (USEB is set)
 
-			if (enable==1'b1)			
-				if (usec==1'b1 || ife==1'b1 || efe==1'b1) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
-					blt_next = (BLT_C);
+			if (enable)			
+				if (usec || ife || efe) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
+					blt_next = BLT_C;
 				else
-					blt_next = (BLT_D);
+					blt_next = BLT_D;
 			else
-				blt_next = (BLT_B);
+				blt_next = BLT_B;
 		end
 		
 		BLT_C:
 		begin
-			chsel = (CHC);
-			ptrsel = (CHC);
-			modsel = (CHC);
-			enaptr = (dma_ack);
-			incptr = (~desc);
-			decptr = (desc);
-			addmod = (~desc & last_word);
-			submod = (desc & last_word);
-			dma_req = (usec); // channel C is enabled when USEC is set - in fill mode empty cycle if not enabled
+			chsel = CHC;
+			ptrsel = CHC;
+			modsel = CHC;
+			enaptr = dma_ack;
+			incptr = ~desc;
+			decptr = desc;
+			addmod = ~desc & last_word;
+			submod = desc & last_word;
+			dma_req = usec; // channel C is enabled when USEC is set - in fill mode empty cycle if not enabled
 
-			if (enable==1'b1)
-				if (used==1'b1)
-					blt_next = (BLT_D);
-				else if (last_word==1'b1 && last_line==1'b1)
-					blt_next = (BLT_IDLE);
+			if (enable)
+				if (used)
+					blt_next = BLT_D;
+				else if (last_word && last_line)
+					blt_next = BLT_IDLE;
 				else
-					blt_next = (BLT_A);		
+					blt_next = BLT_A;			
 			else
-				blt_next = (BLT_C);
+				blt_next = BLT_C;
 		end
 		
 		BLT_D:
 		begin
-			chsel = (CHD);
-			ptrsel = (CHD);
-			modsel = (CHD);
-			enaptr = (dma_ack);
-			incptr = (~desc);
-			decptr = (desc);
-			addmod = (~desc & last_word_del);
-			submod = (desc & last_word_del);
-			dma_req = (used & pipeline_full); // request DMA cycle if channel D holding register is full
+			chsel = CHD;
+			ptrsel = CHD;
+			modsel = CHD;
+			enaptr = dma_ack;
+			incptr = ~desc;
+			decptr = desc;
+			addmod = ~desc & last_word_del;
+			submod = desc & last_word_del;
+			dma_req = used & pipeline_full; // request DMA cycle if channel D holding register is full
 			
-			if (enable==1'b1)
-				if (last_word==1'b1 && last_line==1'b1) 
-					if (used==1'b1)
-						blt_next = (BLT_E); // if last data store cycle go to the first pipeline flush state
+			if (enable)
+				if (last_word && last_line) 
+					if (used)
+						blt_next = BLT_E; // if last data store cycle go to the first pipeline flush state
 					else
-						blt_next = (BLT_IDLE); // if D channel is not used go to IDLE state
+						blt_next = BLT_IDLE; // if D channel is not used go to IDLE state
 				else
-					blt_next = (BLT_A);
+					blt_next = BLT_A;
 			else
-				blt_next = (BLT_D);
+				blt_next = BLT_D;
 		end
 
 		BLT_E: // empty cycle to allow data propagation through D hold register
@@ -713,71 +700,71 @@ always @*//(enable or start or line or blt_state or useb or usec or ife or efe o
 			submod = 1'bX;
 			dma_req = 1'b0;
 			
-			if (clkena==1'b1)
-				blt_next = (BLT_F); // go to the last D hold register store cycle
+			if (clkena)
+				blt_next = BLT_F; // go to the last D hold register store cycle
 			else
-				blt_next = (BLT_E);
+				blt_next = BLT_E;
 		end
 
 		BLT_F: // flush pipeline (store the last D hold register value)
 		begin
-			chsel = (CHD);
-			ptrsel = (CHD);
-			modsel = (CHD);
-			enaptr = (dma_ack);
-			incptr = (~desc);
-			decptr = (desc);
-			addmod = (~desc & last_word_del);
-			submod = (desc & last_word_del);
+			chsel = CHD;
+			ptrsel = CHD;
+			modsel = CHD;
+			enaptr = dma_ack;
+			incptr = ~desc;
+			decptr = desc;
+			addmod = ~desc & last_word_del;
+			submod = desc & last_word_del;
 			dma_req = 1'b1; // request DMA cycle (D holding register is full)
 			
-			if (enable==1'b1)
-				blt_next = (BLT_IDLE); // it's the last cycle so go to IDLE state
+			if (enable)
+				blt_next = BLT_IDLE; // it's the last cycle so go to IDLE state
 			else
-				blt_next = (BLT_F);
+				blt_next = BLT_F;
 		end
 		
 		BLT_L1: // update error accumulator
 		begin
-			chsel = (CHA);
-			ptrsel = (CHA);
-			modsel = (sign) ? CHB : CHA;
-			enaptr = (enable);
+			chsel = CHA;
+			ptrsel = CHA;
+			modsel = sign ? CHB : CHA;
+			enaptr = enable;
 			incptr = 0;
 			decptr = 0;
 			addmod = 1;//pipeline_full; // update error accumulator
 			submod = 0;
 			dma_req = 0; // internal cycle - no DMA access
 
-			if (enable==1'b1)
-				blt_next = (BLT_L2);
+			if (enable)
+				blt_next = BLT_L2;
 			else
-				blt_next = (BLT_L1);
+				blt_next = BLT_L1;
 		end
 		
 		BLT_L2: // fetch source data from channel C
 		begin
-			chsel = (CHC);
-			ptrsel = (CHC);
-			modsel = (CHC);
-			enaptr = (enable); // no pointer increment
+			chsel = CHC;
+			ptrsel = CHC;
+			modsel = CHC;
+			enaptr = enable; // no pointer increment
 			incptr = 0;
 			decptr = 0;
 			addmod = 0;
 			submod = 0;
-			dma_req = (usec);
+			dma_req = usec;
 			
-			if (enable==1'b1)
-				blt_next = (BLT_L3);
+			if (enable)
+				blt_next = BLT_L3;
 			else
-				blt_next = (BLT_L2);
+				blt_next = BLT_L2;
 		end
 		
 		BLT_L3: // free cycle (data propagates from source holding registers to channel D hold register - no pipelining)
 		begin
-			chsel = (CHA);
-			ptrsel = (CHA);
-			modsel = (CHA);
+			chsel = CHA;
+			ptrsel = CHA;
+			modsel = CHA;
 			enaptr = 0;
 			incptr = 0;
 			decptr = 0;
@@ -785,38 +772,38 @@ always @*//(enable or start or line or blt_state or useb or usec or ife or efe o
 			submod = 0;
 			dma_req = 0;
 
-			if (enable==1'b1)
-				blt_next = (BLT_L4);
+			if (enable)
+				blt_next = BLT_L4;
 			else
-				blt_next = (BLT_L3);
+				blt_next = BLT_L3;
 		end
 		
 		BLT_L4: // store cycle - initial write @ D ptr, all succesive @ C ptr, always modulo C used
 		begin
 
-			chsel = (CHD);
-			ptrsel = (CHC);
-			modsel = (CHC);
-			enaptr = (enable);
-			incptr = ((bltcon1[4] && !bltcon1[2] || !bltcon1[4] && !bltcon1[3] && sign_del==1'b0) && ash==4'b1111) ? 1'b1 : 1'b0;
-			decptr = ( bltcon1[4] &&  bltcon1[2] || !bltcon1[4] &&  bltcon1[3] && sign_del==1'b0) && ash==4'b0000 ? 1'b1 : 1'b0;
-			addmod = (!bltcon1[4] && !bltcon1[2] ||  bltcon1[4] && !bltcon1[3] && sign_del==1'b0) ? 1'b1 : 1'b0;
-			submod = (!bltcon1[4] &&  bltcon1[2] ||  bltcon1[4] &&  bltcon1[3] && sign_del==1'b0) ? 1'b1 : 1'b0;
+			chsel = CHD;
+			ptrsel = CHC;
+			modsel = CHC;
+			enaptr = enable;
+			incptr = ( bltcon1[4] && !bltcon1[2] || !bltcon1[4] && !bltcon1[3] && !sign_del) && ash==4'b1111 ? 1'b1 : 1'b0;
+			decptr = ( bltcon1[4] &&  bltcon1[2] || !bltcon1[4] &&  bltcon1[3] && !sign_del) && ash==4'b0000 ? 1'b1 : 1'b0;
+			addmod = !bltcon1[4] && !bltcon1[2] ||  bltcon1[4] && !bltcon1[3] && !sign_del ? 1'b1 : 1'b0;
+			submod = !bltcon1[4] &&  bltcon1[2] ||  bltcon1[4] &&  bltcon1[3] && !sign_del ? 1'b1 : 1'b0;
 			// in 'one dot' mode this might be a free bus cycle
-			dma_req = (usec==1'b1 & (~bltcon1[1] | ~bltcon1[4] | first_pixel==1'b1)); // request DMA cycle
+			dma_req = usec & (~bltcon1[1] | ~bltcon1[4] | first_pixel); // request DMA cycle
 			
-			if (enable==1'b1)
-				if (last_line==1'b1) // if last data store go to idle state
-					blt_next = (BLT_IDLE);
+			if (enable)
+				if (last_line) // if last data store go to idle state
+					blt_next = BLT_IDLE;
 				else
-					blt_next = (BLT_L1);
+					blt_next = BLT_L1;
 			else
-				blt_next = (BLT_L4);
+				blt_next = BLT_L4;
 		end
 				
 		default:
 		begin
-			chsel = (CHA);
+			chsel = CHA;
 			ptrsel = 2'bXX;
 			modsel = 2'bXX;
 			enaptr = 0;
@@ -826,48 +813,48 @@ always @*//(enable or start or line or blt_state or useb or usec or ife or efe o
 			submod = 0;
 			dma_req = 0;
 			
-			blt_next = (BLT_IDLE);
+			blt_next = BLT_IDLE;
 		end
 		
 	endcase
 
 // init blitter pipeline (reload height counter)
-assign init = (blt_state==BLT_INIT) ? 1'b1 : 1'b0;
+assign init = blt_state==BLT_INIT ? 1'b1 : 1'b0;
 	
 // indicates last cycle of a single sequence	
-assign next_word = (blt_state==BLT_C && !used || blt_state==BLT_D || blt_state==BLT_L2 || blt_state==BLT_L4) ? 1'b1 : 1'b0;
+assign next_word = blt_state==BLT_C && !used || blt_state==BLT_D || blt_state==BLT_L2 || blt_state==BLT_L4 ? 1'b1 : 1'b0;
 
 // stores a new value to D hold register
 always @(posedge clk)
 	if (reset)
 		store_result <= 0;
 	else
-		store_result <= (enable==1'b1 && next_word==1'b1);
+		store_result <= enable && next_word;
 		
 // blitter busy flag is cleared immediately after last source data is fetched (if D channel is not enabled) or the last but one result is stored
 // signal 'done' is used to clear the 'busy' and 'start' flags
-assign done = ((blt_state==BLT_C && used==1'b0 || blt_state==BLT_D) && last_word==1'b1 && last_line==1'b1 || blt_state==BLT_L4 && last_line==1'b1) ? (enable) : 1'b0;
+assign done = (blt_state==BLT_C && !used || blt_state==BLT_D) && last_word && last_line || blt_state==BLT_L4 && last_line ? enable : 1'b0;
 
 always @(posedge clk)
-	if (enable==1'b1)
+	if (enable)
 		if (blt_state==BLT_INIT)
 			first_pixel = 1'b1;
 		else if (blt_state==BLT_L4)
-			first_pixel = (~sign_del);
+			first_pixel = ~sign_del;
 
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTCON1[8:1])
-		sign <= (data_in[6]); // initial sign value
+		sign <= data_in[6]; // initial sign value
 	else if (enable && blt_state==BLT_L1)
-		sign <= (sign_out); // latch sign output from error accumulator
+		sign <= sign_out; // latch sign output from error accumulator
 
 always @(posedge clk)
-	if (enable==1'b1 && blt_state==BLT_L1)
-		sign_del <= (sign);
+	if (enable && blt_state==BLT_L1)
+		sign_del <= sign;
 		
-assign incash = (enable && blt_state==BLT_L4 && (bltcon1[4] && !bltcon1[2] || !bltcon1[4] && !bltcon1[3] && !sign_del)) ? 1'b1 : 1'b0;
-assign decash = (enable && blt_state==BLT_L4 && (bltcon1[4] &&  bltcon1[2] || !bltcon1[4] &&  bltcon1[3] && !sign_del)) ? 1'b1 : 1'b0;
-assign decbsh = (enable && blt_state==BLT_L4) ? 1'b1 : 1'b0;
+assign incash = enable && blt_state==BLT_L4 && (bltcon1[4] && !bltcon1[2] || !bltcon1[4] && !bltcon1[3] && !sign_del) ? 1'b1 : 1'b0;
+assign decash = enable && blt_state==BLT_L4 && (bltcon1[4] &&  bltcon1[2] || !bltcon1[4] &&  bltcon1[3] && !sign_del) ? 1'b1 : 1'b0;
+assign decbsh = enable && blt_state==BLT_L4 ? 1'b1 : 1'b0;
 
 //--------------------------------------------------------------------------------------
 
@@ -943,7 +930,7 @@ MULT18X18 multiplier_2
 	.P(shifted_old)			// 36-bit multiplier output
 );   
 
-assign out = (desc) ? (shifted_new[15:0] | shifted_old[31:16]) : shifted_new[31:16] | shifted_old[15:0];
+assign out = desc ? shifted_new[15:0] | shifted_old[31:16] : shifted_new[31:16] | shifted_old[15:0];
 
 endmodule
 
@@ -992,7 +979,7 @@ always @(ain or bin or cin or lf)
 
 //Generate function generator output by or-ing all
 //minterms together.
-assign out = (mt0 | mt1 | mt2 | mt3 | mt4 | mt5 | mt6 | mt7);
+assign out = mt0 | mt1 | mt2 | mt3 | mt4 | mt5 | mt6 | mt7;
 
 endmodule		
 
@@ -1019,22 +1006,22 @@ reg		[15:0]carry;
 //generate all fill carry's
 integer j;
 always @(fci or in[0])//least significant bit
-	carry[0] = (fci ^ in[0]);
+	carry[0] = fci ^ in[0];		
 always @(in or carry)//rest of bits
 	for (j=1;j<=15;j=j+1)
-		carry[j] = (carry[j-1] ^ in[j]);
+		carry[j] = carry[j-1] ^ in[j];
 
 //fill carry output
-assign fco = (carry[15]);
+assign fco = carry[15];
 
 //fill data output
 always @(ife or efe or carry or in)
 	if (efe)//exclusive fill
-		out[15:0] = (carry[15:0]);
+		out[15:0] = carry[15:0];
 	else if (ife)//inclusive fill
-		out[15:0] = (carry[15:0] | in[15:0]);
+		out[15:0] = carry[15:0] | in[15:0];
 	else//bypass,no filling
-		out[15:0] = (in[15:0]);
+		out[15:0] = in[15:0];
 
 endmodule
 
@@ -1101,37 +1088,37 @@ reg 	[20:1]	t_newptr; 		// temporary pointer value
 
 //pointer register bank
 
-assign bltptr_in[20:1] = (enaptr) ? newptr[20:1] : ({data_in[4:0], data_in[15:1]});
+assign bltptr_in[20:1] = enaptr ? newptr[20:1] : {data_in[4:0], data_in[15:1]};
 
-assign bltptr_sel = (enaptr) ? ptrsel : ({reg_address_in[4],reg_address_in[2]});
+assign bltptr_sel = enaptr ? ptrsel : {reg_address_in[4],reg_address_in[2]};
 
 always @(posedge clk)
 	if (enaptr || reg_address_in[8:1]==BLTAPTH[8:1] || reg_address_in[8:1]==BLTBPTH[8:1] || reg_address_in[8:1]==BLTCPTH[8:1] || reg_address_in[8:1]==BLTDPTH[8:1])
-		bltpth[bltptr_sel] <= (bltptr_in[20:16]);
+		bltpth[bltptr_sel] <= bltptr_in[20:16];
 
-assign bltpth_out = (bltpth[bltptr_sel]);
+assign bltpth_out = bltpth[bltptr_sel];		
 		
 always @(posedge clk)
 	if (enaptr || reg_address_in[8:1]==BLTAPTL[8:1] || reg_address_in[8:1]==BLTBPTL[8:1] || reg_address_in[8:1]==BLTCPTL[8:1] || reg_address_in[8:1]==BLTDPTL[8:1])
-		bltptl[bltptr_sel] <= (bltptr_in[15:1]);
+		bltptl[bltptr_sel] <= bltptr_in[15:1];
 
-assign bltptl_out = (bltptl[bltptr_sel]);
+assign bltptl_out = bltptl[bltptr_sel];
 
-assign bltptr_out = ({bltpth_out, bltptl_out});
+assign bltptr_out = {bltpth_out, bltptl_out};	
 	
-assign address_out = (bltptr_out);
+assign address_out = bltptr_out;
     
 //--------------------------------------------------------------------------------------
 
 //modulo register bank
 
-assign bltmod_sel = (enaptr) ? modsel : reg_address_in[2:1];
+assign bltmod_sel = enaptr ? modsel : reg_address_in[2:1];
 
 always @(posedge clk)
 	if (reg_address_in[8:3]==BLTAMOD[8:3])
-		bltmod[bltmod_sel] <= (data_in[15:1]);
+		bltmod[bltmod_sel] <= data_in[15:1];
 		
-assign bltmod_out = (bltmod[modsel]);
+assign bltmod_out = bltmod[modsel];
 
 //--------------------------------------------------------------------------------------
 
@@ -1140,22 +1127,22 @@ assign bltmod_out = (bltmod[modsel]);
 // increment or decrement selected pointer
 always @(incptr or decptr or bltptr_out)
 	if (incptr && !decptr)
-		t_newptr = (bltptr_out + 20'h1); // increment selected pointer
+		t_newptr = bltptr_out + 20'h1; // increment selected pointer
 	else if (!incptr && decptr)
-		t_newptr = (bltptr_out - 20'h1); // decrement selected pointer
+		t_newptr = bltptr_out - 20'h1; // decrement selected pointer
 	else
-		t_newptr = (bltptr_out);
+		t_newptr = bltptr_out;
 
 // add or substract modulo
 always @(addmod or submod or bltmod_out or t_newptr)
 	if (addmod && !submod)
-		newptr = (t_newptr + {{5{bltmod_out[15]}},bltmod_out[15:1]}); // add modulo (sign extended)
+		newptr = t_newptr + {{5{bltmod_out[15]}},bltmod_out[15:1]}; // add modulo (sign extended)
 	else if (!addmod && submod)
-		newptr = (t_newptr - {{5{bltmod_out[15]}},bltmod_out[15:1]}); // substract modulo (sign extended)
+		newptr = t_newptr - {{5{bltmod_out[15]}},bltmod_out[15:1]}; // substract modulo (sign extended)
 	else
-		newptr = (t_newptr);
+		newptr = t_newptr;
 
 //sign output
-assign sign_out = (newptr[15]); // used in line mode as the sign of Bresenham's error accumulator (channel A pointer acts as an accumulator)
+assign sign_out = newptr[15]; // used in line mode as the sign of Bresenham's error accumulator (channel A pointer acts as an accumulator)
 
-endmodule
+endmodule	
