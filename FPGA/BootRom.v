@@ -75,8 +75,8 @@ begin
 		0003:	romdata[15:0] = 16'h0010;
 		0004:	romdata[15:0] = 16'h5342; // fpga version
 		0005:	romdata[15:0] = 16'h3130;
-		0006:	romdata[15:0] = 16'h3038;
-		0007:	romdata[15:0] = 16'h3230;
+		0006:	romdata[15:0] = 16'h3132;
+		0007:	romdata[15:0] = 16'h3038;
 		0008:	romdata[15:0] = 16'h4DF9;
 		0009:	romdata[15:0] = 16'h00DF;
 		0010:	romdata[15:0] = 16'hF000;
@@ -110,10 +110,10 @@ begin
 		0038:	romdata[15:0] = 16'hF4C1;
 		0039:	romdata[15:0] = 16'h0090;
 		0040:	romdata[15:0] = 16'h3D7C;
-		0041:	romdata[15:0] = 16'h0005;	//bg color
+		0041:	romdata[15:0] = 16'h0008;
 		0042:	romdata[15:0] = 16'h0180;
 		0043:	romdata[15:0] = 16'h3D7C;
-		0044:	romdata[15:0] = 16'h0FFF;	//txt color
+		0044:	romdata[15:0] = 16'h0FFF;
 		0045:	romdata[15:0] = 16'h0182;
 		0046:	romdata[15:0] = 16'h41F9;
 		0047:	romdata[15:0] = 16'h0000;

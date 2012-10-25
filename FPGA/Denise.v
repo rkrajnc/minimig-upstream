@@ -73,7 +73,7 @@ module Denise
 	output 	[3:0] green,  			// green component video out
 	output 	[3:0] blue,				// blue component video out
 	input	ecs,					// enables ECS chipset features
-	input	a1k,					// enables Amiga1000 feature (no EHB for Denise)
+	input	a1k,					// control EHB chipset feature
 	output	reg hires				// hires
 );
 
@@ -369,7 +369,7 @@ module colortable
 	input 	[8:1] reg_address_in,	// register adress inputs
 	input 	[11:0] data_in,			// bus data in
 	input	[5:0] select,			// colour select input
-	input	a1k,							// disable EHB in A1000 chipset mode
+	input	a1k,							// EHB control
 	output	reg [11:0] rgb			// RGB output
 );
 
@@ -390,7 +390,7 @@ assign selcolor = colortable[select[4:0]];
 
 // extra half brite mode shifter
 always @(posedge clk28m)
-	if (select[5] && ~a1k) // half bright, shift every component 1 position to the right
+	if (select[5] && !a1k) // half bright, shift every component 1 position to the right
 		rgb <= {1'b0,selcolor[11:9],1'b0,selcolor[7:5],1'b0,selcolor[3:1]};
 	else // normal colour select
 		rgb <= selcolor;

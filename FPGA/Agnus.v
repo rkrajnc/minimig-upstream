@@ -145,6 +145,7 @@
 // 2009-12-27	- OCS Denise compatible display window generation
 // 2010-04-13	- undocumented 7 bitplane mode implemented
 // 2010-06-29	- added more magic to ddf logic
+// 2010-10-28	- vdiwena is reset by eof
 
 module Agnus
 (
@@ -448,6 +449,7 @@ bpldma_engine bpd1
 	.reset(reset),
 	.ecs(ecs),
 	.dmaena(bplen),
+	.eof(sof),
 	.vpos(vpos),
 	.hpos(hpos),
 	.dma(dma_bpl),
@@ -597,6 +599,7 @@ module bpldma_engine
 	input	reset,						// reset
 	input	ecs,						// ddfstrt/ddfstop ECS bits enable
 	input	dmaena,						// enable dma input
+	input	eof,						// end of frame
 	input	[10:0] vpos,				// vertical position counter
 	input	[8:0] hpos,					// agnus internal horizontal position counter (advanced by 4 CCK)
 	output	dma,						// true if bitplane dma engine uses it's cycle
@@ -708,9 +711,9 @@ always @(posedge clk)
 
 // vertical display window enable		
 always @(posedge clk)
-	if (vpos[10:0]==0 || vpos[10:0]==vdiwstop[10:0])
+	if (eof || vpos[10:0]==vdiwstop[10:0])
 		vdiwena <= GND;
-	else if (vpos[10:0]==vdiwstrt[10:0])	
+	else if (vpos[10:0]==vdiwstrt[10:0])
 		vdiwena <= VCC;
 		
 //--------------------------------------------------------------------------------------
