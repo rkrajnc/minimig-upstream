@@ -136,7 +136,7 @@ module clock_generator
 	BUFGMUX cpu_clk_buf 
 	(
 		.O(cpu_clk),	// Clock MUX output
-		.I0(~clk),		// Clock0 input
+		.I0({~clk}),		// Clock0 input
 		.I1(~pll_cpuclk),	// Clock1 input
 		.S(turbo)		// Clock select input
 	);
@@ -166,8 +166,8 @@ assign eclk[9] = ( e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 9
 		
 always @(posedge clk28m)
 	c3 <= (clk);
-	
+
 always @(posedge clk28m)
 	c1 <= (~c3);
-	
+
 endmodule

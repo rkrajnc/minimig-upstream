@@ -133,6 +133,7 @@
 // 2010-12-22	- better drive step sound at 31KHz mode
 // 2011-03-06	- changed autofire function to handless mode
 // 2011-03-08	- added dip and fat agnus DIWSTRT handling (fix RoboCop2)
+// 2011-04-02	- added functional ciaa port b (parallel) register to let Unreal game work and some trainer store data
 
 module Minimig1
 (
@@ -186,7 +187,7 @@ module Minimig1
 	output	left,				// audio bitstream left
 	output	right,				// audio bitstream right
 	// user i/o
-	output	gpio,
+	output	drv_snd,
 	// unused pins
 	output	init_b				// vertical sync for MCU (sync OSD update)
 );
@@ -366,7 +367,7 @@ BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 // when _led=1, pwrled=powered by weak pullup
 assign pwrled = _led ? 1'b0 : 1'b1;
 
-// 
+// drive step sound emulation
 reg	_step_del;
 always @(posedge clk)
 	_step_del <= _step; // delayed version of _step for edge detection
@@ -390,10 +391,7 @@ reg	drvsnd;
 always @(posedge clk)
 	drvsnd <= |drv_cnt; // high when at least one bit of drv_cnt vector is not zero (| is the reduction operator) and any drive has an inserted disk
 
-assign gpio = drvsnd ? 1'b1 : 1'b0;
-
-// unused i/o pin
-//assign gpio = 1'bz;
+assign drv_snd = drvsnd ? 1'b1 : 1'b0;
 
 // NTSC/PAL switching is controlled by OSD menu, change requires reset to take effect
 always @(posedge clk)
@@ -420,7 +418,7 @@ Agnus AGNUS1
 (
 	.clk({clk}),
 	.clk28m({clk28m}),
-	.cck({cck}),
+	.cck(cck),
 	.reset(reset),
 	.aen(sel_reg),
 	.rd(cpu_rd),
@@ -461,7 +459,7 @@ Paula PAULA1
 (
 	.clk({clk}),
 	.clk28m({clk28m}),
-	.cck({cck}),
+	.cck(cck),
 	.reset(reset),
 	.reg_address_in(reg_address),
 	.data_in(custom_data_in),
@@ -558,11 +556,11 @@ assign cpu_speed = (chipset_config[0]);
 // instantiate Denise
 Denise DENISE1
 (		
-	.clk28m({clk28m}),
-	.clk({clk}),
+	.clk28m(clk28m),
+	.clk(clk),
 	.c1(c1),
 	.c3(c3),
-	.cck({cck}),
+	.cck(cck),
 	.reset(reset),
 	.strhor(strhor_denise),
 	.reg_address_in(reg_address),
@@ -605,7 +603,7 @@ Amber AMBER1
 // instantiate cia A
 ciaa CIAA1
 (
-	.clk(clk),
+	.clk({clk}),
 	.aen(sel_cia_a),
 	.rd(cpu_rd),
 	.wr(cpu_lwr|cpu_hwr),
@@ -614,7 +612,7 @@ ciaa CIAA1
 	.data_in(cpu_data_out[7:0]),
 	.data_out(cia_data_out[7:0]),
 	.tick(_vsync_i),
-	.eclk({eclk[9]}),
+	.eclk(eclk[8]),
 	.irq({int2}),
 	.porta_in({_fire1,_fire0,_ready,_track0,_wprot,_change}),
 	.porta_out({_led,ovl}),
@@ -633,7 +631,7 @@ ciaa CIAA1
 // instantiate cia B
 ciab CIAB1 
 (
-	.clk(clk),
+	.clk({clk}),
 	.aen(sel_cia_b),
 	.rd(cpu_rd),
 	.wr(cpu_hwr|cpu_lwr),
@@ -642,7 +640,7 @@ ciab CIAB1
 	.data_in(cpu_data_out[15:8]),
 	.data_out(cia_data_out[15:8]),
 	.tick(_hsync_i),
-	.eclk(eclk[9]),
+	.eclk(eclk[8]),
 	.flag(index),
 	.irq({int6}),
 	.porta_in({1'b0,cts,1'b0}),
@@ -650,16 +648,14 @@ ciab CIAB1
 	.portb_out({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
 );
 
-
-
 // instantiate cpu bridge
 m68k_bridge CPU1 
 (
 	.clk28m({clk28m}),
 	.c1(c1),
 	.c3(c3),
-	.cck({cck}),
-	.clk(clk),
+	.cck(cck),
+	.clk({clk}),
 	.cpu_clk(cpu_clk),
 	.eclk(eclk),
 	.vpa(sel_cia),
@@ -707,7 +703,7 @@ bank_mapper BMAP1
 // instantiate sram bridge
 sram_bridge RAM1 
 (
-	.clk28m(clk28m),
+	.clk28m({clk28m}),
 	.c1(c1),
 	.c3(c3),	
 	.bank(bank),
@@ -728,12 +724,12 @@ sram_bridge RAM1
 
 ActionReplay CART1
 (
-	.clk(clk),
+	.clk({clk}),
 	.reset(reset),
 	.cpu_address(cpu_address),
 	.cpu_address_in(cpu_address_out),
-	.cpu_clk(cpu_clk),
-	._cpu_as(_cpu_as),
+	.cpu_clk({cpu_clk}),
+	._cpu_as({_cpu_as}),
 	.reg_address_in(reg_address),
 	.reg_data_in(custom_data_in),
 	.data_in(cpu_data_out),
@@ -744,7 +740,7 @@ ActionReplay CART1
 	.dbr(dbr),
 	.boot(boot),
 	.freeze(freeze),
-	.int7(int7),
+	.int7({int7}),
 	.ovr(ovr),
 	.selmem(selcart),
 	.aron(aron)
@@ -769,7 +765,6 @@ gary GARY1
 	.cpu_hwr(cpu_hwr),
 	.cpu_lwr(cpu_lwr),
 	.ovl(ovl),
-//	.a1k(chipset_config[2]),
 	.boot(boot),
 	.dbr(dbr),
 	.dbwe(dbwe),
@@ -795,7 +790,7 @@ gary GARY1
 
 gayle GAYLE1
 (
-	.clk(clk),
+	.clk({clk}),
 	.reset(reset),
 	.address_in(cpu_address_out),
 	.data_in(cpu_data_out),
@@ -824,7 +819,7 @@ gayle GAYLE1
 // instantiate boot rom
 bootrom BOOTROM1 
 (	
-	.clk(clk),
+	.clk({clk}),
 	.aen(sel_boot),
 	.rd(cpu_rd),
 	.address_in(cpu_address_out[10:1]),
@@ -834,7 +829,7 @@ bootrom BOOTROM1
 // instantiate system control
 syscontrol CONTROL1 
 (	
-	.clk(clk),
+	.clk({clk}),
 	.cnt(sof),
 	.mrst(kbdrst | usrrst),
 	.boot_done(sel_cia_a & sel_cia_b),
@@ -852,7 +847,7 @@ clock_generator CLOCK1
 	.c3(c3),			// clock enable signal
 	.cck({cck}),			// colour clock enable
 	.clk(clk),			// 7.09379  MHz clock output
-	.cpu_clk(cpu_clk),
+	.cpu_clk({cpu_clk}),
 	.turbo(turbo),
 	.eclk(eclk)			// ECLK enable (1/10th of CLK)
 );
@@ -1467,4 +1462,3 @@ always @(posedge clk)
 	address_out[23:1] <= address[23:1];
 
 endmodule
-

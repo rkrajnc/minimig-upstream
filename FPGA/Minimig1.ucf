@@ -192,6 +192,6 @@ NET "rts"              LOC = "P187" |IOSTANDARD = LVCMOS33 |SLEW = SLOW |DRIVE =
 NET "cts"              LOC = "P189" |IOSTANDARD = LVCMOS33 ; 
 NET "pwrled"           LOC = "P94"  |IOSTANDARD = LVCMOS33 |SLEW = SLOW |DRIVE = 12 |PULLUP; 
 NET "_15khz"           LOC = "P194" |IOSTANDARD = LVCMOS33 |PULLUP ; 
-NET "gpio"             LOC = "P16"  |IOSTANDARD = LVCMOS33 |PULLUP ;
+NET "drv_snd"          LOC = "P16"  |IOSTANDARD = LVCMOS33 |PULLUP ;
 NET "init_b"           LOC = "P83"  |IOSTANDARD = LVCMOS33 |SLEW = SLOW |DRIVE = 4;
-NET "_cpu_as" CLOCK_DEDICATED_ROUTE = FALSE;
+NET "_cpu_as"          CLOCK_DEDICATED_ROUTE    = FALSE;

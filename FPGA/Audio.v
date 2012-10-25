@@ -209,7 +209,7 @@ audiochannel ach3
 //instantiate volume control and sigma/delta modulator
 sigmadelta dac0 
 (
-	.clk(clk28m),
+	.clk({clk}),
 	.sample0(sample0),
 	.sample1(sample1),
 	.sample2(sample2),
@@ -270,15 +270,15 @@ always @(posedge clk)
 	if (strhor)
 		mxc <= 0;
 	else
-		mxc <= (~mxc);
+		mxc <= ~mxc;
 
 //sample multiplexer
-assign leftsmux = (mxc) ? sample1 : sample2;
-assign rightsmux = (mxc) ? sample0 : sample3;
+assign leftsmux = mxc ? sample1 : sample2;
+assign rightsmux = mxc ? sample0 : sample3;
 
 //volume multiplexer
-assign leftvmux = (mxc) ? vol1 : vol2;
-assign rightvmux = (mxc) ? vol0 : vol3;
+assign leftvmux = mxc ? vol1 : vol2;
+assign rightvmux = mxc ? vol0 : vol3;
 
 //left volume control
 //when volume MSB is set, volume is always maximum
@@ -310,17 +310,6 @@ svmul sv1
 
 //--------------------------------------------------------------------------------------
 
-//noise offset generator
-//reg	[17:0] lfsr = 0;
-//reg	noise;
-
-/*
-always @(posedge clk)
-	begin
-		lfsr <= ({lfsr, lfsr[17] ~^ lfsr[10]});
-		noise <= (lfsr[0]);
-	end
-*/
 //left sigma/delta modulator
 always @(posedge clk)
 	if (strhor)
@@ -358,7 +347,7 @@ wire	[13:0] sesample;   		//sign extended sample
 wire	[13:0] sevolume;			//sign extended volume
 
 //sign extend input parameters
-assign 	sesample[13:0] = ({1'b0,{6{sample[7]}},sample[7:0]});
+assign 	sesample[13:0] = {{6{sample[7]}},sample[7:0]};
 assign	sevolume[13:0] = ({8'b00000000,volume[5:0]});
 
 //multiply, synthesizer should infer multiplier here - fixed by ASC (boing4000)
