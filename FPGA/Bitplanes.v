@@ -22,20 +22,23 @@
 // It supports all ocs modes and also handles the pf1<->pf2 priority handling in
 // a seperate module.
 //
-// 11-05-2005		-started coding
-// 15-05-2005		-first finished version
-// 16-05-2005		-fixed hires scrolling, now you can fetch 2 words early
-// 22-05-2005		-fixed bug in dual playfield mode when both playfields where transparant
-// 22-06-2005		-moved playfield engine / priority logic to seperate module
-//JB:
-// 2008-12-27		-addapted playfield horizontal scrolling
-// 2009-02-09		-added hpos for proper horizontal scroll of non-aligned dma fetches
+// 11-05-2005	-started coding
+// 15-05-2005	-first finished version
+// 16-05-2005	-fixed hires scrolling, now you can fetch 2 words early
+// 22-05-2005	-fixed bug in dual playfield mode when both playfields where transparant
+// 22-06-2005	-moved playfield engine / priority logic to seperate module
+// ----------
+// JB:
+// 2008-12-27	- addapted playfield horizontal scrolling
+// 2009-02-09	- added hpos for proper horizontal scroll of non-aligned dma fetches
+// 2009-05-24	- clean-up & renaming
+
 
 module bitplanes
 (
 	input 	clk,					//bus clock
-	input 	[8:1] regaddress, 		//register address
-	input 	[15:0] datain,	 		//bus data in
+	input 	[8:1] reg_address_in, 	//register address
+	input 	[15:0] data_in,	 		//bus data in
 	input 	hires,		   			//high resolution mode select
 	input	[8:0] hpos,				//horizontal position (70ns resolution)
 	output 	[6:1] bpldata			//bitplane data out
@@ -105,8 +108,8 @@ always @(posedge clk)
 
 //writing bplcon1 register : horizontal scroll codes for even and odd bitplanes
 always @(posedge clk)
-	if (regaddress[8:1]==BPLCON1[8:1])
-		bplcon1 <= datain[7:0];
+	if (reg_address_in[8:1]==BPLCON1[8:1])
+		bplcon1 <= data_in[7:0];
 
 //--------------------------------------------------------------------------------------
 
@@ -114,39 +117,39 @@ always @(posedge clk)
 always @(posedge clk)
 	if (load)
 		bpl2dat <= 16'b0000000000000000;	
-	else if (regaddress[8:1]==BPL2DAT[8:1])
-		bpl2dat <= datain[15:0];
+	else if (reg_address_in[8:1]==BPL2DAT[8:1])
+		bpl2dat <= data_in[15:0];
 
 //bitplane buffer register for plane 3
 always @(posedge clk)
 	if (load)
 		bpl3dat <= 16'b0000000000000000;	
-	else if (regaddress[8:1]==BPL3DAT[8:1])
-		bpl3dat <= datain[15:0];
+	else if (reg_address_in[8:1]==BPL3DAT[8:1])
+		bpl3dat <= data_in[15:0];
 
 //bitplane buffer register for plane 4
 always @(posedge clk)
 	if (load)
 		bpl4dat <= 16'b0000000000000000;	
-	else if (regaddress[8:1]==BPL4DAT[8:1])
-		bpl4dat <= datain[15:0];
+	else if (reg_address_in[8:1]==BPL4DAT[8:1])
+		bpl4dat <= data_in[15:0];
 
 //bitplane buffer register for plane 5
 always @(posedge clk)
 	if (load)
 		bpl5dat <= 16'b0000000000000000;	
-	else if (regaddress[8:1]==BPL5DAT[8:1])
-		bpl5dat <= datain[15:0];
+	else if (reg_address_in[8:1]==BPL5DAT[8:1])
+		bpl5dat <= data_in[15:0];
 
 //bitplane buffer register for plane 6
 always @(posedge clk)
 	if (load)
 		bpl6dat <= 16'b0000000000000000;	
-	else if (regaddress[8:1]==BPL6DAT[8:1])
-		bpl6dat <= datain[15:0];
+	else if (reg_address_in[8:1]==BPL6DAT[8:1])
+		bpl6dat <= data_in[15:0];
 
 //generate load signal when plane 1 is written
-assign load = regaddress[8:1]==BPL1DAT[8:1] ? 1 : 0;
+assign load = reg_address_in[8:1]==BPL1DAT[8:1] ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -157,7 +160,7 @@ bplshift bpls1
 	.hclk(hclk),
 	.load(load),
 	.hires(hires),
-	.data(datain),
+	.data(data_in),
 	.delay(pf1h),
 	.out(bpldata[1])	
 );

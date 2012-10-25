@@ -20,23 +20,26 @@
 // This is the sprites part of denise 
 // It supports all OCS sprite modes.
 //
-// 12-06-2005		-started coding
-//					-first finished version
-// 21-06-2005		-changed sprite priority logic and nsprite output
-// 02-10-2005		-sprites are now attached if odd,even or both sprites SPRXCTL bit 7 is set
-// 17-10-2005		-sprites were displayed one pixel too early, fixed.
+// 12-06-2005	-started coding
+//				-first finished version
+// 21-06-2005	-changed sprite priority logic and nsprite output
+// 02-10-2005	-sprites are now attached if odd,even or both sprites SPRXCTL bit 7 is set
+// 17-10-2005	-sprites were displayed one pixel too early, fixed.
+// ----------
 // JB:
-// 2008-07-14		- swapped shifta and shiftb in serialized output (fix for Zool2: copper writes to SPRxDATx registers)
-// 2009-01-26		- cleanup
-//					- added sprena signal
+// 2008-07-14	- swapped shifta and shiftb in serialized output (fix for Zool2: copper writes to SPRxDATx registers)
+// 2009-01-26	- cleanup
+//				- added sprena signal
+// 2009-05-24	- clean-up & renaming
+//
 
 module sprites
 (
 	input 	clk,					//bus clock	
 	input 	reset,		    		//reset
-	input	[8:1] regaddress,		//register address input
-	input	[8:0] hpos,			//horizontal beam counter
-	input 	[15:0] datain, 			//bus data in
+	input	[8:1] reg_address_in,	//register address input
+	input	[8:0] hpos,				//horizontal beam counter
+	input 	[15:0] data_in, 		//bus data in
 	input	sprena,					//sprite enable signal
 	output 	[7:0] nsprite,		  	//sprite data valid signals 
 	output	reg [3:0] sprdata		//sprite data out
@@ -78,15 +81,15 @@ wire		attach7;				//attach sprite 6,7
 //sprite register address decoder
 wire	selsprx;
 
-assign selsprx = (SPRPOSCTLBASE[8:6]==regaddress[8:6]) ? 1 : 0;//base address
-assign selspr0 = (selsprx&&(regaddress[5:3]==0)) ? 1 : 0;
-assign selspr1 = (selsprx&&(regaddress[5:3]==1)) ? 1 : 0;
-assign selspr2 = (selsprx&&(regaddress[5:3]==2)) ? 1 : 0;
-assign selspr3 = (selsprx&&(regaddress[5:3]==3)) ? 1 : 0;
-assign selspr4 = (selsprx&&(regaddress[5:3]==4)) ? 1 : 0;
-assign selspr5 = (selsprx&&(regaddress[5:3]==5)) ? 1 : 0;
-assign selspr6 = (selsprx&&(regaddress[5:3]==6)) ? 1 : 0;
-assign selspr7 = (selsprx&&(regaddress[5:3]==7)) ? 1 : 0;
+assign selsprx = (SPRPOSCTLBASE[8:6]==reg_address_in[8:6]) ? 1 : 0;//base address
+assign selspr0 = (selsprx&&(reg_address_in[5:3]==0)) ? 1 : 0;
+assign selspr1 = (selsprx&&(reg_address_in[5:3]==1)) ? 1 : 0;
+assign selspr2 = (selsprx&&(reg_address_in[5:3]==2)) ? 1 : 0;
+assign selspr3 = (selsprx&&(reg_address_in[5:3]==3)) ? 1 : 0;
+assign selspr4 = (selsprx&&(reg_address_in[5:3]==4)) ? 1 : 0;
+assign selspr5 = (selsprx&&(reg_address_in[5:3]==5)) ? 1 : 0;
+assign selspr6 = (selsprx&&(reg_address_in[5:3]==6)) ? 1 : 0;
+assign selspr7 = (selsprx&&(reg_address_in[5:3]==7)) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -96,9 +99,9 @@ sprshift sps0
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr0),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat0),
 	.attach(attach0)
 );
@@ -109,9 +112,9 @@ sprshift sps1
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr1),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat1),
 	.attach(attach1)
 );
@@ -122,9 +125,9 @@ sprshift sps2
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr2),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat2),
 	.attach(attach2)
 );
@@ -135,9 +138,9 @@ sprshift sps3
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr3),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat3),
 	.attach(attach3)
 );
@@ -148,9 +151,9 @@ sprshift sps4
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr4),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat4),
 	.attach(attach4)
 );
@@ -161,9 +164,9 @@ sprshift sps5
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr5),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat5),
 	.attach(attach5)
 );
@@ -174,9 +177,9 @@ sprshift sps6
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr6),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat6),
 	.attach(attach6)
 );
@@ -187,9 +190,9 @@ sprshift sps7
 	.clk(clk),
 	.reset(reset),
 	.aen(selspr7),
-	.address(regaddress[2:1]),
+	.address(reg_address_in[2:1]),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprdata(sprdat7),
 	.attach(attach7)
 );
@@ -281,7 +284,7 @@ module sprshift
 	input	aen,					//address enable
 	input	[1:0] address,		   	//register address input
 	input	[8:0] hpos,				//horizontal beam counter
-	input 	[15:0] datain, 			//bus data in
+	input 	[15:0] data_in, 		//bus data in
 	output	[1:0] sprdata,			//serialized sprite data out
 	output	reg attach				//sprite is attached
 );
@@ -322,22 +325,22 @@ assign load = armed && hpos[8:0]==hstart[8:0] ? 1 : 0;
 //POS register
 always @(posedge clk)
 	if(aen&&(address==POS))
-		hstart[8:1]<=datain[7:0];
+		hstart[8:1]<=data_in[7:0];
 
 //CTL register
 always @(posedge clk)
 	if(aen&&(address==CTL))
-		{attach,hstart[0]}<={datain[7],datain[0]};
+		{attach,hstart[0]}<={data_in[7],data_in[0]};
 
 //data register A
 always @(posedge clk)
 	if(aen&&(address==DATA))
-		datla[15:0]<=datain[15:0];
+		datla[15:0]<=data_in[15:0];
 
 //data register B
 always @(posedge clk)
 	if(aen&&(address==DATB))
-		datlb[15:0]<=datain[15:0];
+		datlb[15:0]<=data_in[15:0];
 
 //--------------------------------------------------------------------------------------
 

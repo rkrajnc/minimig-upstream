@@ -15,40 +15,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-//JB:
-//14-03-2008		- moving beamcounter to a separate file
-//					- pal/ntsc switching, NTSC doesn't use short/long line toggling,all lines are short like in PAL (227 CCKs)
-//					- composite blanking use hblank which is combined with vblank
-//2009-03-08		- cleanup
+// JB:
+// 14-03-2008	- moving beamcounter to a separate file
+//				- pal/ntsc switching, NTSC doesn't use short/long line toggling,all lines are short like in PAL (227 CCKs)
+//				- composite blanking use hblank which is combined with vblank
+// 2009-03-08	- clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-06-10	- in non-interlace mode all frames are long (313 lines for PAL)
+//
+//
 
-//beam counters and sync generator
 module beamcounter
 (
-	input	clk,				//bus clock
-	input	reset,				//reset
-	input	ntsc,				//ntsc mode switch
-	input	[15:0] datain,		//bus data in
-	output	reg [15:0] dataout,	//bus data out
-	input 	[8:1] regaddressin,	//register address inputs
-	output	reg [8:0] hpos,		//horizontal beam counter (140ns)
-	output	reg [10:0] vpos,	//vertical beam counter
-	output	reg _hsync,			//horizontal sync
-	output	reg _vsync,			//vertical sync
-	output	_csync,				//composite sync
-	output	reg blank,			//video blanking
-	output	vbl,				//vertical blanking
-	output	vblend,				//last line of vertival blanking
-	output	eol,				//start of video line (active during last pixel of previous line) 
-	output	eof,				//start of video frame (active during last pixel of previous frame)
-	output	[8:0] htotal		//video line length
+	input	clk,					//bus clock
+	input	reset,					//reset
+	input	ntsc,					//NTSC mode switch
+	input	ecsena,					//ECS enable switch
+	input	[15:0] data_in,			//bus data in
+	output	reg [15:0] data_out,	//bus data out
+	input 	[8:1] reg_address_in,	//register address inputs
+	output	reg [8:0] hpos,			//horizontal beam counter (140ns)
+	output	reg [10:0] vpos,		//vertical beam counter
+	output	reg _hsync,				//horizontal sync
+	output	reg _vsync,				//vertical sync
+	output	_csync,					//composite sync
+	output	reg blank,				//video blanking
+	output	vbl,					//vertical blanking
+	output	vblend,					//last line of vertival blanking
+	output	reg eol,				//start of video line (active during last pixel of previous line) 
+	output	reg eof,				//start of video frame (active during last pixel of previous frame)
+	output	[8:0] htotal			//video line length
 );
 
 // local beam position counters
-//reg		[8:0] hpos;		// horizontal (low resolution) beam counter
-//reg		[10:0] vpos;	// vertical beam counter
 reg		ersy;
 reg		lace;
-reg		t_lace;
 
 //local signals for beam counters and sync generator
 reg		long_frame;		// 1 : long frame (313 lines); 0 : normal frame (312 lines)
@@ -107,36 +108,36 @@ always @(posedge clk)
 		vposr[10:0] <= vpos[10:0];
 		hposr[8:1] <= hpos[8:1];	
 	end
-	
+	 
 //beamcounter read registers VPOSR and VHPOSR
-always @(regaddressin or long_frame or long_line or vposr or hposr or ntsc)
-	if (regaddressin[8:1]==VPOSR[8:1])
-		dataout[15:0] = {long_frame,2'b01,ntsc,4'b0000,long_line,4'b0000,vposr[10:8]};
-	else if (regaddressin[8:1]==VHPOSR[8:1])
-		dataout[15:0] = {vposr[7:0],hposr[8:1]};
+always @(reg_address_in or long_frame or long_line or vposr or hposr or ntsc or ecsena)
+	if (reg_address_in[8:1]==VPOSR[8:1])
+		data_out[15:0] = {long_frame,1'b0,ecsena,ntsc,4'b0000,long_line,4'b0000,vposr[10:8]};
+	else if (reg_address_in[8:1]==VHPOSR[8:1])
+		data_out[15:0] = {vposr[7:0],hposr[8:1]};
 	else
-		dataout[15:0] = 0;
+		data_out[15:0] = 0;
 
 //write ERSY bit of bplcon0 register (External ReSYnchronization - genlock)
 always @(posedge clk)
 	if (reset)
 		ersy <= 0;
-	else if (regaddressin[8:1] == BPLCON0[8:1])
-		ersy <= datain[1];
+	else if (reg_address_in[8:1] == BPLCON0[8:1])
+		ersy <= data_in[1];
 		
 //BPLCON0 register
 always @(posedge clk)
 	if (reset)
 		lace <= 0;
-	else if (regaddressin[8:1]==BPLCON0[8:1])
-		lace <= datain[2];
+	else if (reg_address_in[8:1]==BPLCON0[8:1])
+		lace <= data_in[2];
 	
 //BEAMCON0 register
 always @(posedge clk)
 	if (reset)
 		pal <= ~ntsc;
-	else if (regaddressin[8:1]==BEAMCON0[8:1])
-		pal <= datain[5];
+	else if (reg_address_in[8:1]==BEAMCON0[8:1])
+		pal <= data_in[5];
 		
 //--------------------------------------------------------------------------------------//
 //                                                                                      //
@@ -171,6 +172,10 @@ always @(posedge clk)
 //horizontal counter position when vertical counter changes
 assign vpos_enable = hpos==3 ? 1 : 0;
 
+//external signals assigment
+always @(posedge clk)
+	eol <= hpos==2 ? 1 : 0; //eol is generated when hpos equals 3
+
 //vertical position counter
 //vpos changes after hpos equals 3
 always @(posedge clk)
@@ -180,18 +185,13 @@ always @(posedge clk)
 		else
 			vpos <= vpos + 1;
 
-//temporary lace signal
-always @(posedge clk)
-	if (eof)
-		t_lace <= lace;
-		
 // long_frame - long frame signal used in interlaced mode
 always @(posedge clk)
 	if (end_of_frame)
-		if (t_lace)
+		if (lace)
 			long_frame <= ~long_frame;	// interlace
 		else
-			long_frame <= 0;
+			long_frame <= 1; // all non-interlace frames are long
 
 //maximum position of vertical beam position
 assign vpos_equ_vtotal = vpos==vtotal ? 1 : 0;
@@ -210,6 +210,9 @@ assign last_line = long_frame ? extra_line : vpos_equ_vtotal;
 
 //generate end of frame signal
 assign end_of_frame = vpos_enable && last_line ? 1 : 0;
+
+always @(posedge clk)
+	eof <= hpos==2 && last_line ? 1 : 0;
 
 //--------------------------------------------------------------------------------------//
 //                                                                                      //
@@ -262,8 +265,5 @@ always @(posedge clk)
 		blank <= vbl;
 
 
-//external signals assigment
-assign eol = vpos_enable; //eol is generated when hpos equals 3
-assign eof = end_of_frame;
 
 endmodule

@@ -37,10 +37,12 @@
 // leda and ledb control the numlock and scrolllock leds
 
 
-//JB:
+// JB:
 // added support for prtscr and ctrlbrk keys
 // verilog 2001 style module declaration
-
+// osd_ctrl is 8-bit wide
+//
+// 2009-05-24	- clean-up & renaming
 
 module ps2keyboard
 (
@@ -54,7 +56,7 @@ module ps2keyboard
 	output	[7:0] keydat,		//keyboard data out
 	output	reg keystrobe,		//keyboard data out strobe
 	input	keyack,				//keyboard data out acknowledge
-	output	[7:0] osdctrl,		//on-screen-display controll
+	output	[7:0] osd_ctrl,		//on-screen-display controll
 	output	freeze				//Action Replay freeze button
 );
 
@@ -113,7 +115,7 @@ always @(posedge clk)
 	if (ptreset)
 		ptimer[19:0] <= 0;
 	else if (!pto2)
-		ptimer[19:0] <= ptimer[19:0]+1;
+		ptimer[19:0] <= ptimer[19:0] + 1;
 		
 assign pto1 = ptimer[15];//4.6ms @ 7.09Mhz
 assign pto2 = ptimer[19];//74ms @ 7.09Mhz
@@ -260,7 +262,7 @@ ps2keyboardmap km1
 	.aleft(aleft),
 	.aright(aright),
 	.caps(caps),
-	.osdctrl(osdctrl),
+	.osd_ctrl(osd_ctrl),
 	.freeze(freeze)
 );
 
@@ -335,7 +337,7 @@ endmodule
 //-------------------------------------------------------------------------------------------------
 
 //ps2 key to amiga key mapper using blockram
-//this module also handles the osdctrl signals
+//this module also handles the osd_ctrl signals
 module ps2keyboardmap
 (
 	input 	clk,		    	//clock
@@ -348,7 +350,7 @@ module ps2keyboardmap
 	output	aleft, 				//amiga left alt key
 	output	aright,	   			//amiga right alt key
 	output	caps,	   			//amiga capslock key
-	output	reg [7:0] osdctrl,	//osd menu control
+	output	reg [7:0] osd_ctrl,	//osd menu control
 	output	reg freeze
 );
 
@@ -395,9 +397,9 @@ assign akey[7:0] = {upstroke,keyrom[6:0]};
 always @(posedge clk)
 begin
 	if (reset)
-		osdctrl[7:0] <= 0;
+		osd_ctrl[7:0] <= 0;
 	else if (enable2 && (keyrom[8] || keyrom[15]))
-		osdctrl[7:0] <= {keyrom[8],keyrom[6:0]} & {8{~upstroke}};
+		osd_ctrl[7:0] <= {keyrom[8],keyrom[6:0]} & {8{~upstroke}};
 end
 
 //freeze key for Action Replay
@@ -476,7 +478,7 @@ begin
 			9'h02a:		keyrom[15:0] <= 16'h8034;//v
 			9'h02b:		keyrom[15:0] <= 16'h8023;//f
 			9'h02c:		keyrom[15:0] <= 16'h8014;//t
-			9'h02d:		keyrom[15:0] <= 16'h8013;//t
+			9'h02d:		keyrom[15:0] <= 16'h8013;//r
 			9'h02e:		keyrom[15:0] <= 16'h8005;//5
 			9'h02f:		keyrom[15:0] <= 16'h0000;
 			9'h030:		keyrom[15:0] <= 16'h0000;
@@ -528,7 +530,7 @@ begin
 			9'h05e:		keyrom[15:0] <= 16'h0000;
 			9'h05f:		keyrom[15:0] <= 16'h0000;
 			9'h060:		keyrom[15:0] <= 16'h0000;
-			9'h061:		keyrom[15:0] <= 16'h0000;
+			9'h061:		keyrom[15:0] <= 16'h8030;//international left shift cut out (German '<>' key), 0x56 Set#1 code, $30 Amiga scancode
 			9'h062:		keyrom[15:0] <= 16'h0000;
 			9'h063:		keyrom[15:0] <= 16'h0000;
 			9'h064:		keyrom[15:0] <= 16'h0000;
@@ -734,7 +736,7 @@ begin
 			9'h12c:		keyrom[15:0] <= 16'h0000;
 			9'h12d:		keyrom[15:0] <= 16'h0000;
 			9'h12e:		keyrom[15:0] <= 16'h0000;
-			9'h12f:		keyrom[15:0] <= 16'h0000;
+			9'h12f:		keyrom[15:0] <= 16'h8067;//RIGHT AMIGA (APPS)
 			9'h130:		keyrom[15:0] <= 16'h0000;
 			9'h131:		keyrom[15:0] <= 16'h0000;
 			9'h132:		keyrom[15:0] <= 16'h0000;

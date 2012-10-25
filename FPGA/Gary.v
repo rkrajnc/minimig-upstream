@@ -23,128 +23,148 @@
 // Gary handles kickstart area and bootrom overlay
 // Gary handles CIA e clock synchronization
 //
-// 20-12-2005		-started coding
-// 21-12-2005		-done more coding
-// 25-12-2005		-changed blitter nasty handling
-// 15-01-2006		-fixed sensitivity list
-// 12-11-2006		-debugging for new Minimig rev1.0 board
-// 17-11-2006		-removed debugging and added decode for $C0000 ram
-//
+// 20-12-2005	- started coding
+// 21-12-2005	- done more coding
+// 25-12-2005	- changed blitter nasty handling
+// 15-01-2006	- fixed sensitivity list
+// 12-11-2006	- debugging for new Minimig rev1.0 board
+// 17-11-2006	- removed debugging and added decode for $C0000 ram
+// ----------
 // JB:
 // 2008-10-06	- added decoders for IDE and GAYLE register range
 // 2008-10-15	- signal name change cpuok -> dbr
+// 2009-05-23	- better timing model for CIA interface
+// 2009-05-24	- clean-up & renaming
+// 2009-05-25	- ram, cpu and custom chips bus multiplexer
+// 2009-09-01	- fixed sel_kick 
 
 module gary
 (
-	input	clk,					//bus clock
-	input	cck,					//colour clock enable
-	input	e,						//e clock enable
-	input 	[23:12]cpuaddress,		//cpu address inputs
-	input	cpurd,					//cpu read
-	input	cpuhwr,					//cpu high write
-	input	cpulwr,					//cpu low write
-	output	reg dbr,				//cpu slot ok
-	input	dma,					//agnus needs bus
-	input	dmawr,					//agnus does a write cycle
-	input	dmapri,					//agnus blitter has priority
+	input 	[23:1] cpu_address_in,	//cpu address bus input
+	input	[20:1] dma_address_in,	//agnus dma memory address input
+	output	[18:1] ram_address_out, //ram address bus output
+	input	[15:0] cpu_data_out,
+	output	[15:0] cpu_data_in,
+	input	[15:0] custom_data_out,
+	output	[15:0] custom_data_in,
+	input	[15:0] ram_data_out,
+	output	[15:0] ram_data_in,
+	input	cpu_rd,					//cpu read
+	input	cpu_hwr,				//cpu high write
+	input	cpu_lwr,				//cpu low write
+	
 	input	ovl,					//overlay kickstart rom over chipram
 	input	boot,					//overlay bootrom over chipram
-	output	rd,						//bus read
-	output	hwr,					//bus high write
-	output	lwr,					//bus low write
-	output 	selreg,  				//select chip register bank
-	output 	reg [3:0] selchip, 		//select chip memory
-	output	[2:0] selslow,			//select slowfast memory ($C0000)
-	output 	selciaa,				//select cia A
-	output 	selciab, 				//select cia B
-	output 	reg selkick,		    //select kickstart rom
-	output	reg selboot,			//select boot room
-	output	selide,					//select $DAxxxx
-	output	selgayle				//select $DExxxx
+	input	dbr,					//Agns takes the bus
+	input	dbwe,					//Agnus does a write cycle
+	output	dbs,					//data bus slow down
+	output	xbs,					//cross bridge select, active dbr prevents access
+	
+	input	[3:0] memory_config,	//selected memory configuration
+
+	input	hdc_ena,				//enables hdd interface
+	
+	output	ram_rd,					//bus read
+	output	ram_hwr,				//bus high write
+	output	ram_lwr,				//bus low write
+	
+	output 	sel_reg,  				//select chip register bank
+	output 	reg [3:0] sel_chip, 	//select chip memory
+	output	reg [2:0] sel_slow,		//select slowfast memory ($C0000)
+	output 	reg sel_kick,		    //select kickstart rom
+	output	sel_boot,				//select boot room
+	output	sel_cia,				//select CIA space
+	output 	sel_cia_a,				//select cia A
+	output 	sel_cia_b, 				//select cia B
+	output	sel_rtc,				//select $DCxxxx
+	output	sel_ide,				//select $DAxxxx
+	output	sel_gayle				//select $DExxxx
 );
 
+wire	[2:0] t_sel_slow;
+wire	sel_xram;
+wire	sel_bank_1;
+
 //--------------------------------------------------------------------------------------
+
+assign ram_data_in = dbr ? custom_data_out : cpu_data_out;
+
+assign custom_data_in = dbr ? ram_data_out : cpu_rd ? 16'hFFFF : cpu_data_out;
+
+assign cpu_data_in = dbr ? 16'h00_00 : custom_data_out | ram_data_out | {16{sel_bank_1}};
 
 //read write control signals
-assign rd  = cpurd  | (~dmawr & dma);
-assign hwr = cpuhwr | ( dmawr & dma);
-assign lwr = cpulwr | ( dmawr & dma);
+assign ram_rd  = dbr ? ~dbwe : cpu_rd;
+assign ram_hwr = dbr ?  dbwe : cpu_hwr;
+assign ram_lwr = dbr ?  dbwe : cpu_lwr;
 
 //--------------------------------------------------------------------------------------
-		
-//bus master logic
-always @(dma or dmapri or e or selciaa or selciab or cck or cpuaddress)
-begin
-	if (dma)// || (selreg||selchip||selslow))//bus slot allocated to agnus
-		dbr = 1;
-	else if ((cpuaddress[23:21]==3'b000 || cpuaddress[23:21]==3'b110) && dmapri)//cpu wait state, dma has priority in register and chipram area
-		dbr = 1;
-	else if ((selciaa||selciab) && !e)//cpu wait state, slow access to CIA's
-		dbr = 1;
-	else//bus slot allocated to cpu
-		dbr = 0;
-end
+
+// ram address multiplexer (512KB bank)		
+assign ram_address_out = dbr ? dma_address_in[18:1] : cpu_address_in[18:1];
 
 //--------------------------------------------------------------------------------------
 
 //chipram, kickstart and bootrom address decode
-always @(dma or cpuaddress or boot or ovl)
+always @(dbr or dma_address_in or cpu_address_in or cpu_rd or boot or ovl or t_sel_slow)
 begin
-	if (dma)//agnus always accesses chipram
+	if (dbr)//agnus only accesses chipram
 	begin
-		selchip = 1;
-		selkick  = 0;
-		selboot = 0;
+		sel_chip[0] = ~dma_address_in[20] & ~dma_address_in[19];
+		sel_chip[1] = ~dma_address_in[20] &  dma_address_in[19];
+		sel_chip[2] =  dma_address_in[20] & ~dma_address_in[19];
+		sel_chip[3] =  dma_address_in[20] &  dma_address_in[19];
+		sel_slow[0] = 1'b0;
+		sel_slow[1] = 1'b0;
+		sel_slow[2] = 1'b0;
+		sel_kick    = 1'b0;
 	end
-	else if (cpuaddress[23:19]==5'b1111_1)//kickstart $F8xxxx
+	else
 	begin
-		selchip = 0;
-		selkick  = 1;
-		selboot = 0;
-	end
-	else if ((cpuaddress[23:21]==3'b000) && boot)//chipram area in boot mode
-	begin
-		if (cpuaddress[20:12]==0)//lower part bootrom area
-		begin
-			selchip = 0;
-			selkick  = 0;
-			selboot  = 1;
-		end
-		else//upper part chipram area
-		begin
-			selchip = 1;
-			selkick  = 0;
-			selboot = 0;
-		end
-	end
-	else if ((cpuaddress[23:21]==3'b000) && !boot)//chipram area in normal mode
-	begin
-		selchip = ~ovl;//chipram when no rom overlay
-		selkick  = ovl;//kickstart when rom overlay
-		selboot = 0;
-	end
-	else//no kickstart, bootrom or chipram selected
-	begin
-		selchip = 0;
-		selkick  = 0;
-		selboot = 0;
+		sel_chip[0] = cpu_address_in[23:19]==5'b0000_0 && ((boot && cpu_address_in[18:14]!=5'b000_00) || (!boot && !ovl)) ? 1'b1 : 1'b0;
+		sel_chip[1] = cpu_address_in[23:19]==5'b0000_1 ? 1'b1 : 1'b0;
+		sel_chip[2] = cpu_address_in[23:19]==5'b0001_0 ? 1'b1 : 1'b0;
+		sel_chip[3] = cpu_address_in[23:19]==5'b0001_1 ? 1'b1 : 1'b0;
+		sel_slow[0] = t_sel_slow[0];
+		sel_slow[1] = t_sel_slow[1];
+		sel_slow[2] = t_sel_slow[2];
+		sel_kick    = (cpu_address_in[23:19]==5'b1111_1 && (cpu_rd || boot)) || (!boot && cpu_rd && ovl && cpu_address_in[23:19]==5'b0000_0) ? 1'b1 : 1'b0; //$F80000 - $FFFFF
 	end
 end
 
-//chip register bank and slowram address decode
+assign t_sel_slow[0] = cpu_address_in[23:19]==5'b1100_0 ? 1'b1 : 1'b0; //$C00000 - $C7FFFF
+assign t_sel_slow[1] = cpu_address_in[23:19]==5'b1100_1 ? 1'b1 : 1'b0; //$C80000 - $CfFFFF
+assign t_sel_slow[2] = cpu_address_in[23:19]==5'b1101_0 ? 1'b1 : 1'b0; //$D00000 - $D7FFFF
 
-assign selslow = (cpuaddress[23:20]==4'b1100 || cpuaddress[23:19]==5'b1101_0) && !dma ? 1 : 0;		//slow ram at $C00000 - $D7FFFF
+assign sel_xram = (t_sel_slow[0] & (memory_config[2] | memory_config[3]))
+				| (t_sel_slow[1] & memory_config[3])
+				| (t_sel_slow[2] & memory_config[2] & memory_config[3]);
 
-assign selide = (cpuaddress[23:16]==8'b1101_1010) && !dma ? 1 : 0;		//IDE registers at &DA0000 - $DAFFFF	
 
-assign selgayle = (cpuaddress[23:16]==8'b1101_1110) && !dma ? 1 : 0;	//GAYLE registers at &DE0000 - $DEFFFF
+assign sel_rtc = cpu_address_in[23:16]==8'b1101_1100 ? 1'b1 : 1'b0;		//RTC registers at $DC0000 - $DCFFFF	
 
-assign selreg = (cpuaddress[23:16]==8'b1101_1111) && !dma ? 1 : 0;		//chip registers at &DF0000 - $DFFFFF
+assign sel_ide = hdc_ena && cpu_address_in[23:16]==8'b1101_1010 ? 1'b1 : 1'b0;		//IDE registers at $DA0000 - $DAFFFF	
+
+assign sel_gayle = hdc_ena && cpu_address_in[23:12]==12'b1101_1110_0001 ? 1'b1 : 1'b0;		//GAYLE registers at $DE1000 - $DE1FFF
+
+assign sel_reg = cpu_address_in[23:21]==3'b110 ? ~(sel_xram | sel_rtc | sel_ide | sel_gayle) : 1'b0;		//chip registers at $DF0000 - $DFFFFF
+
+assign sel_cia = cpu_address_in[23:16]==8'b1011_1111 ? 1'b1 : 1'b0;
 
 //cia a address decode
-assign selciaa = (cpuaddress[23:21]==3'b101) && !cpuaddress[12] && !dma ? 1 : 0;
+assign sel_cia_a = sel_cia & ~cpu_address_in[12];
 
 //cia b address decode
-assign selciab = (cpuaddress[23:21]==3'b101) && !cpuaddress[13] && !dma ? 1 : 0;
+assign sel_cia_b = sel_cia & ~cpu_address_in[13];
+
+assign sel_boot = cpu_address_in[23:12]==0 && boot ? 1'b1 : 1'b0;
+
+assign sel_bank_1 = cpu_address_in[23:21]==3'b001 ? 1'b1 : 1'b0;
+
+//data bus slow down
+
+assign dbs = cpu_address_in[23:21]==3'b000 || cpu_address_in[23:20]==4'b1100 || cpu_address_in[23:19]==5'b1101_0 || cpu_address_in[23:16]==8'b1101_1111 ? 1'b1 : 1'b0;
+
+assign xbs = ~(sel_cia | sel_gayle | sel_ide);
 
 endmodule

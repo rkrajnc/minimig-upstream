@@ -19,43 +19,45 @@
 //
 // This is the floppy disk controller (part of Paula)
 //
-// 23-10-2005		-started coding
-// 24-10-2005		-done lots of work
-// 13-11-2005		-modified fifo to use block ram
+// 23-10-2005	-started coding
+// 24-10-2005	-done lots of work
+// 13-11-2005	-modified fifo to use block ram
 //				-done lots of work
-// 14-11-2005		-done more work
-// 19-11-2005		-added wordsync logic
-// 20-11-2005		-finished core floppy disk interface
+// 14-11-2005	-done more work
+// 19-11-2005	-added wordsync logic
+// 20-11-2005	-finished core floppy disk interface
 //				-added disk interrupts
 //				-added floppy control signal emulation
-// 21-11-2005		-cleaned up code a bit
-// 27-11-2005		-den and sden are now active low (_den and _sden)
+// 21-11-2005	-cleaned up code a bit
+// 27-11-2005	-den and sden are now active low (_den and _sden)
 //				-fixed bug in parallel/serial converter
 //				-fixed more bugs
-// 02-12-2005		-removed dma abort function
-// 04-12-2005		-fixed bug in fifo empty signalling
-// 09-12-2005		-fixed dsksync handling	
+// 02-12-2005	-removed dma abort function
+// 04-12-2005	-fixed bug in fifo empty signalling
+// 09-12-2005	-fixed dsksync handling	
 //				-added protection against stepping beyond track limits
-// 10-12-2005		-fixed some more bugs
-// 11-12-2005		-added dout output enable to allow SPI bus multiplexing
-// 12-12-2005		-fixed major bug, due error in statemachine, multiple interrupts were requested
+// 10-12-2005	-fixed some more bugs
+// 11-12-2005	-added dout output enable to allow SPI bus multiplexing
+// 12-12-2005	-fixed major bug, due error in statemachine, multiple interrupts were requested
 //				 after a DMA transfer, this could lock up the whole machine
 // 				-enable line disconnected  --> this module still needs a lot of work
-// 27-12-2005		-cleaned up code, this is it for now
-// 07-01-2005		-added dmas
-// 15-01-2006		-added support for track 80-127 (used for loading kickstart)
-// 22-01-2006		-removed support for track 80-127 again
-// 06-02-2006		-added user disk control input
-// 28-12-2006		-spi data out is now low when not addressed to allow multiplexing with multiple spi devices		
+// 27-12-2005	-cleaned up code, this is it for now
+// 07-01-2005	-added dmas
+// 15-01-2006	-added support for track 80-127 (used for loading kickstart)
+// 22-01-2006	-removed support for track 80-127 again
+// 06-02-2006	-added user disk control input
+// 28-12-2006	-spi data out is now low when not addressed to allow multiplexing with multiple spi devices		
+//
 // JB:
-// 2008-07-17		- modified floppy interface for better read handling and write support
-//					- spi interface clocked by SPI clock
-// 2008-09-24		- incompatibility found: _READY signal should respond to _SELx even when the motor is off
-//					- added logic for four floppy drives
-// 2008-10-07		- ide command request implementation
-// 2008-10-28		- further hdd implementation
-// 2009-04-05		- code clean-up
-
+// 2008-07-17	- modified floppy interface for better read handling and write support
+//				- spi interface clocked by SPI clock
+// 2008-09-24	- incompatibility found: _READY signal should respond to _SELx even when the motor is off
+//				- added logic for four floppy drives
+// 2008-10-07	- ide command request implementation
+// 2008-10-28	- further hdd implementation
+// 2009-04-05	- code clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-07-21	- WORDEQUAL in DSKBYTR register is always set now
 
 module floppy
 (
@@ -63,9 +65,9 @@ module floppy
 	input 	clk,		    		//bus clock
 	input 	reset,			   		//reset 
 	input	enable,					//dma enable
-	input 	[8:1] regaddress,		//register address inputs
-	input	[15:0] datain,			//bus data in
-	output	[15:0] dataout,			//bus data out
+	input 	[8:1] reg_address_in,	//register address inputs
+	input	[15:0] data_in,			//bus data in
+	output	[15:0] data_out,		//bus data out
 	output	dmal,					//dma request output
 	output	dmas,					//dma special output 
 	//disk control signals from cia and user
@@ -83,16 +85,16 @@ module floppy
 	output	syncint,				//disk syncword found
 	input	wordsync,				//wordsync enable
 	//flash drive host controller interface	(SPI)
-	input	_den,					//async. serial data enable
-	input	din,					//async. serial data input
-	output	dout,					//async. serial data output
-	input	dclk,					//async. serial data clock
+	input	_scs,					//async. serial data enable
+	input	sdi,					//async. serial data input
+	output	sdo,					//async. serial data output
+	input	sck,					//async. serial data clock
 	
 	output	disk_led,				//disk activity LED, active when DMA is on
 	input	[1:0] floppy_drives,	//floppy drive number
 	
-	input	direct_sel,				//enables direct data transfer from SD card
-	input	direct_din,				//data line from SD card
+	input	direct_scs,				//enables direct data transfer from SD card
+	input	direct_sdi,				//data line from SD card
 	input	hdd_cmd_req,			//HDD requests service (command register has been written)
 	input	hdd_dat_req,			//HDD requests data tansfer
 	output	[2:0] hdd_addr,			//task file register address
@@ -161,10 +163,8 @@ module floppy
 // JB: SPI interface
 //-----------------------------------------------------------------------------------------------//
 		
-	wire sck;					//SPI clock
+	wire sdin;					//SPI data in
 	wire scs;					//SPI chip select
-	wire sdi;					//SPI data in
-	wire sdo;					//SPI data out
 	wire scs1;
 	wire scs2;
 
@@ -202,11 +202,9 @@ module floppy
 	reg	spi_rx_cnt_rst;			//indicates reception of the first spi word after activation of the chip select
 
 //SPI mode 0 - high idle clock
-assign sck = dclk;
-assign sdi = direct_sel ? direct_din : din;
-assign dout = sdo;
-assign scs1 = ~_den;
-assign scs2 = direct_sel;
+assign sdin = direct_scs ? direct_sdi : sdi;
+assign scs1 = ~_scs;
+assign scs2 = direct_scs;
 assign scs = scs1 | scs2;
 
 //received bits counter (0-15)
@@ -221,12 +219,12 @@ assign spi_bit_0 = spi_bit_cnt==0 ? 1 : 0;
 
 //SDI input shift register
 always @(posedge sck)
-	spi_sdi_reg <= {spi_sdi_reg[14:1],sdi};
+	spi_sdi_reg <= {spi_sdi_reg[14:1],sdin};
 	
 //spi rx data register
 always @(posedge sck)
 	if (spi_bit_15)
-		rx_data <= {spi_sdi_reg[15:1],sdi};		
+		rx_data <= {spi_sdi_reg[15:1],sdin};		
 
 // rx_flag is synchronous with clk and is set after receiving the last bit of a word
 assign spi_rx_flag_clr = rx_flag | reset;
@@ -381,7 +379,7 @@ always @(posedge clk)
 		
 //--------------------------------------------------------------------------------------
 //data out multiplexer
-assign dataout = dskbytr | dskdatr;
+assign data_out = dskbytr | dskdatr;
 
 //--------------------------------------------------------------------------------------
 //floppy control signal behaviour
@@ -422,21 +420,21 @@ assign _ready = (_sel[3]|~(drives[1]&drives[0])) & (_sel[2]|~drives[1]) & (_sel[
 //--------------------------------------------------------------------------------------
 
 //disk data byte and status read
-assign dskbytr = (regaddress[8:1]==DSKBYTR[8:1])?{1'b0,(trackrd|trackwr),dsklen[14],13'b000000000000}:16'h0000;
+assign dskbytr = reg_address_in[8:1]==DSKBYTR[8:1] ? {1'b0,(trackrd|trackwr),dsklen[14],13'b1_0000_0000_0000} : 16'h00_00;
 	 
 //disk sync register
 always @(posedge clk)
 	if (reset) 
 		dsksync[15:0] <= 0;
-	else if (regaddress[8:1]==DSKSYNC[8:1])
-		dsksync[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==DSKSYNC[8:1])
+		dsksync[15:0] <= data_in[15:0];
 
 //disk length register
 always @(posedge clk)
 	if (reset)
 		dsklen[14:0] <= 0;
-	else if (regaddress[8:1]==DSKLEN[8:1])
-		dsklen[14:0] <= datain[14:0];
+	else if (reg_address_in[8:1]==DSKLEN[8:1])
+		dsklen[14:0] <= data_in[14:0];
 	else if (bufwr)//decrement length register
 		dsklen[13:0] <= dsklen[13:0] - 1;
 
@@ -446,8 +444,8 @@ always @(posedge clk)
 		dsklen[15] <= 0;
 	else if (blckint)
 		dsklen[15] <= 0;
-	else if (regaddress[8:1]==DSKLEN[8:1])
-		dsklen[15] <= datain[15];
+	else if (reg_address_in[8:1]==DSKLEN[8:1])
+		dsklen[15] <= data_in[15];
 		
 //dmaen - disk dma enable signal
 always @(posedge clk)
@@ -455,8 +453,8 @@ always @(posedge clk)
 		dmaen <= 0;
 	else if (blckint)
 		dmaen <= 0;
-	else if (regaddress[8:1]==DSKLEN[8:1])
-		dmaen <= datain[15] & dsklen[15];//start disk dma if second write in a row with dsklen[15] set
+	else if (reg_address_in[8:1]==DSKLEN[8:1])
+		dmaen <= data_in[15] & dsklen[15];//start disk dma if second write in a row with dsklen[15] set
 
 //dsklen zero detect
 assign lenzero = (dsklen[13:0]==0) ? 1 : 0;
@@ -468,13 +466,13 @@ wire	buswr;				//bus write
 reg		trackrdok;			//track read enable
 
 //disk buffer bus read address decode
-assign busrd=(regaddress[8:1]==DSKDATR[8:1])?1:0;
+assign busrd = (reg_address_in[8:1]==DSKDATR[8:1]) ? 1 : 0;
 
 //disk buffer bus write address decode
-assign buswr=(regaddress[8:1]==DSKDAT[8:1])?1:0;
+assign buswr = (reg_address_in[8:1]==DSKDAT[8:1]) ? 1 : 0;
 
 //fifo data input multiplexer
-assign bufdin[15:0] = trackrd ? rx_data[15:0] : datain[15:0];
+assign bufdin[15:0] = trackrd ? rx_data[15:0] : data_in[15:0];
 
 //fifo write control
 assign bufwr = (trackrdok & spidat & ~lenzero) | (buswr & dmaon);
@@ -529,9 +527,9 @@ reg		[1:0] dskstate;		//current state of disk
 reg		[1:0] nextstate; 	//next state of state
 
 //disk states
-parameter DISKDMA_IDLE=2'b00;
-parameter DISKDMA_ACTIVE=2'b10;
-parameter DISKDMA_INT=2'b11;
+parameter DISKDMA_IDLE   = 2'b00;
+parameter DISKDMA_ACTIVE = 2'b10;
+parameter DISKDMA_INT    = 2'b11;
 
 //disk present and write protect status
 always @(posedge clk)
@@ -573,10 +571,10 @@ begin
 	case(dskstate)
 		DISKDMA_IDLE://disk is present in flash drive
 		begin
-			trackrd=0;
-			trackwr=0;
-			dmaon=0;
-			blckint=0;
+			trackrd = 0;
+			trackwr = 0;
+			dmaon = 0;
+			blckint = 0;
 			if (cmd_fdd && rx_flag && rx_cnt==1 && dmaen && !lenzero && enable)//dsklen>0 and dma enabled, do disk dma operation
 				nextstate = DISKDMA_ACTIVE; 
 			else
@@ -584,9 +582,9 @@ begin
 		end
 		DISKDMA_ACTIVE://do disk dma operation
 		begin
-			trackrd=(~lenzero)&(~dsklen[14]);//track read (disk->ram)
-			trackwr=dsklen[14];//track write (ram->disk)
-			dmaon=(~lenzero)|(~dsklen[14]);
+			trackrd = (~lenzero)&(~dsklen[14]);//track read (disk->ram)
+			trackwr = dsklen[14];//track write (ram->disk)
+			dmaon=(~lenzero) | (~dsklen[14]);
 			blckint=0;
 			if (!dmaen || !enable)
 				nextstate = DISKDMA_IDLE;
@@ -597,11 +595,11 @@ begin
 		end
 		DISKDMA_INT://generate disk dma completed (DSKBLK) interrupt
 		begin
-			trackrd=0;
-			trackwr=0;
-			dmaon=0;
-			blckint=1;
-			nextstate=DISKDMA_IDLE;			
+			trackrd = 0;
+			trackwr = 0;
+			dmaon = 0;
+			blckint = 1;
+			nextstate = DISKDMA_IDLE;			
 		end
 		default://we should never come here
 		begin
@@ -633,19 +631,19 @@ module fifo
 (
 	input 	clk,		    	//bus clock
 	input 	reset,			   	//reset 
-	input	[15:0]din,		//data in
-	output	reg [15:0]dout,	//data out
+	input	[15:0] din,			//data in
+	output	reg [15:0] dout,	//data out
 	input	rd,					//read from fifo
 	input	wr,					//write to fifo
 	output	full,				//fifo is full
-	output	[13:0]cnt,
+	output	[13:0] cnt,
 	output	reg empty			//fifo is empty
 );
 
 //local signals and registers
-reg 	[15:0]mem[8191:0];	//8192 words by 16 bit wide fifo memory
-reg		[13:0]inptr;			//fifo input pointer
-reg		[13:0]outptr;			//fifo output pointer
+reg 	[15:0] mem [8191:0];	//8192 words by 16 bit wide fifo memory
+reg		[13:0] inptr;			//fifo input pointer
+reg		[13:0] outptr;			//fifo output pointer
 wire	equal;					//lower 13 bits of inptr and outptr are equal
 
 assign cnt = inptr - outptr;
@@ -653,33 +651,35 @@ assign cnt = inptr - outptr;
 //main fifo memory (implemented using synchronous block ram)
 always @(posedge clk)
 	if (wr && !full)
-		mem[inptr[12:0]]<=din;
+		mem[inptr[12:0]] <= din;
+
 always @(posedge clk)
-	dout=mem[outptr[12:0]];
+	dout = mem[outptr[12:0]];
 
 //fifo write pointer control
 always @(posedge clk)
-	if(reset)
-		inptr[13:0]<=0;
+	if (reset)
+		inptr[13:0] <= 0;
 	else if(wr && !full)
-		inptr[13:0]<=inptr[13:0]+1;
+		inptr[13:0] <= inptr[13:0] + 1;
 
 //fifo read pointer control
 always @(posedge clk)
-	if(reset)
-		outptr[13:0]<=0;
-	else if(rd && !empty)
-		outptr[13:0]<=outptr[13:0]+1;
+	if (reset)
+		outptr[13:0] <= 0;
+	else if (rd && !empty)
+		outptr[13:0] <= outptr[13:0] + 1;
 
 //check lower 13 bits of pointer to generate equal signal
-assign equal=(inptr[12:0]==outptr[12:0])?1:0;
+assign equal = (inptr[12:0]==outptr[12:0]) ? 1 : 0;
 
 //assign output flags, empty is delayed by one clock to handle ram delay
 always @(posedge clk)
-	if(equal && (inptr[13]==outptr[13]))
-		empty=1;
+	if (equal && (inptr[13]==outptr[13]))
+		empty = 1;
 	else
-		empty=0;	
-assign full=(equal && (inptr[13]!=outptr[13]))?1:0;	
+		empty = 0;	
+		
+assign full = (equal && (inptr[13]!=outptr[13])) ? 1 : 0;	
 
 endmodule

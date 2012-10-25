@@ -19,27 +19,27 @@
 //
 // This is paula
 //
-// 06-03-2005		-started coding
-// 19-03-2005		-added interupt controller and uart
-// 04-09-2005		-added blitter finished interrupt
-// 19-10-2005		-removed cck (color clock enable) input
+// 06-03-2005	-started coding
+// 19-03-2005	-added interupt controller and uart
+// 04-09-2005	-added blitter finished interrupt
+// 19-10-2005	-removed cck (color clock enable) input
 //				-removed intb signal
 //				-added sof signal
-// 23-10-2005		-added dmal signal
+// 23-10-2005	-added dmal signal
 //				-added paula part of DMACON
-// 21-11-2005		-added floppy controller
+// 21-11-2005	-added floppy controller
 // 				-added ADKCON/ADCONR registers
 //				-added local horbeam counter
-// 27-11-2005		-den is now active low (_den)
+// 27-11-2005	-den is now active low (_den)
 //				-some typo's fixed
-// 11-12-2005		-disable syncword interrupt
-// 13-12-2005		-enable syncword interrupt
-// 27-12-2005		-cleaned up code
-// 28-12-2005		-added audio module
-// 03-01-2006		-added dmas to avoid interference with copper cycles
-// 07-01-2006		-added dmas for disk controller
-// 06-02-2006		-added user disk control input
-// 03-07-2007		-moved interrupt controller and uart to this file to reduce number of sourcefiles
+// 11-12-2005	-disable syncword interrupt
+// 13-12-2005	-enable syncword interrupt
+// 27-12-2005	-cleaned up code
+// 28-12-2005	-added audio module
+// 03-01-2006	-added dmas to avoid interference with copper cycles
+// 07-01-2006	-added dmas for disk controller
+// 06-02-2006	-added user disk control input
+// 03-07-2007	-moved interrupt controller and uart to this file to reduce number of sourcefiles
 // JB:
 // 2008-09-24	- code clean-up
 //				- added support for floppy _sel[3:1] signals
@@ -49,54 +49,57 @@
 // 2009-03-08	- removed horbeam counter and sol
 //				- added strhor
 // 2009-04-05	- code clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-07-10	- implementation of intreq[14] (Unreal needs it)
+//
 
 module Paula
 (
 	//bus interface
-	input 	clk,		    	//bus clock
-	input 	cck,		    	//colour clock enable
-	input 	reset,			   	//reset 
-	input 	[8:1] regaddress,	//register address inputs
-	input	[15:0] datain,		//bus data in
-	output	[15:0] dataout,		//bus data out
+	input 	clk,		    		//bus clock
+	input 	cck,		    		//colour clock enable
+	input 	reset,			   		//reset 
+	input 	[8:1] reg_address_in,	//register address inputs
+	input	[15:0] data_in,			//bus data in
+	output	[15:0] data_out,		//bus data out
 	//serial (uart) 
-	output 	txd,				//serial port transmitted data
-	input 	rxd,		  		//serial port received data
+	output 	txd,					//serial port transmitted data
+	input 	rxd,			  		//serial port received data
 	//interrupts and dma
-	input	strhor,				//start of video line (latches audio DMA requests)
-	input	sof,				//start of video frame (triggers vertical blank interrupt)
-	input	int2,				//level 2 interrupt
-	input	int3,				//level 3 interrupt
-	input	int6,				//level 6 interrupt
-	output	[2:0] _ipl,			//m68k interrupt request
-	output	[3:0] audio_dmal,	//audio dma data transfer request (to Agnus)
-	output	[3:0] audio_dmas,	//audio dma location pointer restart (to Agnus)
-	output	disk_dmal,			//disk dma data transfer request (to Agnus)
-	output	disk_dmas,			//disk dma special request (to Agnus)
+	input	strhor,					//start of video line (latches audio DMA requests)
+	input	sof,					//start of video frame (triggers vertical blank interrupt)
+	input	int2,					//level 2 interrupt
+	input	int3,					//level 3 interrupt
+	input	int6,					//level 6 interrupt
+	output	[2:0] _ipl,				//m68k interrupt request
+	output	[3:0] audio_dmal,		//audio dma data transfer request (to Agnus)
+	output	[3:0] audio_dmas,		//audio dma location pointer restart (to Agnus)
+	output	disk_dmal,				//disk dma data transfer request (to Agnus)
+	output	disk_dmas,				//disk dma special request (to Agnus)
 	//disk control signals from cia and user
-	input	_step,				//step heads of disk
-	input	direc,				//step heads direction
-	input	[3:0] _sel,			//disk select 	
-	input	side,				//upper/lower disk head
-	input	_motor,				//disk motor control
-	output	_track0,			//track zero detect
-	output	_change,			//disk has been removed from drive
-	output	_ready,				//disk is ready
-	output	_wprot,				//disk is write-protected
-	output	disk_led,			//disk activity LED
+	input	_step,					//step heads of disk
+	input	direc,					//step heads direction
+	input	[3:0] _sel,				//disk select 	
+	input	side,					//upper/lower disk head
+	input	_motor,					//disk motor control
+	output	_track0,				//track zero detect
+	output	_change,				//disk has been removed from drive
+	output	_ready,					//disk is ready
+	output	_wprot,					//disk is write-protected
+	output	disk_led,				//disk activity LED
 	//flash drive host controller interface	(SPI)
-	input	_den,				//async. serial data enable
-	input	din,				//async. serial data input
-	output	dout,				//async. serial data output
-	input	dclk,				//async. serial data clock
+	input	_scs,					//async. serial data enable
+	input	sdi,					//async. serial data input
+	output	sdo,					//async. serial data output
+	input	sck,					//async. serial data clock
 	//audio outputs
-	output	left,				//audio bitstream left
-	output	right,				//audio bitstream right
+	output	left,					//audio bitstream left
+	output	right,					//audio bitstream right
 	
 	input	[1:0] floppy_drives,	//number of extra floppy drives
 	
-	input	direct_sel,				//spi select line for direct transfers from SD card
-	input	direct_din,				//spi data line for direct transfers from SD card
+	input	direct_scs,				//spi select line for direct transfers from SD card
+	input	direct_sdi,				//spi data line for direct transfers from SD card
 	
 	//emulated hard disk drive uses the same SPI interface as the floppy drive, signals described elsewhere
 	input	hdd_cmd_req,
@@ -121,9 +124,9 @@ parameter ADKCONR = 9'h010;
 reg		[4:0] dmacon;			//dmacon paula bits 
 reg		dmaen;					//master dma enable
 reg		[14:0] adkcon;			//audio and disk control register
-wire	[15:0] uartdataout; 	//UART data out
-wire	[15:0] intdataout;  	//interrupt controller data out
-wire	[15:0] diskdataout;		//disk controller data out
+wire	[15:0] uartdata_out; 	//UART data out
+wire	[15:0] intdata_out;  	//interrupt controller data out
+wire	[15:0] diskdata_out;		//disk controller data out
 wire	[15:0] adkconr;			//ADKCONR register data out
 wire	rbfmirror; 				//rbf mirror (from uart to interrupt controller)
 wire	rxint;  				//uart rx interrupt request
@@ -139,8 +142,8 @@ wire	dsken; 					//disk dma enable
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 
-//dataout multiplexer
-assign dataout = uartdataout | intdataout | diskdataout | adkconr;
+//data_out multiplexer
+assign data_out = uartdata_out | intdata_out | diskdata_out | adkconr;
 
 //--------------------------------------------------------------------------------------
 
@@ -150,12 +153,12 @@ assign dataout = uartdataout | intdataout | diskdataout | adkconr;
 always @(posedge clk)
 	if (reset)
 		dmacon <= 0;
-	else if (regaddress[8:1]==DMACON[8:1])
+	else if (reg_address_in[8:1]==DMACON[8:1])
 	begin
-		if (datain[15])
-			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} | {datain[9],datain[4:0]};
+		if (data_in[15])
+			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} | {data_in[9],data_in[4:0]};
 		else
-			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} & (~{datain[9],datain[4:0]});	
+			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} & (~{data_in[9],data_in[4:0]});	
 	end
 
 //assign disk and audio dma enable bits
@@ -171,16 +174,16 @@ assign	auden[0] = dmacon[0] & dmaen;
 always @(posedge clk)
 	if (reset)
 		adkcon <= 0;
-	else if (regaddress[8:1]==ADKCON[8:1])
+	else if (reg_address_in[8:1]==ADKCON[8:1])
 	begin
-		if (datain[15])
-			adkcon[14:0] <= adkcon[14:0] | datain[14:0];
+		if (data_in[15])
+			adkcon[14:0] <= adkcon[14:0] | data_in[14:0];
 		else
-			adkcon[14:0] <= adkcon[14:0] & (~datain[14:0]);	
+			adkcon[14:0] <= adkcon[14:0] & (~data_in[14:0]);	
 	end
 
 //ADKCONR register 
-assign adkconr[15:0] = (regaddress[8:1]==ADKCONR[8:1]) ? {1'b0,adkcon[14:0]} : 16'h0000;
+assign adkconr[15:0] = (reg_address_in[8:1]==ADKCONR[8:1]) ? {1'b0,adkcon[14:0]} : 16'h0000;
 
 //--------------------------------------------------------------------------------------
 
@@ -189,9 +192,9 @@ uart pu1
 (
 	.clk(clk),
 	.reset(reset),
-	.regaddress(regaddress),
-	.datain(datain[14:0]),
-	.dataout(uartdataout),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in[14:0]),
+	.data_out(uartdata_out),
 	.rbfmirror(rbfmirror),
 	.rxint(rxint),
 	.txint(txint),
@@ -204,9 +207,9 @@ intcontroller pi1
 (
 	.clk(clk),
 	.reset(reset),
-	.regaddress(regaddress),
-	.datain(datain),
-	.dataout(intdataout),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in),
+	.data_out(intdata_out),
 	.rxint(rxint),
 	.txint(txint),
 	.sof(sof),
@@ -227,9 +230,9 @@ floppy pf1
 	.clk(clk),
 	.reset(reset),
 	.enable(dsken),
-	.regaddress(regaddress),
-	.datain(datain),
-	.dataout(diskdataout),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in),
+	.data_out(diskdata_out),
 	.dmal(disk_dmal),
 	.dmas(disk_dmas),
 	._step(_step),
@@ -244,16 +247,16 @@ floppy pf1
 	.blckint(blckint),
 	.syncint(syncint),
 	.wordsync(adkcon[10]),
-	._den(_den),
-	.din(din),
-	.dout(dout),
-	.dclk(dclk),
+	._scs(_scs),
+	.sdi(sdi),
+	.sdo(sdo),
+	.sck(sck),
 	
 	.disk_led(disk_led),
 	.floppy_drives(floppy_drives),
 
-	.direct_sel(direct_sel),
-	.direct_din(direct_din),
+	.direct_scs(direct_scs),
+	.direct_sdi(direct_sdi),
 	.hdd_cmd_req(hdd_cmd_req),
 	.hdd_dat_req(hdd_dat_req),
 	.hdd_addr(hdd_addr),
@@ -272,8 +275,8 @@ audio ad1
 	.cck(cck),
 	.reset(reset),
 	.strhor(strhor),
-	.regaddress(regaddress),
-	.datain(datain),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in),
 	.dmaena(auden[3:0]),
 	.audint(audint[3:0]),
 	.audpen(audpen),
@@ -297,9 +300,9 @@ module intcontroller
 	output	inten,
 	input 	clk,		    	//bus clock
 	input 	reset,			   	//reset 
-	input 	[8:1] regaddress,	//register address inputs
-	input	[15:0] datain,		//bus data in
-	output	[15:0] dataout,		//bus data out
+	input 	[8:1] reg_address_in,	//register address inputs
+	input	[15:0] data_in,		//bus data in
+	output	[15:0] data_out,		//bus data out
 	input	rxint,				//uart receive interrupt
 	input	txint,				//uart transmit interrupt
 	input	sof,				//start of video frame
@@ -323,7 +326,7 @@ parameter INTREQ  = 9'h09c;
 //local signals
 reg		[14:0] intena;			//int enable write register
 reg 	[15:0] intenar;			//int enable read register
-reg		[13:0] intreq;			//int request register
+reg		[14:0] intreq;			//int request register
 reg		[15:0] intreqr;			//int request readback
 
 assign inten = intena[14];
@@ -334,50 +337,50 @@ assign rbfmirror = intreq[11];
 //audio mirror out
 assign audpen[3:0] = intreq[10:7];
 
-//dataout	multiplexer
-assign dataout = intenar | intreqr;
+//data_out	multiplexer
+assign data_out = intenar | intreqr;
 
 //intena register
 always @(posedge clk)
 	if (reset)
 		intena <= 0;
-	else if (regaddress[8:1]==INTENA[8:1])
+	else if (reg_address_in[8:1]==INTENA[8:1])
 	begin
-		if (datain[15])
-			intena[14:0] <= intena[14:0] | datain[14:0];
+		if (data_in[15])
+			intena[14:0] <= intena[14:0] | data_in[14:0];
 		else
-			intena[14:0] <= intena[14:0] & (~datain[14:0]);	
+			intena[14:0] <= intena[14:0] & (~data_in[14:0]);	
 	end
 
 //intenar register
-always @(regaddress or intena)
-	if (regaddress[8:1]==INTENAR[8:1])
+always @(reg_address_in or intena)
+	if (reg_address_in[8:1]==INTENAR[8:1])
 		intenar[15:0] = {1'b0,intena[14:0]};
 	else
 		intenar = 0;
 
 //intreqr register
-always @(regaddress or intreq)
-	if (regaddress[8:1]==INTREQR[8:1])
-		intreqr[15:0] = {2'b00,intreq[13:0]};
+always @(reg_address_in or intreq)
+	if (reg_address_in[8:1]==INTREQR[8:1])
+		intreqr[15:0] = {1'b0,intreq[14:0]};
 	else
 		intreqr = 0;
 
 // control all interrupts, intterupts are registered at the rising edge of clk
-reg [13:0]tmp;
+reg [14:0]tmp;
 
-always @(regaddress or datain or intreq)
+always @(reg_address_in or data_in or intreq)
 	//check if we are addressed and some bits must change
 	//(generate mask tmp[13:0])
-	if (regaddress[8:1]==INTREQ[8:1])
+	if (reg_address_in[8:1]==INTREQ[8:1])
 	begin
-		if (datain[15])
-			tmp[13:0] = intreq[13:0] | datain[13:0];
+		if (data_in[15])
+			tmp[14:0] = intreq[14:0] | data_in[14:0];
 		else
-			tmp[13:0] = intreq[13:0] & (~datain[13:0]);	
+			tmp[14:0] = intreq[14:0] & (~data_in[14:0]);	
  	end
 	else
-		tmp[13:0] = intreq[13:0];
+		tmp[14:0] = intreq[14:0];
 		
 always @(posedge clk)
 begin
@@ -413,40 +416,43 @@ begin
 		intreq[12] <= tmp[12] | syncint;
 		//external interrupt
 		intreq[13] <= tmp[13] | int6;
+		//undocumented interrupt
+		intreq[14] <= tmp[14];
 	end
 end						  
 
 //create m68k interrupt request signals
-reg	[13:0]intreqena;
+reg	[14:0]intreqena;
 always @(intena or intreq)
 begin
 	//and int enable and request signals together
 	if (intena[14])
-		intreqena[13:0] = intreq[13:0] & intena[13:0];
+		intreqena[14:0] = intreq[14:0] & intena[14:0];
 	else
-		intreqena[13:0] = 14'b00000000000000;	
+		intreqena[14:0] = 15'b000_0000_0000_0000;	
 end
 
 //interrupt priority encoder
 always @(posedge clk)
 begin
-	casez (intreqena[13:0])
-		14'b1????????????? : _ipl <= 1;
-		14'b01???????????? : _ipl <= 2;
-		14'b001??????????? : _ipl <= 2;
-		14'b0001?????????? : _ipl <= 3;
-		14'b00001????????? : _ipl <= 3;
-		14'b000001???????? : _ipl <= 3;
-		14'b0000001??????? : _ipl <= 3;
-		14'b00000001?????? : _ipl <= 4;
-		14'b000000001????? : _ipl <= 4;
-		14'b0000000001???? : _ipl <= 4;
-		14'b00000000001??? : _ipl <= 5;
-		14'b000000000001?? : _ipl <= 6;
-		14'b0000000000001? : _ipl <= 6;
-		14'b00000000000001 : _ipl <= 6;
-		14'b00000000000000 : _ipl <= 7;
-		default:			 _ipl <= 7;
+	casez (intreqena[14:0])
+		15'b1?????????????? : _ipl <= 1;
+		15'b01????????????? : _ipl <= 1;
+		15'b001???????????? : _ipl <= 2;
+		15'b0001??????????? : _ipl <= 2;
+		15'b00001?????????? : _ipl <= 3;
+		15'b000001????????? : _ipl <= 3;
+		15'b0000001???????? : _ipl <= 3;
+		15'b00000001??????? : _ipl <= 3;
+		15'b000000001?????? : _ipl <= 4;
+		15'b0000000001????? : _ipl <= 4;
+		15'b00000000001???? : _ipl <= 4;
+		15'b000000000001??? : _ipl <= 5;
+		15'b0000000000001?? : _ipl <= 6;
+		15'b00000000000001? : _ipl <= 6;
+		15'b000000000000001 : _ipl <= 6;
+		15'b000000000000000 : _ipl <= 7;
+		default:			  _ipl <= 7;
 	endcase
 end
 
@@ -465,9 +471,9 @@ module uart
 (
 	input 	clk,		    	//bus clock
 	input 	reset,			   	//reset 
-	input 	[8:1] regaddress,	//register address inputs
-	input	[14:0] datain,		//bus data in
-	output	reg [15:0] dataout,	//bus data out
+	input 	[8:1] reg_address_in,	//register address inputs
+	input	[14:0] data_in,		//bus data in
+	output	reg [15:0] data_out,	//bus data out
 	input	rbfmirror,			//rbf mirror from interrupt controller
 	output 	reg txint,			//transmitter intterrupt
 	output 	reg rxint,			//receiver intterupt
@@ -505,13 +511,13 @@ reg		lrxd2;					//latched rxd signal
 
 //serper register
 always @(posedge clk)
-	if (regaddress[8:1]== SERPER[8:1])
-		serper[14:0] <= datain[14:0];		
+	if (reg_address_in[8:1]== SERPER[8:1])
+		serper[14:0] <= data_in[14:0];		
 
 //tx baudrate generator
 always @(posedge clk)
 	if (txbaud)
-		txdiv[15:0] <= {serper[14:0],1'b0};//serper shifted right because of 7.09MHz clock
+		txdiv[15:0] <= {serper[14:0],1'b1};//serper shifted right because of 7.09MHz clock
 	else
 		txdiv <= txdiv - 1;
 		
@@ -520,25 +526,25 @@ assign txbaud = (txdiv==0) ? 1 : 0;
 //txd shifter
 always @(posedge clk)
 	if (reset)
-		txshift[11:0] <= 12'b000000000001;	
+		txshift[11:0] <= 12'b0000_0000_0001;	
 	else if (txload && txbaud)
 		txshift[11:0] <= {serdat[10:0],1'b0};
 	else if (!tsre && txbaud)
 		txshift[11:0] <= {1'b0,txshift[11:1]};
 		
-assign txd=txshift[0];
+assign txd = txshift[0];
 
 //generate tsre signal
 always @(txshift[11:0])
-	if (txshift[11:0]==12'b000000000001)
+	if (txshift[11:0]==12'b0000_0000_0001)
 		tsre = 1;
 	else
 		tsre = 0;
 
 //serdat register
 always @(posedge clk)
-	if (regaddress[8:1]==SERDAT[8:1])
-		serdat[10:0] <= datain[10:0];
+	if (reg_address_in[8:1]==SERDAT[8:1])
+		serdat[10:0] <= data_in[10:0];
 
 //transmitter state machine
 always @(posedge clk)
@@ -547,7 +553,7 @@ always @(posedge clk)
 	else
 		txstate <= txnextstate;
 		
-always @(txstate or tsre or regaddress)
+always @(txstate or tsre or reg_address_in)
 begin
 	case (txstate)
 		2'b00://wait for new data and go to next state if serdat is loaded
@@ -555,7 +561,7 @@ begin
 				txint = 0;
 				txload = 0;
 				tbe = 1; 
-				if (regaddress[8:1]==SERDAT[8:1])
+				if (reg_address_in[8:1]==SERDAT[8:1])
 					txnextstate = 2'b01;
 				else
 					txnextstate = 2'b00;
@@ -595,7 +601,7 @@ always @(posedge clk)
 	if (rxpreset)
 		rxdiv[15:0] <= {1'b0,serper[14:0]};
 	else if (rxbaud)
-		rxdiv[15:0] <= {serper[14:0],1'b0};//serper shifted right because of 7.09MHz clock
+		rxdiv[15:0] <= {serper[14:0],1'b1};//serper shifted left because of 7.09 MHz clock
 	else
 		rxdiv <= rxdiv - 1;
 		
@@ -611,7 +617,7 @@ end
 //receiver shift register
 always @(posedge clk)
 	if (rxpreset)
-		rxshift[9:0] <= 10'b1111111111;
+		rxshift[9:0] <= 10'b11_1111_1111;
 	else if (rxbaud)
 		rxshift[9:0] <= {lrxd2,rxshift[9:1]};		
 
@@ -632,37 +638,37 @@ begin
 	case (rxstate)
 		2'b00://wait for startbit
 			begin
-			rxint=0;
-			rxpreset=1;
+			rxint = 0;
+			rxpreset = 1;
 			if (!lrxd2)
-				rxnextstate=2'b01;
+				rxnextstate = 2'b01;
 			else
-				rxnextstate=2'b00;
+				rxnextstate = 2'b00;
 			end
 		2'b01://shift in 10 bits (start, 8 data, stop)
 			begin
-			rxint=0;
-			rxpreset=0;
+			rxint = 0;
+			rxpreset = 0;
 			if (!rxshift[0])
-				rxnextstate=2'b10;
+				rxnextstate = 2'b10;
 			else
-				rxnextstate=2'b01;
+				rxnextstate = 2'b01;
 			end
 		2'b10,2'b11://new byte has been received, latch byte and request interrupt
 			begin
-			rxint=1;
-			rxpreset=0;
-			rxnextstate=2'b00;
+			rxint = 1;
+			rxpreset = 0;
+			rxnextstate = 2'b00;
 			end
 	endcase
 end	
 
 //serdatr register
-always @(regaddress or rbfmirror or tbe or tsre or lrxd2 or rxdat)
-	if (regaddress[8:1]==SERDATR[8:1])
-		dataout[15:0] = {1'b0,rbfmirror,tbe,tsre,lrxd2,3'b001,rxdat[7:0]};
+always @(reg_address_in or rbfmirror or tbe or tsre or lrxd2 or rxdat)
+	if (reg_address_in[8:1]==SERDATR[8:1])
+		data_out[15:0] = {1'b0,rbfmirror,tbe,tsre,lrxd2,3'b001,rxdat[7:0]};
 	else
-		dataout[15:0] = 0;
+		data_out[15:0] = 0;
 
 endmodule
 

@@ -21,43 +21,45 @@
 // This module	is a complete implementation of the Amiga OCS Denise chip
 // It supports all OCS modes including HAM, EHB and interlaced video
 //
-// 11-05-2005		-started coding
-// 15-05-2005		-added local beamcounter
+// 11-05-2005	-started coding
+// 15-05-2005	-added local beamcounter
 //				-added bitplanes module
 //				-added color registers
 //				-first experimental version
-// 22-05-2005		-added diwstrt/diwstop
-// 12-06-2005		-started integrating sprites module
-// 21-06-2005		-done more work on integrating sprites module
-// 22-06-2005		-done more work on completing denise
-// 27-06-2005		-added main priority logic (sprites vs playfields)
-// 28-06-2005		-added hold and modify mode
+// 22-05-2005	-added diwstrt/diwstop
+// 12-06-2005	-started integrating sprites module
+// 21-06-2005	-done more work on integrating sprites module
+// 22-06-2005	-done more work on completing denise
+// 27-06-2005	-added main priority logic (sprites vs playfields)
+// 28-06-2005	-added hold and modify mode
 //				-added delay register and video multiplexers
 //				-added video output register
-// 29-06-2005		-added collision detection, Denise is now complete! (but untested)
+// 29-06-2005	-added collision detection, Denise is now complete! (but untested)
 //				-(later this day) Denise works! (hires,interlaced,playfield,sprites)
-// 07-08-2005		-added deniseid register
-// 02-10-2005		-fixed bit 15 of CLXDAT high
-// 19-10-2005		-code now uses sol signal to synchronize local beam counter
-// 11-01-2006		-added blanking circuit
-// 22-01-2006		-added vertical window clipping
-//JB:
-// 2008-07-08		- added hires output (for scandoubler)
-//					- changed Denise ID (sometimes Show Config detected wrong chip type)
-// 2008-11-23		- playfield collision detection fix
-//					- changed horizontal counter counting range (fixes problems with overscan: Stardust, Forgoten Worlds)
-//					- added strhor signal to synchronize local horizontal counter
-// 2009-01-09		- added sprena signal (disables display of sprites until BPL1DAT is written)
-// 2009-03-08		- removed sof and sol inputs as they are no longer used
+// 07-08-2005	-added deniseid register
+// 02-10-2005	-fixed bit 15 of CLXDAT high
+// 19-10-2005	-code now uses sol signal to synchronize local beam counter
+// 11-01-2006	-added blanking circuit
+// 22-01-2006	-added vertical window clipping
+// ----------
+// JB:
+// 2008-07-08	- added hires output (for scandoubler)
+//				- changed Denise ID (sometimes Show Config detected wrong chip type)
+// 2008-11-23	- playfield collision detection fix
+//				- changed horizontal counter counting range (fixes problems with overscan: Stardust, Forgoten Worlds)
+//				- added strhor signal to synchronize local horizontal counter
+// 2009-01-09	- added sprena signal (disables display of sprites until BPL1DAT is written)
+// 2009-03-08	- removed sof and sol inputs as they are no longer used
+// 2009-05-24	- clean-up & renaming
 
 module Denise
 (
 	input 	clk,		   			//bus clock / lores pixel clock
 	input 	reset,					//reset
 	input	strhor,					//horizontal strobe
-	input 	[8:1] regaddress,		//register adress inputs
-	input 	[15:0] datain,			//bus data in
-	output 	[15:0] dataout,			//bus data out
+	input 	[8:1] reg_address_in,	//register adress inputs
+	input 	[15:0] data_in,			//bus data in
+	output 	[15:0] data_out,		//bus data out
 	input	blank,					//blanking input
 	output 	[3:0] red, 				//red componenent video out
 	output 	[3:0] green,  			//green component video out
@@ -74,7 +76,7 @@ parameter DENISEID = 9'h07C;
 parameter BPL1DAT  = 9'h110;
 
 //local signals
-reg		[8:0] hpos;			//horizontal beamcounter
+reg		[8:0] hpos;				//horizontal beamcounter
 reg		homod;					//HAM mode select
 reg		dblpf;					//double playfield select
 reg		[6:0] bplcon2;			//bplcon2 (playfield video priority) register
@@ -101,15 +103,15 @@ wire	[11:0] tablergb;		//color table rgb data out
 reg		[11:0] outrgb;			//final multiplexer rgb output data
 reg		window;					//window enable signal
 
-wire	[15:0] idout; 			//deniseid dataout
-wire	[15:0] colout;			//colision detection dataout
+wire	[15:0] deniseid_out; 	//deniseid data_out
+wire	[15:0] col_out;			//colision detection data_out
 
 reg		sprena;					//in OCS sprites are visible between first write to BPL1DAT and end of scanline
 
 //--------------------------------------------------------------------------------------
 
 //data out mulitplexer
-assign dataout = colout | idout;
+assign data_out = col_out | deniseid_out;
 
 //--------------------------------------------------------------------------------------
 
@@ -143,7 +145,7 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reset || strhor)
 		sprena <= 0;
-	else if (regaddress[8:1]==BPL1DAT[8:1])
+	else if (reg_address_in[8:1]==BPL1DAT[8:1])
 		sprena <= 1;
 
 //bplcon0 register
@@ -154,30 +156,30 @@ always @(posedge clk)
 		homod <= 0;
 		dblpf <= 0;
 	end
-	else if (regaddress[8:1]==BPLCON0[8:1])
+	else if (reg_address_in[8:1]==BPLCON0[8:1])
 	begin
-		hires <= datain[15];
-		homod <= datain[11];
-		dblpf <= datain[10];
+		hires <= data_in[15];
+		homod <= data_in[11];
+		dblpf <= data_in[10];
 	end	
 
 //bplcon2 register
 always @(posedge clk)
 	if (reset)
 		bplcon2 <= 0;
-	else if (regaddress[8:1]==BPLCON2[8:1])
-		bplcon2[6:0] <= datain[6:0];
+	else if (reg_address_in[8:1]==BPLCON2[8:1])
+		bplcon2[6:0] <= data_in[6:0];
 		
 //diwstart and diwstop registers (vertical and horizontal limits of display window)
 always @(posedge clk)
-	if (regaddress[8:1]==DIWSTRT[8:1])
-		diwstrt[7:0] <= datain[7:0];
+	if (reg_address_in[8:1]==DIWSTRT[8:1])
+		diwstrt[7:0] <= data_in[7:0];
 		
 always @(posedge clk)
-	if (regaddress[8:1]==DIWSTOP[8:1])
-		diwstop[7:0] <= datain[7:0];
+	if (reg_address_in[8:1]==DIWSTOP[8:1])
+		diwstop[7:0] <= data_in[7:0];
 
-assign idout = regaddress[8:1]==DENISEID[8:1] ? 16'hFF_FF : 16'h00_00;
+assign deniseid_out = reg_address_in[8:1]==DENISEID[8:1] ? 16'hFF_FF : 16'h00_00;
 
 //--------------------------------------------------------------------------------------
 
@@ -196,8 +198,8 @@ always @(posedge clk)
 bitplanes bplm0 
 (
 	.clk(clk),
-	.regaddress(regaddress),
-	.datain(datain),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in),
 	.hires(hires),
 	.hpos(hpos),
 	.bpldata(bpldata)	
@@ -218,9 +220,9 @@ sprites sprm0
 (
 	.clk(clk),
 	.reset(reset),
-	.regaddress(regaddress),
+	.reg_address_in(reg_address_in),
 	.hpos(hpos),
-	.datain(datain),
+	.data_in(data_in),
 	.sprena(sprena),
 	.nsprite(nsprite),
 	.sprdata(sprdata)	
@@ -239,8 +241,8 @@ sprpriority spm0
 colortable ctbm0
 (
 	.clk(clk),
-	.regaddress(regaddress),
-	.datain(datain[11:0]),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in[11:0]),
 	.select(tabledata),
 	.rgb(tablergb)		
 );
@@ -249,8 +251,8 @@ colortable ctbm0
 hamgenerator ham0
 (
 	.clk(clk),
-	.regaddress(regaddress),
-	.datain(datain[11:0]),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in[11:0]),
 	.bpldata(bpldata),
 	.rgb(hamrgb)		
 );
@@ -260,9 +262,9 @@ collision col0
 (
 	.clk(clk),
 	.reset(reset),
-	.regaddress(regaddress),
-	.datain(datain),
-	.dataout(colout),
+	.reg_address_in(reg_address_in),
+	.data_in(data_in),
+	.data_out(col_out),
 	.bpldata(bpldata),
 	.nsprite(nsprite)	
 );
@@ -347,8 +349,8 @@ endmodule
 module colortable
 (
 	input 	clk,		   			//bus clock / lores pixel clock
-	input 	[8:1] regaddress,		//register adress inputs
-	input 	[11:0] datain,			//bus data in
+	input 	[8:1] reg_address_in,		//register adress inputs
+	input 	[11:0] data_in,			//bus data in
 	input	[5:0] select,			//color select input
 	output	reg [11:0] rgb			//RGB output
 );
@@ -362,8 +364,8 @@ wire	[11:0] selcolor; 			//selected color register output
 
 //writing of color table from bus (implemented using dual port distributed ram)
 always @(posedge clk)
-	if (regaddress[8:6]==COLORBASE[8:6])
-		colortable[regaddress[5:1]] <= datain[11:0];
+	if (reg_address_in[8:6]==COLORBASE[8:6])
+		colortable[reg_address_in[5:1]] <= data_in[11:0];
 
 //reading of color table
 assign selcolor = colortable[select[4:0]];   
@@ -445,8 +447,8 @@ endmodule
 module hamgenerator
 (
 	input 	clk,		   			//bus clock / lores pixel clock
-	input 	[8:1] regaddress,		//register adress inputs
-	input 	[11:0] datain,			//bus data in
+	input 	[8:1] reg_address_in,		//register adress inputs
+	input 	[11:0] data_in,			//bus data in
 	input	[5:0] bpldata,			//bitplane data input
 	output	reg [11:0] rgb			//RGB output
 );
@@ -462,8 +464,8 @@ wire	[11:0] selcolor;			//selected color output from color table
 
 //writing of HAM color table from bus (implemented using dual port distributed ram)
 always @(posedge clk)
-	if (regaddress[8:5]==COLORBASE[8:5])
-		colortable[regaddress[4:1]] <= datain[11:0];
+	if (reg_address_in[8:5]==COLORBASE[8:5])
+		colortable[reg_address_in[4:1]] <= data_in[11:0];
 
 //reading of color table
 assign selcolor = colortable[bpldata[3:0]];   
@@ -493,12 +495,12 @@ endmodule
 //this is the collision detection module
 module collision
 (
-	input 	clk,				//bus clock / lores pixel clock
-	input	reset,				//reset
-	input 	[8:1] regaddress,	//register adress inputs
-	input 	[15:0] datain,		//bus data in
-	output	[15:0] dataout,		//bus data out
-	input	[5:0] bpldata,		//bitplane serial video data in
+	input 	clk,					//bus clock / lores pixel clock
+	input	reset,					//reset
+	input 	[8:1] reg_address_in,	//register adress inputs
+	input 	[15:0] data_in,			//bus data in
+	output	[15:0] data_out,		//bus data out
+	input	[5:0] bpldata,			//bitplane serial video data in
 	input	[7:0] nsprite	
 );
 
@@ -519,8 +521,8 @@ wire	evenmatch;				//even bitplane data matches clxcon settings
 always @(posedge clk)
 	if (reset) //reset to safe value
 		clxcon <= 16'h0fff;
-	else if (regaddress[8:1]==CLXCON[8:1])
-		clxcon <= datain;
+	else if (reg_address_in[8:1]==CLXCON[8:1])
+		clxcon <= data_in;
 
 //--------------------------------------------------------------------------------------
 
@@ -560,7 +562,7 @@ assign cl[14] = sprmatch[2] & sprmatch[3];	//sprite 4(or 5) to sprite 6(or 7)
 
 //register detected collisions
 always @(posedge clk)
-	if (regaddress[8:1]==CLXDAT[8:1]) //if clxdat is read, clxdat is cleared to all zero's
+	if (reg_address_in[8:1]==CLXDAT[8:1]) //if clxdat is read, clxdat is cleared to all zero's
 		clxdat <= 0;
 	else //else register collisions
 		clxdat <= clxdat[14:0] | cl[14:0];
@@ -568,6 +570,6 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //reading of clxdat register
-assign dataout = regaddress[8:1]==CLXDAT[8:1] ? {1'b1,clxdat[14:0]} : 0;
+assign data_out = reg_address_in[8:1]==CLXDAT[8:1] ? {1'b1,clxdat[14:0]} : 0;
 
 endmodule

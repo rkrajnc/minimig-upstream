@@ -20,18 +20,18 @@
 // This is the user IO module
 // joystick signals are _joy[5:0]=[fire2,fire,up,down,left,right];
 //
-// 16-10-2005		-started coding
-// 17-10-2005		-added proper reset for mouse buttons/counters
+// 16-10-2005	-started coding
+// 17-10-2005	-added proper reset for mouse buttons/counters
 //				-improved mouse startup timing
-// 22-11-2005		-added joystick 1
-// 05-02-2006		-unused buttons of joystick port 2 are now high
-// 06-02-2006		-cleaned up code
+// 22-11-2005	-added joystick 1
+// 05-02-2006	-unused buttons of joystick port 2 are now high
+// 06-02-2006	-cleaned up code
 //				-added user output
-// 27-12-2006		-added joystick port 1 and automatic joystick/mouse switch
+// 27-12-2006	-added joystick port 1 and automatic joystick/mouse switch
 //				-started coding osd display
-// 28-12-2006		-more osd display work done
-// 29-12-2006		-fixed some bugs in osd module
-// 30-12-2006		-cleaned up osd module, added osdctrl input
+// 28-12-2006	-more osd display work done
+// 29-12-2006	-fixed some bugs in osd module
+// 30-12-2006	-cleaned up osd module, added osd_ctrl input
 //-----------------------------------------------------------------------------
 // JB:
 // 2008-06-17	- added osd control by joy2
@@ -46,38 +46,45 @@
 // 2008-12-27	- added hdd_ena output
 // 2009-02-10	- sampling of joystick signals using sof (acting as simple debouncing filter)
 // 2009-03-21	- disable keyboard until all keys are released
-
+// 2009-05-08	- fixed problem with activation of OSD menu using UP+DOWN joystick signals
+// 2009-05-24	- clean-up & renaming
+// 2009-07-18	- change of memory_config takes effect after reset
+// 2009-08-11	- hdd_ena replaced with ide_config
+// 2009-08-17	- OSD position moved right
 
 module userio
 (
 	input 	clk,		    		//bus clock
-	input 	reset,			   		//reset 
+	input 	reset,			   		//reset
+	input	clk28m,
+	input	c1,
+	input	c3,
 	input	sol,					//start of video line
 	input	sof,					//start of video frame 
-	input 	[8:1] regaddress,		//register adress inputs
-	input	[15:0] datain,			//bus data in
-	output	reg [15:0] dataout,		//bus data out
+	input 	[8:1] reg_address_in,	//register adress inputs
+	input	[15:0] data_in,			//bus data in
+	output	reg [15:0] data_out,	//bus data out
 	inout	ps2mdat,				//mouse PS/2 data
 	inout	ps2mclk,				//mouse PS/2 clk
 	output	_fire0,					//joystick 0 fire output (to CIA)
 	output	_fire1,					//joystick 1 fire output (to CIA)
 	input	[5:0] _joy1,			//joystick 1 in (default mouse port)
 	input	[5:0] _joy2,			//joystick 2 in (default joystick port)
-	input	[7:0] osdctrl,			//OSD control (minimig->host, [menu,select,down,up])
+	input	[7:0] osd_ctrl,			//OSD control (minimig->host, [menu,select,down,up])
 	output	reg keydis,				//disables Amiga keyboard while OSD is active
-	input	_den,					//SPI enable
-	input	din,		  			//SPI data in
-	output	dout,	 				//SPI data out
-	input	dclk,	  				//SPI clock
-	output	osdblank,				//osd overlay, normal video blank output
-	output	osdpixel,				//osd video pixel
+	input	_scs,					//SPI enable
+	input	sdi,		  			//SPI data in
+	output	sdo,	 				//SPI data out
+	input	sck,	  				//SPI clock
+	output	osd_blank,				//osd overlay, normal video blank output
+	output	osd_pixel,				//osd video pixel
 	output	[1:0] lr_filter,
 	output	[1:0] hr_filter,
 	output	[3:0] memory_config,
 	output	[3:0] chipset_config,
 	output	[3:0] floppy_config,
 	output	[1:0] scanline,
-	output	hdd_ena,
+	output	[2:0] ide_config,
 	output	usrrst,					//user reset from osd module
 	output	bootrst					//user reset to bootloader
 );
@@ -92,8 +99,8 @@ wire	_mthird;					//middle mouse button
 wire	_mright;					//right mouse buttons
 reg		joy1enable;					//joystick 1 enable (mouse/joy switch)
 reg		joy2enable;					//joystick 2 enable when no osd
-wire	osdenable;					//osd enable
-reg		[7:0] t_osdctrl;			//JB: osd control lines
+wire	osd_enable;					//osd enable
+reg		[7:0] t_osd_ctrl;			//JB: osd control lines
 wire	test_load;					//load test value to mouse counter 
 wire	[15:0] test_data;			//mouse counter test value
 
@@ -117,9 +124,9 @@ parameter KEY_RIGHT = 8'h4E;
 
 //disable keyboard when OSD is displayed
 always @(posedge clk)
-	if (osdenable)
+	if (osd_enable)
 		keydis <= 1;
-	else if (t_osdctrl==0) //enable keyboard when OSD is not displayed and all keys are released
+	else if (t_osd_ctrl==0) //enable keyboard when OSD is not displayed and all keys are released
 		keydis <= 0;											   
 											   
 //input synchronization of external signals
@@ -132,31 +139,34 @@ always @(posedge clk)
 
 //port 2 joystick disable in osd
 always @(posedge clk)
-	if (osdenable)
+	if (osd_enable)
 		joy2enable <= 0;
 	else if (_xjoy2[5:0] == 6'b11_1111)
 		joy2enable <= 1;
 
 assign _sjoy2[5:0] = joy2enable ? _xjoy2[5:0] : 6'b11_1111;
 
-always @(joy2enable or _xjoy2 or osdctrl)
+always @(joy2enable or _xjoy2 or osd_ctrl)
 	if (~joy2enable)
 		if (~_xjoy2[5] || (~_xjoy2[3] && ~_xjoy2[2]))
-			t_osdctrl = KEY_MENU;
+			t_osd_ctrl = KEY_MENU;
 		else if (~_xjoy2[4])
-			t_osdctrl = KEY_ENTER;
+			t_osd_ctrl = KEY_ENTER;
 		else if (~_xjoy2[3])
-			t_osdctrl = KEY_UP;
+			t_osd_ctrl = KEY_UP;
 		else if (~_xjoy2[2])
-			t_osdctrl = KEY_DOWN;
+			t_osd_ctrl = KEY_DOWN;
 		else if (~_xjoy2[1])
-			t_osdctrl = KEY_LEFT;
+			t_osd_ctrl = KEY_LEFT;
 		else if (~_xjoy2[0])
-			t_osdctrl = KEY_RIGHT;
+			t_osd_ctrl = KEY_RIGHT;
 		else
-			t_osdctrl = osdctrl;
+			t_osd_ctrl = osd_ctrl;
 	else
-		t_osdctrl = osdctrl;
+		if (~_xjoy2[3] && ~_xjoy2[2])
+			t_osd_ctrl = KEY_MENU;
+		else
+			t_osd_ctrl = osd_ctrl;
 
 //port 1 automatic mouse/joystick switch
 always @(posedge clk)
@@ -169,25 +179,25 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //data output multiplexer
-always @(regaddress or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mright or _mthird)
-	if ((regaddress[8:1]==JOY0DAT[8:1]) && joy1enable)//read port 1 joystick
-		dataout[15:0] = {6'b000000,~_sjoy1[1],_sjoy1[3]^_sjoy1[1],6'b000000,~_sjoy1[0],_sjoy1[2]^_sjoy1[0]};
-	else if (regaddress[8:1]==JOY0DAT[8:1])//read port 1 mouse
-		dataout[15:0] = mouse0dat[15:0];
-	else if (regaddress[8:1]==JOY1DAT[8:1])//read port 2 joystick
-		dataout[15:0] = {6'b000000,~_sjoy2[1],_sjoy2[3]^_sjoy2[1],6'b000000,~_sjoy2[0],_sjoy2[2]^_sjoy2[0]};
-	else if (regaddress[8:1]==POTINP[8:1])//read mouse and joysticks extra buttons
-		dataout[15:0] = {1'b0,_sjoy2[5],3'b010,_mright&_sjoy1[5],1'b0,_mthird,8'b00000000};
+always @(reg_address_in or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mright or _mthird)
+	if ((reg_address_in[8:1]==JOY0DAT[8:1]) && joy1enable)//read port 1 joystick
+		data_out[15:0] = {6'b000000,~_sjoy1[1],_sjoy1[3]^_sjoy1[1],6'b000000,~_sjoy1[0],_sjoy1[2]^_sjoy1[0]};
+	else if (reg_address_in[8:1]==JOY0DAT[8:1])//read port 1 mouse
+		data_out[15:0] = mouse0dat[15:0];
+	else if (reg_address_in[8:1]==JOY1DAT[8:1])//read port 2 joystick
+		data_out[15:0] = {6'b000000,~_sjoy2[1],_sjoy2[3]^_sjoy2[1],6'b000000,~_sjoy2[0],_sjoy2[2]^_sjoy2[0]};
+	else if (reg_address_in[8:1]==POTINP[8:1])//read mouse and joysticks extra buttons
+		data_out[15:0] = {1'b0,_sjoy2[5],3'b010,_mright&_sjoy1[5],1'b0,_mthird,8'b00000000};
 	else
-		dataout[15:0] = 16'h0000;
+		data_out[15:0] = 16'h0000;
 
 //assign fire outputs to cia A
 assign _fire1 = _sjoy2[4];
 assign _fire0 = _sjoy1[4] & _mleft;
 
 //JB: some trainers writes to JOYTEST register to reset current mouse counter
-assign test_load = regaddress[8:1]==JOYTEST[8:1] ? 1 : 0;
-assign test_data = datain[15:0];
+assign test_load = reg_address_in[8:1]==JOYTEST[8:1] ? 1 : 0;
+assign test_data = data_in[15:0];
 
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
@@ -217,23 +227,26 @@ osd	osd1
 (
 	.clk(clk),
 	.reset(reset),
+	.clk28m(clk28m),
+	.c1(c1),
+	.c3(c3),
 	.sol(sol),
 	.sof(sof),
-	.osdctrl(t_osdctrl),
-	._den(_den),
-	.din(din),
-	.dout(dout),
-	.dclk(dclk),
-	.osdblank(osdblank),
-	.osdpixel(osdpixel),
-	.osdenable(osdenable),
+	.osd_ctrl(t_osd_ctrl),
+	._scs(_scs),
+	.sdi(sdi),
+	.sdo(sdo),
+	.sck(sck),
+	.osd_blank(osd_blank),
+	.osd_pixel(osd_pixel),
+	.osd_enable(osd_enable),
 	.lr_filter(lr_filter),
 	.hr_filter(hr_filter),
 	.memory_config(memory_config),
 	.chipset_config(chipset_config),
 	.floppy_config(floppy_config),
 	.scanline(scanline),
-	.hdd_ena(hdd_ena),
+	.ide_config(ide_config),
 	.usrrst(usrrst),
 	.bootrst(bootrst)
 );
@@ -253,49 +266,70 @@ module osd
 (
 	input 	clk,		    	//pixel clock
 	input	reset,				//reset
+	input	clk28m,				//35ns clock
+	input	c1,					//clk28m domain clock enable
+	input	c3,
 	input	sol,				//start of video line
 	input	sof,				//start of video frame 
-	input	[7:0] osdctrl,		//keycode for OSD control (Amiga keyboard codes + additional keys coded as values > 80h)
-	input	_den,				//SPI enable
-	input	din,		  		//SPI data in
-	output	dout,	 			//SPI data out
-	input	dclk,	  			//SPI clock
-	output	osdblank,			//osd overlay, normal video blank output
-	output	osdpixel,			//osd video pixel
-	output	osdenable,			//osd enable
+	input	[7:0] osd_ctrl,		//keycode for OSD control (Amiga keyboard codes + additional keys coded as values > 80h)
+	input	_scs,				//SPI enable
+	input	sdi,		  		//SPI data in
+	output	sdo,	 			//SPI data out
+	input	sck,	  			//SPI clock
+	output	osd_blank,			//osd overlay, normal video blank output
+	output	osd_pixel,			//osd video pixel
+	output	osd_enable,			//osd enable
 	output	reg [1:0] lr_filter,
 	output	reg [1:0] hr_filter,
 	output	reg [3:0] memory_config = 0,
 	output	reg [3:0] chipset_config = 0,
 	output	reg [3:0] floppy_config = 0,
 	output	reg [1:0] scanline = 0,
-	output	reg	hdd_ena = 0,		//enable hard disk support
+	output	reg	[2:0] ide_config = 0,		//enable hard disk support
 	output	usrrst,
 	output	bootrst
 );
 
 //local signals
-reg		[8:0] horbeam;			//horizontal beamcounter
+reg		[10:0] horbeam;			//horizontal beamcounter
 reg		[8:0] verbeam;			//vertical beamcounter
-reg		[7:0] osdbuf [1023:0];	//osd video buffer
+reg		[7:0] osdbuf [2047:0];	//osd video buffer
 wire	osdframe;				//true if beamcounters within osd frame
 reg		[7:0] bufout;			//osd buffer read data
-reg 	osdenable1;				//osd display enable 1
-reg 	osdenable2;				//osd display enable 2 (synchronized to start of frame)
-reg 	[9:0] wraddr;			//osd buffer write address
+reg 	osd_enable1;				//osd display enable 1
+reg 	osd_enable2;				//osd display enable 2 (synchronized to start of frame)
+reg 	[10:0] wraddr;			//osd buffer write address
 wire	[7:0] wrdat;			//osd buffer write data
 wire	wren;					//osd buffer write enable
 
 reg		[3:0] highlight;		//highlighted line number
 reg		invert;					//invertion of highlighted line
+reg		[5:0] vpos;
+reg		vena;
+
+reg 	[3:0] t_memory_config = 0;
+reg		[2:0] t_ide_config = 0;
+
+//--------------------------------------------------------------------------------------
+// memory configuration select signal
+//--------------------------------------------------------------------------------------
+
+// configuration changes only while reset is active
+always @(posedge clk)
+	if (reset)
+		memory_config <= t_memory_config;
+
+always @(posedge clk)
+	if (reset)
+		ide_config <= t_ide_config;
 
 //--------------------------------------------------------------------------------------
 //OSD video generator
 //--------------------------------------------------------------------------------------
 
 //osd local horizontal beamcounter
-always @(posedge clk)
-	if (sol)
+always @(posedge clk28m)
+	if (sol && !c1 && !c3)
 		horbeam <= 0;
 	else
 		horbeam <= horbeam + 1;
@@ -306,30 +340,38 @@ always @(posedge clk)
 		verbeam <= 0;
 	else if (sol)
 		verbeam <= verbeam + 1;
+		
+always @(posedge clk)
+	if (sol)
+		vpos[5:0] <= verbeam[5:0];
 
 //--------------------------------------------------------------------------------------
 //generate osd video frame
-reg	hframe,vframe;
+
 
 //horizontal part..
-always @(posedge clk)
-	if (horbeam[8])
-		hframe <= 0;
-	else if (horbeam[7])
-		hframe <= 1;
+wire hframe;
+
+assign hframe = (horbeam[7] & horbeam[8] & horbeam[9] & ~horbeam[10]) | (~horbeam[8] & ~horbeam[9] & horbeam[10]) | (~horbeam[7] & horbeam[8] & ~horbeam[9] & horbeam[10]);
 
 //vertical part..
+reg vframe;
+
 always @(posedge clk)
-	if (verbeam[7] && ~verbeam[6])
+	if (verbeam[7] && !verbeam[6])
 		vframe <= 1;
 	else if (verbeam[0])
 		vframe <= 0;
+		
+always @(posedge clk)
+	if (sol)
+		vena <= vframe;
 
 //combine..
-assign osdframe = vframe & hframe & osdenable2;
+assign osdframe = vframe & hframe & osd_enable2;
 
 always @(posedge clk)
-	if (~highlight[3] && verbeam[5:3]==highlight[2:0] && ~verbeam[6])
+	if (~highlight[3] && verbeam[5:3]==highlight[2:0] && !verbeam[6])
 		invert <= 1;
 	else if (verbeam[0])
 		invert <= 0;
@@ -337,8 +379,8 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 //assign osd blank and pixel outputs
-assign osdpixel = invert ^ bufout[verbeam[2:0]];
-assign osdblank = osdframe;
+assign osd_pixel = invert ^ (vena & bufout[vpos[2:0]]);
+assign osd_blank = osdframe;
 
 //--------------------------------------------------------------------------------------
 //video buffer
@@ -349,10 +391,10 @@ assign osdblank = osdframe;
 //this buffer should be a single blockram
 always @(posedge clk)//input part
 	if (wren)
-		osdbuf[wraddr[9:0]] <= wrdat[7:0];
+		osdbuf[wraddr[10:0]] <= wrdat[7:0];
 		
-always @(posedge clk)//output part
-	bufout[7:0] <= osdbuf[{verbeam[5:3],horbeam[6:0]}];
+always @(posedge clk28m)//output part
+	bufout[7:0] <= osdbuf[{vpos[5:3],horbeam[8]^horbeam[7],~horbeam[7],horbeam[6:1]}];
 
 //--------------------------------------------------------------------------------------
 //interface to host
@@ -365,11 +407,11 @@ reg 	[2:0] spicmd;		//spi command
 spi8 spi0
 (
 	.clk(clk),
-	.scs(~_den),
-	.sdi(din),
-	.sdo(dout),
-	.sck(dclk),
-	.in(osdctrl),
+	._scs(_scs),
+	.sdi(sdi),
+	.sdo(sdo),
+	.sck(sck),
+	.in(osd_ctrl),
 	.out(wrdat[7:0]),
 	.rx(rx),
 	.cmd(cmd)
@@ -382,7 +424,7 @@ spi8 spi0
 // 8'b00100NNN 	write data to osd buffer line <NNN>
 // 8'b01000000	disable displaying of osd
 // 8'b01100000	enable displaying of osd
-// 8'b10100000	read osdctrl (controls for osd)
+// 8'b10100000	read osd_ctrl (controls for osd)
 // 8'b10000000	reset Minimig
 // 8'b1010xxSS	set scanline mode
 // 8'b1011xxxH	set hdd config (H-enable IDE0)
@@ -403,7 +445,7 @@ always @(posedge clk)
 //hdd config
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1011)
-		hdd_ena <= wrdat[0];
+		t_ide_config <= wrdat[2:0];
 		
 //floppy speed select
 always @(posedge clk)
@@ -423,17 +465,17 @@ always @(posedge clk)
 //memory configuration
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1111)
-		memory_config[3:0] <= wrdat[3:0];
+		t_memory_config[3:0] <= wrdat[3:0];
 
 //address counter and buffer write control (write line <NNN> command)
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:5]==3'b001)//set linenumber from incoming command byte
-		wraddr[9:0] <= {wrdat[2:0],7'b0000000};
+		wraddr[10:0] <= {wrdat[2:0],8'b0000_0000};
 	else if (rx)	//increment for every data byte that comes in
-		wraddr[9:0] <= wraddr[9:0] + 1;
+		wraddr[10:0] <= wraddr[10:0] + 1;
 
 always @(posedge clk)
-	if (~osdenable1)
+	if (~osd_enable1)
 		highlight <= 4'b1000;
 	else if (rx && cmd && wrdat[7:4]==4'b0011)
 		highlight <= wrdat[3:0];
@@ -442,16 +484,16 @@ always @(posedge clk)
 always @(posedge clk)
 begin
 	if (spicmd[2:0]==3'b010)//disable
-		osdenable1 <= 0;
+		osd_enable1 <= 0;
 	else if (spicmd[2:0]==3'b011)//enable
-		osdenable1 <= 1;
+		osd_enable1 <= 1;
 end
 
-//synchronize osdenable 1 to start-of-frame
+//synchronize osd_enable 1 to start-of-frame
 always @(posedge clk)
-	osdenable2 <= osdenable1;
+	osd_enable2 <= osd_enable1;
 	
-assign osdenable = osdenable2;
+assign osd_enable = osd_enable2;
 
 assign wren = rx && ~cmd && spicmd==3'b001 ? 1 : 0;
 
@@ -475,16 +517,16 @@ endmodule
 //outgoing data is shifted/changed at the negative clock edge
 //msb is sent first
 //         ____   _   _   _   _
-//dclk   ->    |_| |_| |_| |_|
+//sck   ->    |_| |_| |_| |_|
 //data   ->     777 666 555 444
 //sample ->      ^   ^   ^   ^
 //strobe is asserted at the end of every byte and signals that new data must
 //be registered at the out output. At the same time, new data is read from the in input.
-//The data at input in is also sent as the first byte after _den is asserted (without strobe!). 
+//The data at input in is also sent as the first byte after _scs is asserted (without strobe!). 
 module spi8
 (
 	input 	clk,		    //pixel clock
-	input	scs,			//SPI chip select
+	input	_scs,			//SPI chip select
 	input	sdi,		  	//SPI data in
 	output	sdo,	 		//SPI data out
 	input	sck,	  		//SPI clock
@@ -495,9 +537,9 @@ module spi8
 );
 
 //locals
-reg [2:0]bit_cnt;		//bit counter
-reg [7:0]sdi_reg;		//input shift register	(rising edge of SPI clock)
-reg [7:0]sdo_reg;		//output shift register	 (falling edge of SPI clock)
+reg [2:0] bit_cnt;		//bit counter
+reg [7:0] sdi_reg;		//input shift register	(rising edge of SPI clock)
+reg [7:0] sdo_reg;		//output shift register	 (falling edge of SPI clock)
 
 reg new_byte;			//new byte (8 bits) received
 reg rx_sync;			//synchronization to clk (first stage)
@@ -510,8 +552,8 @@ always @(posedge sck)
 assign out = sdi_reg;
 
 //------ receive bit counter ------//
-always @(posedge sck or negedge scs)
-	if (~scs)
+always @(posedge sck or posedge _scs)
+	if (_scs)
 		bit_cnt <= 0;					//always clear bit counter when CS is not active
 	else
 		bit_cnt <= bit_cnt + 1;		//increment bit counter when new bit has been received
@@ -534,8 +576,8 @@ always @(posedge clk)
 //------ cmd signal generation ------//
 //this signal becomes active after reception of first byte
 //when any other byte is received it's deactivated indicating data bytes
-always @(posedge sck or negedge scs)
-	if (~scs)
+always @(posedge sck or posedge _scs)
+	if (_scs)
 		first_byte <= 1;		//set when CS is not active
 	else if (bit_cnt==7)
 		first_byte <= 0;		//cleared after reception of first byte
@@ -552,7 +594,7 @@ always @(negedge sck)	//output change on falling SPI clock
 		sdo_reg <= {sdo_reg[6:0],1'b0};
 
 //------ SPI output signal ------//
-assign sdo = scs & sdo_reg[7];	//force zero if SPI not selected
+assign sdo = ~_scs & sdo_reg[7];	//force zero if SPI not selected
 
 endmodule
 

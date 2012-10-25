@@ -32,15 +32,15 @@
 // 22-02-2006		-fixed dma interrupt timing, Turrican-3 theme now plays correct!
 //
 // -- JB --
-// 2008-10-12		- code clean-up
-// 2008-12-20		- changed DMA slot allocation
-// 2009-03-08		- horbeam removed
-//					- strhor signal added (cures problems with freezing of some games)
-//                  - corrupted Agony title song
-// 2009-03-17		- audio FSM rewritten to comply more exactly with HRM state diagram, Agony still has problems
-// 2009-03-26		- audio dma requests are latched and cleared at the start of every scan line, seemd to cure Agony problem
-//                  - Forgotten Worlds freezes at game intro screen due to missed audio irq
-
+// 2008-10-12	- code clean-up
+// 2008-12-20	- changed DMA slot allocation
+// 2009-03-08	- horbeam removed
+//				- strhor signal added (cures problems with freezing of some games)
+//				- corrupted Agony title song
+// 2009-03-17	- audio FSM rewritten to comply more exactly with HRM state diagram, Agony still has problems
+// 2009-03-26	- audio dma requests are latched and cleared at the start of every scan line, seemd to cure Agony problem
+//				- Forgotten Worlds freezes at game intro screen due to missed audio irq
+// 2009-05-24	- clean-up & renaming
 
 
 
@@ -67,19 +67,19 @@
 
 module audio
 (
-	input 	clk,		    	//bus clock
-	input 	cck,		    	//colour clock enable
-	input 	reset,			   	//reset 
-	input	strhor,				//horizontal strobe
-	input 	[8:1] regaddress,	//register address input
-	input	[15:0] datain,		//bus data in
-	input	[3:0] dmaena,		//audio dma register input
-	output	[3:0] audint,		//audio interrupt request
-	input	[3:0] audpen,		//audio interrupt pending
-	output	reg [3:0] dmal,		//dma request 
-	output	reg [3:0] dmas,		//dma special 
-	output	left,				//audio bitstream out left
-	output	right				//audio bitstream out right
+	input 	clk,		    		//bus clock
+	input 	cck,		    		//colour clock enable
+	input 	reset,			   		//reset 
+	input	strhor,					//horizontal strobe
+	input 	[8:1] reg_address_in,	//register address input
+	input	[15:0] data_in,			//bus data in
+	input	[3:0] dmaena,			//audio dma register input
+	output	[3:0] audint,			//audio interrupt request
+	input	[3:0] audpen,			//audio interrupt pending
+	output	reg [3:0] dmal,			//dma request 
+	output	reg [3:0] dmas,			//dma special 
+	output	left,					//audio bitstream out left
+	output	right					//audio bitstream out right
 );
 
 //register names and addresses
@@ -104,10 +104,10 @@ wire	[6:0] vol3;			//channel 3 volume
 //--------------------------------------------------------------------------------------
 
 //address decoder
-assign aen[0] = (regaddress[8:4]==AUD0BASE[8:4]) ? 1 : 0;
-assign aen[1] = (regaddress[8:4]==AUD1BASE[8:4]) ? 1 : 0;
-assign aen[2] = (regaddress[8:4]==AUD2BASE[8:4]) ? 1 : 0;
-assign aen[3] = (regaddress[8:4]==AUD3BASE[8:4]) ? 1 : 0;
+assign aen[0] = (reg_address_in[8:4]==AUD0BASE[8:4]) ? 1 : 0;
+assign aen[1] = (reg_address_in[8:4]==AUD1BASE[8:4]) ? 1 : 0;
+assign aen[2] = (reg_address_in[8:4]==AUD2BASE[8:4]) ? 1 : 0;
+assign aen[3] = (reg_address_in[8:4]==AUD3BASE[8:4]) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -134,8 +134,8 @@ audiochannel ach0
 	.cck(cck),
 	.aen(aen[0]),
 	.dmaena(dmaena[0]),
-	.regaddress(regaddress[3:1]),
-	.data(datain),
+	.reg_address_in(reg_address_in[3:1]),
+	.data(data_in),
 	.volume(vol0),
 	.sample(sample0),
 	.intreq(audint[0]),
@@ -153,8 +153,8 @@ audiochannel ach1
 	.cck(cck),
 	.aen(aen[1]),
 	.dmaena(dmaena[1]),
-	.regaddress(regaddress[3:1]),
-	.data(datain),
+	.reg_address_in(reg_address_in[3:1]),
+	.data(data_in),
 	.volume(vol1),
 	.sample(sample1),
 	.intreq(audint[1]),
@@ -172,8 +172,8 @@ audiochannel ach2
 	.cck(cck),
 	.aen(aen[2]),
 	.dmaena(dmaena[2]),
-	.regaddress(regaddress[3:1]),
-	.data(datain),
+	.reg_address_in(reg_address_in[3:1]),
+	.data(data_in),
 	.volume(vol2),
 	.sample(sample2),
 	.intreq(audint[2]),
@@ -191,8 +191,8 @@ audiochannel ach3
 	.cck(cck),
 	.aen(aen[3]),
 	.dmaena(dmaena[3]),
-	.regaddress(regaddress[3:1]),
-	.data(datain),
+	.reg_address_in(reg_address_in[3:1]),
+	.data(data_in),
 	.volume(vol3),
 	.sample(sample3),
 	.intreq(audint[3]),
@@ -352,7 +352,7 @@ module audiochannel
 	input	cck,					//colour clock enable
 	input	aen,					//address enable
 	input	dmaena,					//dma enable
-	input	[3:1] regaddress,		//register address input
+	input	[3:1] reg_address_in,		//register address input
 	input 	[15:0] data, 			//bus data input
 	output	[6:0] volume,			//channel volume output
 	output	[7:0] sample,			//channel sample output
@@ -414,25 +414,25 @@ reg		penhi;					//enable high byte of sample buffer
 always @(posedge clk)
 	if (reset)
 		audlen[15:0] <= 0;	
-	else if (aen && (regaddress[3:1]==AUDLEN[3:1]))
+	else if (aen && (reg_address_in[3:1]==AUDLEN[3:1]))
 		audlen[15:0] <= data[15:0];
 
 //period register bus write
 always @(posedge clk)
 	if (reset)
 		audper[15:0] <= 0;	
-	else if (aen && (regaddress[3:1]==AUDPER[3:1]))
+	else if (aen && (reg_address_in[3:1]==AUDPER[3:1]))
 		audper[15:0] <= data[15:0];
 
 //volume register bus write
 always @(posedge clk)
 	if (reset)
 		audvol[6:0] <= 0;	
-	else if (aen && (regaddress[3:1]==AUDVOL[3:1]))
+	else if (aen && (reg_address_in[3:1]==AUDVOL[3:1]))
 		audvol[6:0] <= data[6:0];
 
 //data register strobe
-assign datwrite = (aen && (regaddress[3:1]==AUDDAT[3:1])) ? 1:0;
+assign datwrite = (aen && (reg_address_in[3:1]==AUDDAT[3:1])) ? 1:0;
 
 //data register bus write
 always @(posedge clk)

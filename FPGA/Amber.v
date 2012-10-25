@@ -22,23 +22,27 @@
 // In addition, it can overlay an OSD (on-screen-display) menu.
 // Amber also has a pass-through mode in which
 // the video output can be connected to an RGB SCART input.
-// The meaning of _hsyncout and _vsyncout is then:
-// _vsyncout is fixed high (for use as RGB enable on SCART input).
-// _hysncout is composite sync output.
+// The meaning of _hsync_out and _vsync_out is then:
+// _vsync_out is fixed high (for use as RGB enable on SCART input).
+// _hsync_out is composite sync output.
 //
-// 10-01-2006		-first serious version
-// 11-01-2006		-done lot's of work, Amber is now finished
-// 29-12-2006		-added support for OSD overlay
+// 10-01-2006	- first serious version
+// 11-01-2006	- done lot's of work, Amber is now finished
+// 29-12-2006	- added support for OSD overlay
+// ----------
 // JB:
-// 26-02-2008	- synchronous 28MHz version
-// 28-02-2008	- horizontal and vertical interpolation
-// 02-03-2008	- hfilter/vfilter inputs added, unused inputs removed
+// 2008-02-26	- synchronous 28 MHz version
+// 2008-02-28	- horizontal and vertical interpolation
+// 2008-02-02	- hfilter/vfilter inputs added, unused inputs removed
 // 2008-12-12	- useless scanline effect implemented
 // 2008-12-27	- clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-08-31	- scanlines synthesis option
+
+`define SCANLINES
 
 module Amber
 (	
-	input	clk,
 	input 	clk28m,
 	input	[1:0] lr_filter,		//interpolation filters settings for low resolution
 	input	[1:0] hr_filter,		//interpolation filters settings for high resolution
@@ -46,19 +50,19 @@ module Amber
 	input	[8:0] htotal,			//video line length
 	input	hires,					//display is in hires mode (from bplcon0)
 	input	dblscan,				//enable VGA output (enable scandoubler)
-	input	osdblank,				//OSD overlay enable (blank normal video)
-	input	osdpixel,				//OSD pixel(video) data
-	input 	[3:0] redin, 			//red componenent video in
-	input 	[3:0] greenin,  		//green component video in
-	input 	[3:0] bluein,			//blue component video in
-	input	_hsyncin,				//horizontal synchronisation in
-	input	_vsyncin,				//vertical synchronisation in
-	input	_csyncin,				//composite synchronization in
-	output 	reg [3:0] redout, 		//red componenent video out
-	output 	reg [3:0] greenout,  	//green component video out
-	output 	reg [3:0] blueout,		//blue component video out
-	output	reg _hsyncout,			//horizontal synchronisation out
-	output	reg _vsyncout			//vertical synchronisation out
+	input	osd_blank,				//OSD overlay enable (blank normal video)
+	input	osd_pixel,				//OSD pixel(video) data
+	input 	[3:0] red_in, 			//red componenent video in
+	input 	[3:0] green_in,  		//green component video in
+	input 	[3:0] blue_in,			//blue component video in
+	input	_hsync_in,				//horizontal synchronisation in
+	input	_vsync_in,				//vertical synchronisation in
+	input	_csync_in,				//composite synchronization in
+	output 	reg [3:0] red_out, 		//red componenent video out
+	output 	reg [3:0] green_out,  	//green component video out
+	output 	reg [3:0] blue_out,		//blue component video out
+	output	reg _hsync_out,			//horizontal synchronisation out
+	output	reg _vsync_out			//vertical synchronisation out
 );
 
 //local signals
@@ -74,7 +78,7 @@ wire 	[4:0] red;					//signal after horizontal interpolation
 wire	[4:0] green;				//signal after horizontal interpolation
 wire 	[4:0] blue;					//signal after horizontal interpolation
 
-reg		_hsyncin_del;				//delayed horizontal synchronisation input
+reg		_hsync_in_del;				//delayed horizontal synchronisation input
 reg		hss;						//horizontal sync start
 wire	eol;						//end of scan-doubled line
 
@@ -86,47 +90,47 @@ reg		scanline_ena;				//signal active when the scan-doubled line is displayed
 //-----------------------------------------------------------------------------//
 
 // local horizontal counters for scan doubling
-reg		[10:0] hposin;				//line buffer write pointer
-reg		[10:0] hposout;				//line buffer read pointer
+reg		[10:0] wr_ptr;				//line buffer write pointer
+reg		[10:0] rd_ptr;				//line buffer read pointer
 
 //delayed hsync for edge detection
 always @(posedge clk28m)
-	_hsyncin_del <= _hsyncin;
+	_hsync_in_del <= _hsync_in;
 
 //horizontal sync start	(falling edge detection)
 always @(posedge clk28m)
-	hss <= ~_hsyncin & _hsyncin_del;
+	hss <= ~_hsync_in & _hsync_in_del;
 
 // pixels delayed by one hires pixel for horizontal interpolation
 always @(posedge clk28m)
-	if (hposin[0])	//sampled at 14MHz (hires clock rate)
+	if (wr_ptr[0])	//sampled at 14MHz (hires clock rate)
 		begin
-			red_del <= redin;
-			green_del <= greenin;
-			blue_del <= bluein;
+			red_del <= red_in;
+			green_del <= green_in;
+			blue_del <= blue_in;
 		end
 
 //horizontal interpolation
-assign red	= hfilter ? redin + red_del : redin*2;
-assign green = hfilter ? greenin + green_del : greenin*2;
-assign blue	= hfilter ? bluein + blue_del : bluein*2;
+assign red	= hfilter ? red_in + red_del : red_in*2;
+assign green = hfilter ? green_in + green_del : green_in*2;
+assign blue	= hfilter ? blue_in + blue_del : blue_in*2;
 
 // line buffer write pointer
 always @(posedge clk28m)
 	if (hss)
-		hposin <= 0;
+		wr_ptr <= 0;
 	else
-		hposin <= hposin + 1;
+		wr_ptr <= wr_ptr + 1;
 
 //end of scan-doubled line
-assign eol = hposout=={htotal[8:0],1'b1} ? 1 : 0;
+assign eol = rd_ptr=={htotal[8:0],1'b1} ? 1 : 0;
 
 //line buffer read pointer
 always @(posedge clk28m)
 	if (hss || eol)
-		hposout <= 0;
+		rd_ptr <= 0;
 	else
-		hposout <= hposout + 1;
+		rd_ptr <= rd_ptr + 1;
 
 always @(posedge clk28m)
 	if (hss)
@@ -152,19 +156,19 @@ reg [17:0] lbfdo;			// delayed line buffer output register
 
 // line buffer write
 always @(posedge clk28m)
-	lbf[hposin[10:1]] <= { _hsyncin, osdblank, osdpixel, red, green, blue };
+	lbf[wr_ptr[10:1]] <= { _hsync_in, osd_blank, osd_pixel, red, green, blue };
 
 //line buffer read
 always @(posedge clk28m)
-	lbfo <= lbf[hposout[9:0]];
+	lbfo <= lbf[rd_ptr[9:0]];
 
 //delayed line buffer write
 always @(posedge clk28m)
-	lbfd[hposout[9:0]] <= lbfo;
+	lbfd[rd_ptr[9:0]] <= lbfo;
 
 //delayed line buffer read
 always @(posedge clk28m)
-	lbfdo <= lbfd[hposout[9:0]];
+	lbfdo <= lbfd[rd_ptr[9:0]];
 
 //delayed line buffer pixel by one clock cycle
 always @(posedge clk28m)
@@ -173,14 +177,14 @@ always @(posedge clk28m)
 // output pixel generation - OSD mixer and vertical interpolation
 always @(posedge clk28m)
 begin
-		_hsyncout <= dblscan ? lbfo2[17] : _csyncin;
-		_vsyncout <= dblscan ? _vsyncin : 1'b1;
+		_hsync_out <= dblscan ? lbfo2[17] : _csync_in;
+		_vsync_out <= dblscan ? _vsync_in : 1'b1;
 		
 		if (~dblscan)
 		begin  //pass through
-			if (osdblank) //osd window
+			if (osd_blank) //osd window
 			begin
-				if (osdpixel)	//osd text colour
+				if (osd_pixel)	//osd text colour
 				begin
 					t_red    <= 4'b1110;
 					t_green  <= 4'b1110;
@@ -188,16 +192,16 @@ begin
 				end
 				else //osd background
 				begin
-					t_red    <= redin / 4;
-					t_green  <= greenin / 4;
-					t_blue   <= 4'b1000 + bluein / 4;
+					t_red    <= red_in / 4;
+					t_green  <= green_in / 4;
+					t_blue   <= 4'b1000 + blue_in / 4;
 				end
 			end
 			else //no osd
 			begin
-					t_red    <= redin;
-					t_green  <= greenin;
-					t_blue   <= bluein;
+					t_red    <= red_in;
+					t_green  <= green_in;
+					t_blue   <= blue_in;
 			end
 		end
 		else
@@ -240,13 +244,18 @@ begin
 		end
 end
 
-//scanline effect
+//scanlines effect
+`ifdef SCANLINES 
 always @(posedge clk28m)
 	if (dblscan && scanline_ena && scanline[1])
-		{redout,greenout,blueout} <= 12'h000;
+		{red_out,green_out,blue_out} <= 12'h000;
 	else if (dblscan && scanline_ena && scanline[0])
-		{redout,greenout,blueout} <= {1'b0,t_red[3:1],1'b0,t_green[3:1],1'b0,t_blue[3:1]};
+		{red_out,green_out,blue_out} <= {1'b0,t_red[3:1],1'b0,t_green[3:1],1'b0,t_blue[3:1]};
 	else
-		{redout,greenout,blueout} <= {t_red,t_green,t_blue};
+		{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
+`else
+always @(t_red or t_green or t_blue)
+	{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
+`endif
 
 endmodule

@@ -19,62 +19,66 @@
 //
 // This is the Blitter (part of the Agnus chip)
 //
-// 14-08-2005		-started coding
-// 16-08-2005		-done more coding
-// 19-08-2005		-added C source channel
+// 14-08-2005	-started coding
+// 16-08-2005	-done more coding
+// 19-08-2005	-added C source channel
 //				-added minterm function generator
-// 21-08-2005		-added proper masking for A channel
+// 21-08-2005	-added proper masking for A channel
 //				-added fill logic and D destination channel
 //				-added normal/line mode control logic
 //				-added address generator but it needs more work to reduce slices
-// 23-08-2005		-done more work
+// 23-08-2005	-done more work
 //				-added blitsize counter
-// 24-08-2005		-done some cleanup
-// 28-08-2005		-redesigned address generator module
+// 24-08-2005	-done some cleanup
+// 28-08-2005	-redesigned address generator module
 //				-started coding of main state machine
-// 29-08-2005		-added blitter zero detect
+// 29-08-2005	-added blitter zero detect
 //				-added logic for special line mode to channel D 
-// 31-08-2005		-blitsize is now decremented automatically during channel D cycle
+// 31-08-2005	-blitsize is now decremented automatically during channel D cycle
 //				-added delayed version for lwt called lwtd (needed for pipelining)
-// 04-09-2005		-added state machine for normal blitter mode	
+// 04-09-2005	-added state machine for normal blitter mode	
 //				-added data output gate in channel D (needed for integration into Agnus)
-// 05-09-2005		-fixed bug in bltaddress module
+// 05-09-2005	-fixed bug in bltaddress module
 //				-modified state machine start of blit handling
-// 06-09-2005		-restored state machine,we should now have a working blitter (normal mode)
+// 06-09-2005	-restored state machine,we should now have a working blitter (normal mode)
 //				-fixed bug,channel B preload didn't work
-// 14-09-2005		-fixed bug in channel A masking logic when doing 1 word wide blits
+// 14-09-2005	-fixed bug in channel A masking logic when doing 1 word wide blits
 //				 (and subsequently found another error in the Hardware Reference Manual)
-// 18-09-2005		-added sign bit handling for line mode
+// 18-09-2005	-added sign bit handling for line mode
 //				-redesigned address pointer ALU
 //				-adapted state machine to use new style ALU codes
 //				-added experimental line mode for octant 0,3,4,7
-// 19-09-2005		-fixed bugs in line mode state machine and it begins to start working..
-// 20-09-2005		-testing
-// 25-09-2005		-complete redesign of controller logic
+// 19-09-2005	-fixed bugs in line mode state machine and it begins to start working..
+// 20-09-2005	-testing
+// 25-09-2005	-complete redesign of controller logic
 //				-added new linemode logic for all octants
-// 27-09-2005		-fixed problem in linemode with dma/channel D modulo: it seems like the real blitter
+// 27-09-2005	-fixed problem in linemode with dma/channel D modulo: it seems like the real blitter
 //				 uses only C modulo for channel C and D during linemode,same for USEC/USED
 //				-sign is taken from bit 15 of pointer A,NOT bit 20! -->fixed
 //				-line drawing in octant 0,3,4,7 now works!
-// 28-09-2005		-line drawing in octant 1,2,5,6 now works too!
-// 02-10-2005		-special line draw mode added (single bit per horizontal line)
+// 28-09-2005	-line drawing in octant 1,2,5,6 now works too!
+// 02-10-2005	-special line draw mode added (single bit per horizontal line)
 //				 this completes the blitter (but some bugs may still remain...)
-// 17-10-2005		-fixed typo in sensitivity list of always block
-// 22-01-2006		-fixed bug in special line draw mode
-// 25-01-2006		-added bblck signal	
-// 14-02-2006		-improved bblck table
-// 07-07-2006		-added some comments
+// 17-10-2005	-fixed typo in sensitivity list of always block
+// 22-01-2006	-fixed bug in special line draw mode
+// 25-01-2006	-added bblck signal	
+// 14-02-2006	-improved bblck table
+// 07-07-2006	-added some comments
+// ----------
 // JB:
-// 2008-03-03		-added BLTCON0L,BLTSIZH and BLTSIZV
-// 2008-07-08		-clean up
-// 2008-10-20		-changed name of horbeam[0] to bltena
+// 2008-03-03	- added BLTCON0L, BLTSIZH and BLTSIZV
+// 2008-07-08	- clean up
+// 2008-10-20	- changed name of horbeam[0] to bltena
+// 2009-05-24	- clean-up & renaming
+// 2009-05-29	- changed enable signal to be more cycle exact
+//				- removed bblck as not needed anymore
+//				- there is still incopatibility when C channel is selected without D: extra idle cycle is inserted 
+
 
 /*
-this implementation doesn't seem to be perfect
+tested with A500+/680000.
 
-made tests on A500 with 680000.
-
-NO FILL/ INCLUSIVE FILL / MINIMIG no fill & fill modes look the same
+NO FILL/ INCLUSIVE FILL / MINIMIG (no fill & fill modes look the same)
 0  ____  2  2  (2)
 1  ___D  2  3+ (2)  i
 2  __C_  2  2  (3) !i
@@ -93,24 +97,24 @@ E  ABC_  3  3  (4) !i
 F  ABCD  4  4  (4)
 
 Empty cycles need free DMA bus but they don't block the CPU.
-Copper pseudo free cycles are given to blitter.
+Copper pseudo free cycles are given to the blitter.
 
 */
 module blitter
 (
-	input 	clk,	 			//bus clock
-	input 	reset,	 			//reset
-	output	reqdma,				//blitter requests dma cycle
-	input	ackdma,				//agnus dma priority logic grants dma cycle
-	output	reg bzero,			//blitter zero status
-	output	bbusy,				//blitter busy status
-	output	reg bblck,			//blitter is blocking cpu,cpu may not access chip bus
-	input	bltena,				//enables blitter operation (used to slow it down)
-	output	wr,					//write (blitter writes to memory)
-	input 	[15:0] datain,	    //bus data in
-	output	[15:0] dataout,		//bus data out
-	input 	[8:1] regaddressin,	//register address inputs
-	output 	[20:1] addressout 	//chip address outputs
+	input 	clk,	 				// bus clock
+	input 	reset,	 				// reset
+	output	reqdma,					// blitter requests dma cycle
+	input	ackdma,					// agnus dma priority logic grants dma cycle
+	input	enadma,					// no other dma channel is granted the bus
+	output	reg bzero,				// blitter zero status
+	output	bbusy,					// blitter busy status
+	input	bltena,					// enables blitter operation (used to slow it down)
+	output	wr,						// write (blitter writes to memory)
+	input 	[15:0] data_in,	    	// bus data in
+	output	[15:0] data_out,		// bus data out
+	input 	[8:1] reg_address_in,	// register address inputs
+	output 	[20:1] address_out 		// chip address outputs
 );
 
 //register names and adresses		
@@ -196,8 +200,8 @@ always @(posedge clk)
 		bltcon0[15:12] <= bltcon0[15:12]+{decash,decash,decash,1'b1};
 	else if (enable && decash)//decrement (used in line mode)
 		bltcon0[15:12] <= bltcon0[15:12]+{decash,decash,decash,1'b1};
-	else if (regaddressin[8:1]==BLTCON0[8:1])//written from bus (68000 or copper)
-		bltcon0[15:12] <= datain[15:12];
+	else if (reg_address_in[8:1]==BLTCON0[8:1])//written from bus (68000 or copper)
+		bltcon0[15:12] <= data_in[15:12];
 
 //generate plr signal,this is used to detect if we have to increment/decrement channel C/D pointers
 //during line mode (sort of shifter carry out/roll over out)
@@ -211,22 +215,22 @@ always @(bltcon0 or bltcon1)
 always @(posedge clk)
 	if (reset)
 		bltcon0[11:8] <= 0;
-	else if (regaddressin[8:1]==BLTCON0[8:1])
-		bltcon0[11:8] <= datain[11:8];
+	else if (reg_address_in[8:1]==BLTCON0[8:1])
+		bltcon0[11:8] <= data_in[11:8];
 
 //bltcon0 USE and LF part
 always @(posedge clk)
 	if (reset)
 		bltcon0[7:0] <= 0;
-	else if (regaddressin[8:1]==BLTCON0[8:1] || regaddressin[8:1]==BLTCON0L[8:1])
-		bltcon0[7:0] <= datain[7:0];
+	else if (reg_address_in[8:1]==BLTCON0[8:1] || reg_address_in[8:1]==BLTCON0L[8:1])
+		bltcon0[7:0] <= data_in[7:0];
 
 //writing of bltcon1 from bus
 always @(posedge clk)
 	if (reset)
 		bltcon1[15:0] <= 0;
-	else if (regaddressin[8:1]==BLTCON1[8:1])
-		bltcon1[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==BLTCON1[8:1])
+		bltcon1[15:0] <= data_in[15:0];
 
 //--------------------------------------------------------------------------------------
 
@@ -234,29 +238,29 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reset)
 		bltafwm[15:0] <= 0;
-	else if (regaddressin[8:1]==BLTAFWM[8:1])
-		bltafwm[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==BLTAFWM[8:1])
+		bltafwm[15:0] <= data_in[15:0];
 
 //writing of bltalwm from bus
 always @(posedge clk)
 	if (reset)
 		bltalwm[15:0] <= 0;
-	else if (regaddressin[8:1]==BLTALWM[8:1])
-		bltalwm[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==BLTALWM[8:1])
+		bltalwm[15:0] <= data_in[15:0];
 
 //writing of bltadat from bus	(preload)
 always @(posedge clk)
 	if (reset)
 		bltadat[15:0] <= 0;
-	else if (regaddressin[8:1]==BLTADAT[8:1])
-		bltadat[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==BLTADAT[8:1])
+		bltadat[15:0] <= data_in[15:0];
 
 //writing of bltbdat from bus (preload)
 always @(posedge clk)
 	if (reset)
 		bltbdat[15:0] <= 0;
-	else if (regaddressin[8:1]==BLTBDAT[8:1])
-		bltbdat[15:0] <= datain[15:0];
+	else if (reg_address_in[8:1]==BLTBDAT[8:1])
+		bltbdat[15:0] <= data_in[15:0];
 
 //--------------------------------------------------------------------------------------
 
@@ -286,9 +290,9 @@ always @(bltafwm or bltalwm or fwt or lwt)
 		amask[15:0] = 16'b1111111111111111;
 		
 //channel A source select mux
-always @(bltadat or datain or amask or bpa)
+always @(bltadat or data_in or amask or bpa)
 	if (bpa)
-		amux[15:0] = datain[15:0] & amask[15:0];
+		amux[15:0] = data_in[15:0] & amask[15:0];
 	else
 		amux[15:0] = bltadat[15:0] & amask[15:0];
 
@@ -305,9 +309,9 @@ always @(posedge clk)
 		ahold[15:0] <= shiftout[15:0];
 
 //channel B source select mux
-always @(bltbdat or datain or bpb or regaddressin)
-	if (bpb || (regaddressin[8:1]==BLTBDAT[8:1]))
-		bmux[15:0] = datain[15:0];
+always @(bltbdat or data_in or bpb or reg_address_in)
+	if (bpb || (reg_address_in[8:1]==BLTBDAT[8:1]))
+		bmux[15:0] = data_in[15:0];
 	else
 		bmux[15:0] = bltbdat[15:0];
 		
@@ -322,15 +326,15 @@ always @(posedge clk)
 always @(posedge clk)
 	if (enable && rlb)//rotate register to the left (line mode)
 		bhold[15:0] <= {bhold[14:0],bhold[15]};
-	else if ((enable && (chs[1:0]==CHB[1:0])) || (regaddressin[8:1]==BLTBDAT[8:1]))
+	else if ((enable && (chs[1:0]==CHB[1:0])) || (reg_address_in[8:1]==BLTBDAT[8:1]))
 		bhold[15:0] <= shiftout[15:0];
 	
 
 //multiplexed barrel shifter for channel A and channel B
 //the multiplexer is controlled by lhs (holding register select)
-assign newmux[15:0] = (chs[1:0]==CHA[1:0])?amux[15:0]:bmux[15:0];
-assign oldmux[15:0] = (chs[1:0]==CHA[1:0])?bltaold[15:0]:bltbold[15:0];
-assign shmux[3:0] = (chs[1:0]==CHA[1:0])?bltcon0[15:12]:bltcon1[15:12];
+assign newmux[15:0] = (chs[1:0]==CHA[1:0]) ? amux[15:0] : bmux[15:0];
+assign oldmux[15:0] = (chs[1:0]==CHA[1:0]) ? bltaold[15:0] : bltbold[15:0];
+assign shmux[3:0] = (chs[1:0]==CHA[1:0]) ? bltcon0[15:12] : bltcon1[15:12];
 
 bltshift blts1
 (
@@ -349,8 +353,8 @@ bltshift blts1
 
 //channel C holding register
 always @(posedge clk)
-	if ((enable && (chs[1:0]==CHC[1:0])) || (regaddressin[8:1]==BLTCDAT[8:1]))
-		chold[15:0] <= datain[15:0];
+	if ((enable && (chs[1:0]==CHC[1:0])) || (reg_address_in[8:1]==BLTCDAT[8:1]))
+		chold[15:0] <= data_in[15:0];
 
 //--------------------------------------------------------------------------------------
 
@@ -404,7 +408,7 @@ bltfill bltfl1
 );
 
 //fill carry control
-assign fci = (fwt)?bltcon1[2]:fcy;
+assign fci = fwt ? bltcon1[2] : fcy;
 always @(posedge clk)
 	if (enable && (chs[1:0]==CHD[1:0]))
 		fcy <= fco;
@@ -415,8 +419,8 @@ always @(posedge clk)
 		dhold[15:0] <= fillout[15:0];		
 
 //channel D data output gate
-assign dataout[15:0] = (ackdma && (chs[1:0]==CHD))?dhold[15:0]:16'h0000;
-assign wr = (chs[1:0]==CHD)?1:0;
+assign data_out[15:0] = (ackdma && (chs[1:0]==CHD)) ? dhold[15:0] : 16'h0000;
+assign wr = (chs[1:0]==CHD) ? 1 : 0;
 
 //channel D blitter zero detect
 always @(posedge clk)
@@ -441,27 +445,27 @@ always @(posedge clk)
 //by the software. (see amiga hardware reference manual)
 //<start> is also controlled here (used to start the blitter state machine)
 //<bbusy1d> and <lwtd> are delayed version for channel D (pipeline delay)
-reg		[10:0]bltwcount;
+reg		[10:0] bltwcount;
 
 //start control
 always @(posedge clk)
 	if (reset)
 		start <= 0;
-	else if (regaddressin[8:1]==BLTSIZE[8:1] || regaddressin[8:1]==BLTSIZH[8:1])//blitter is started by write to BLTSIZE
+	else if (reg_address_in[8:1]==BLTSIZE[8:1] || reg_address_in[8:1]==BLTSIZH[8:1])//blitter is started by write to BLTSIZE
 		start <= 1;
-	else if (bbusy)//state machine has got the message,we can clear start now
+	else if (bbusy)//state machine has got the message, we can clear start now
 		start <= 0;
 
 //bltwidth register (lower 6 bits of BLTSIZE)
 always @(posedge clk)
-	if (regaddressin[8:1]==BLTSIZE[8:1] )
-		bltwidth[10:0] <= {4'b0000,(datain[5:0]==6'b00_0000)?1'b1:1'b0,datain[5:0]};
-	else if (regaddressin[8:1]==BLTSIZH[8:1] )
-		bltwidth[10:0] <= datain[10:0];
+	if (reg_address_in[8:1]==BLTSIZE[8:1] )
+		bltwidth[10:0] <= {4'b0000, (data_in[5:0]==6'b00_0000) ? 1'b1 : 1'b0, data_in[5:0]};
+	else if (reg_address_in[8:1]==BLTSIZH[8:1] )
+		bltwidth[10:0] <= data_in[10:0];
 
 //bltwidth counter			
 always @(posedge clk)
-	if (regaddressin[8:1]==BLTSIZE[8:1] || regaddressin[8:1]==BLTSIZH[8:1])//blitsize written,go to first word time
+	if (reg_address_in[8:1]==BLTSIZE[8:1] || reg_address_in[8:1]==BLTSIZH[8:1])//blitsize written,go to first word time
 		bltwcount[10:0] <= 11'b000_0000_0001;
 	else if (enable && (chs[1:0]==CHD[1:0]))//decrement blitsize counter
 	begin
@@ -473,16 +477,16 @@ always @(posedge clk)
 
 //bltheight register (upper 10 bits of BLTSIZE) and counter 
 always @(posedge clk)
-	if (regaddressin[8:1]==BLTSIZE[8:1]) //blitheight loaded by write to bltsize
-		bltheight[14:0] <= {4'b0000,(datain[15:6]==10'b00_0000_0000)?1'b1:1'b0,datain[15:6]};
-	else if (regaddressin[8:1]==BLTSIZH[8:1]) //blitheight loaded by write to bltsizh
+	if (reg_address_in[8:1]==BLTSIZE[8:1]) //blitheight loaded by write to bltsize
+		bltheight[14:0] <= {4'b0000, (data_in[15:6]==10'b00_0000_0000) ? 1'b1 : 1'b0, data_in[15:6]};
+	else if (reg_address_in[8:1]==BLTSIZH[8:1]) //blitheight loaded by write to bltsizh
 		bltheight[14:0] <=  bltsizv[14:0];
 	else if (enable && lwt && (chs[1:0]==CHD[1:0]))//if last word in this line decrement height counter
 		bltheight[14:0] <= bltheight[14:0] - 1'b1;
 
 always @(posedge clk)
-	if (regaddressin[8:1]==BLTSIZV[8:1]) //blitheight loaded by write to bltsizv
-		bltsizv[14:0] <= datain[14:0];
+	if (reg_address_in[8:1]==BLTSIZV[8:1]) //blitheight loaded by write to bltsizv
+		bltsizv[14:0] <= data_in[14:0];
 
 //generate fwt (first word time) signal
 assign fwt = (bltwcount[10:0]==11'b000_0000_0001) ? 1 : 0;
@@ -491,14 +495,14 @@ assign fwt = (bltwcount[10:0]==11'b000_0000_0001) ? 1 : 0;
 assign lwt = (bltwcount[10:0]==bltwidth[10:0]) ? 1 : 0;
 
 //generate lwtd (delayed last word time) signal 
-//and bbusyd1 (delayed bbusy1) signal
+//and bbusyd (delayed bbusy) signal
 always @(posedge clk)
-	if (regaddressin[8:1]==BLTSIZE[8:1] || regaddressin[8:1]==BLTSIZH[8:1])//reset signals upon BLTSIZE write,just to be sure
+	if (reg_address_in[8:1]==BLTSIZE[8:1] || reg_address_in[8:1]==BLTSIZH[8:1]) //reset signals upon BLTSIZE write, just to be sure
 	begin
 		lwtd <= 1'b0;
 		bbusyd <= 1'b0;
 	end
-	else if (enable && (chs[1:0]==CHD[1:0]))
+	else if (enable && chs[1:0]==CHD[1:0])
 	begin
 		lwtd <= lwt;
 		bbusyd <= bbusy;
@@ -519,9 +523,9 @@ bltaddress bltad1
 	.chs(chs),
 	.alu({ame,ams,ape,apd}),
 	.signout(signout),
-	.datain(datain),
-	.regaddressin(regaddressin),
-	.addressout(addressout)
+	.data_in(data_in),
+	.reg_address_in(reg_address_in),
+	.address_out(address_out)
 );
 
 //--------------------------------------------------------------------------------------
@@ -591,13 +595,13 @@ end
 
 //sign bit handling	and fpl bit handling
 always @(posedge clk)
-	if (!bbusyd)//if blitter not busy,copy sign from bltcon and preset fpl
+	if (!bbusyd) //if blitter not busy, copy sign from bltcon and preset fpl
 	begin
 		sign <= bltcon1[6];
 		fpl <= 1;
 	end
 	//update sign flag and fpl bit (if first D cycle has happened and channel A cycle + dma enabled and line mode)
-	else if (enable && bbusyd && bltcon0[11] && bltcon1[0] && (chs[1:0]==CHA[1:0]))
+	else if (enable && bbusyd && bltcon0[11] && bltcon1[0] && (chs[1:0]==CHA[1:0])) //DMA:USEA and LINE mode
 	begin
 		sign <= signout;
 		fpl <= ~sign;
@@ -606,50 +610,13 @@ always @(posedge clk)
 //enable signal control 
 //enable controls most of the latches in the blitter
 //this is a very important signal
-always @(bltena or bbusy or reqdma or ackdma)
+always @(enadma or bltena or bbusy or reqdma or ackdma)
 	if (reqdma && ackdma) //dma requested and granted,do external (dma) cycle
 		enable = 1;
-	else if (!reqdma && bbusy && bltena) //do internal cycle
+	else if (!reqdma && enadma && bbusy && bltena) //do internal cycle
 		enable = 1;
 	else //do nothing (blitter not busy)
 		enable = 0;	
-		
-//bblck control
-//In order to let this blitter run at the same speed as in a real Amiga,it must block the cpu
-//in some cases. Apparently (according to winuae sources),cycles that are normally internal
-//(channel A/D when USEA/USED = 0),DO allocate a bus slot when channel A is enabled in blitter nasty mode.
-//This effectively blocks the cpu from the chip bus. Also,when fill mode is enabled but channel C is not (USEC = 0)
-//we also get some extra idle cycles (cpu is not blocked).
-//In line mode,blitter never blocks the cpu.
-//the following logic handles the bblck signal
-always @(bltcon0 or bltcon1 or bbusy or bbusyd)
-begin
-	if (bbusy & bbusyd)//blitter busy and not first cycle?
-		//{FILL,LINE,USEA,USEC}
-		case({bltcon1[3] | bltcon1[4],bltcon1[0],bltcon0[11],bltcon0[9]})
-			4'b0000: bblck = 0;
-			4'b0001: bblck = 0;
-//			4'b0010: bblck = 1;
-//			4'b0011: bblck = 1;
-			4'b0010: bblck = 0;
-			4'b0011: bblck = 0;
-			4'b0100: bblck = 0;//LINE MODE
-			4'b0101: bblck = 0;//LINE MODE
-			4'b0110: bblck = 0;//LINE MODE
-			4'b0111: bblck = 0;//LINE MODE
-			4'b1000: bblck = 0;
-			4'b1001: bblck = 0;
-			4'b1010: bblck = 0;
-//			4'b1011: bblck = 1;
-			4'b1011: bblck = 0;
-			4'b1100: bblck = 0;//LINE MODE
-			4'b1101: bblck = 0;//LINE MODE
-			4'b1110: bblck = 0;//LINE MODE
-			4'b1111: bblck = 0;//LINE MODE
-		endcase						  	
-	else//blitter not busy
-		bblck = 0;
-end
 
 //state machine outputs
 //we use a couple of vectors here to keep the statemachine readable
@@ -671,9 +638,10 @@ always @(posedge clk)
 		bltstate <= BLT_DONE;
 	else if (enable || (start && !bbusy))//blitter next cycle if (enable) or (start pulse while not yet busy)
 		bltstate <= bltnext;
+		
 always @(bltstate or bltcon0 or lwt or lwtd or bbusyd or bltcon1 or sign or nml or plr)
 begin
-	case(bltstate)
+	case (bltstate)
 		BLT_DONE://blitter is done
 			begin
 				//-----IDRZB
@@ -705,7 +673,7 @@ begin
 
 		BLT_LB_1://line blit cycle 1 (check accumulator,load channel A and update sign)
 			begin
-				acn = {1'b0,sign,bbusyd,1'b0};//only update accumulator if not first cycle,sign selects modulo A/B	
+				acn = {1'b0,sign,bbusyd,1'b0};//only update accumulator if not first cycle, sign selects modulo A/B	
 				scn = 5'b00001;
 				chs = CHA;
 				if (nml && bbusyd)//check if blit is done
@@ -717,9 +685,9 @@ begin
 		BLT_LB_2://line blit cycle 2 (load channel C)
 			begin
 				if (bltcon1[4])
-					acn = {bltcon0[9],1'b0,~sign,plr};
+					acn = {bltcon0[9],1'b0,~sign,plr}; //DMA:USEC
 				else
-					acn = {bltcon0[9],2'b01,~sign & plr};
+					acn = {bltcon0[9],2'b01,~sign & plr}; //DMA:USEC
 				scn = 5'b00001;
 				chs = CHC;
 				bltnext = BLT_LB_3;	
@@ -737,12 +705,12 @@ begin
 			begin
 				if (bltcon1[4])
 				begin
-					acn = {bltcon0[9],1'b1,~sign,plr};//modulo C is used for channel D also in line mode
+					acn = {bltcon0[9],1'b1,~sign,plr};//DMA:USEC - modulo C is used for channel D also in line mode
 					scn = {~bltcon1[2],bltcon1[2],3'b001};
 				end
 				else
 				begin
-					acn = {bltcon0[9],2'b11,~sign & plr};
+					acn = {bltcon0[9],2'b11,~sign & plr}; //DMA:USEC
 					scn = {~bltcon1[3] & ~sign,bltcon1[3] & ~sign,3'b001};
 				end
 				chs = CHD;
@@ -754,29 +722,29 @@ begin
  
 		BLT_NB_1://normal blit cycle 1
 			begin
-				if (nml && bbusyd)//blit is done,handle data still in pipeline
+				if (nml && bbusyd)//blit is done (no more lines), handle data still in pipeline (bbusyd)
 				begin
-					if (bltcon0[8])//DMA
-						acn = {2'b10,lwtd,1'b1};
+					if (bltcon0[8])//DMA:USED
+						acn = {2'b10,lwtd,1'b1}; //acn[3] dma req, lwtd (last word time delayed) enables modulo, acn[0] pointer update enable
 					else//internal
 						acn = 4'b0x00;
 					//-----IDRZB
-					scn = 5'b00001;	
+					scn = 5'b00001; //scn[0]=bbusy	
 					chs = CHD;
 					bltnext = BLT_DONE;
 				end
 				else//else handle channel A
 				begin
-					if (bltcon0[11])//DMA
+					if (bltcon0[11])//DMA:USEA
 						acn = {2'b10,lwt,1'b1};
 					else//internal
 						acn = 4'b0x00;
 					//-----IDRZB
 					scn = 5'b00001;
 					chs = CHA;
-					if (bltcon0[10])
+					if (bltcon0[10]) //DMA:USEB
 						bltnext = BLT_NB_2;
-					else if (bltcon0[9])
+					else if (bltcon0[9]) //DMA:USEC
 						bltnext = BLT_NB_3;
 					else
 						bltnext = BLT_NB_4;	
@@ -788,7 +756,7 @@ begin
 				acn = {2'b10,lwt,1'b1};
 				scn = 5'b00001;
 				chs = CHB;
-				if (bltcon0[9])
+				if (bltcon0[9]) //DMA:USEC
 					bltnext = BLT_NB_3;
 				else
 					bltnext = BLT_NB_4;	
@@ -804,7 +772,7 @@ begin
 
 		BLT_NB_4://normal blitter operation cycle 4
 			begin
-				if (bltcon0[8] && bbusyd)//DMA (only if not first cycle)
+				if (bltcon0[8] && bbusyd)//DMA:USED (only if not first cycle)
 					acn = {2'b10,lwtd,1'b1};
 				else//internal
 					acn = 4'b0x00;
@@ -840,26 +808,26 @@ endmodule
 //are shifted out are discarded.  
 module bltshift
 (
-	input	desc,				//select descending mode (shift to the left)
-	input	[3:0]sh,			//shift value (0 to 15)
-	input 	[15:0]new,		//barrel shifter data in
-	input 	[15:0]old,		//barrel shifter data in
-	output	reg [15:0]out		//barrel shifter data out
+	input	desc,			// select descending mode (shift to the left)
+	input	[3:0] sh,		// shift value (0 to 15)
+	input 	[15:0] new,		// barrel shifter data in
+	input 	[15:0] old,		// barrel shifter data in
+	output	reg [15:0] out	// barrel shifter data out
 );
 
 //local signals
-wire		[30:0]bshiftin;		//barrel shifter input
-wire		[3:0]bsh;				//barrel shift value
+wire		[30:0] bshiftin;	// barrel shifter input
+wire		[3:0] bsh;			// barrel shift value
 
 //cross multiplexer feeding barrelshifter
-assign bshiftin[30:0] = (desc)?{new[15:0],old[15:1]}:{old[14:0],new[15:0]};
+assign bshiftin[30:0] = desc ? {new[15:0],old[15:1]} : {old[14:0],new[15:0]};
 
 //shift value generator for barrel shifter
-assign bsh[3:0] = (desc)?(~sh[3:0]):sh[3:0];
+assign bsh[3:0] = desc ? ~sh[3:0] : sh[3:0];
 
 //actual barrel shifter
 always @(bsh or bshiftin)
-	case(bsh[3:0])
+	case (bsh[3:0])
 		0:	out[15:0] = bshiftin[15:0];
 		1:	out[15:0] = bshiftin[16:1];
 		2:	out[15:0] = bshiftin[17:2];
@@ -911,7 +879,7 @@ reg		[15:0]mt7;			//minterm 7
 //synthesizer to cover all 16 bits in the word.
 integer j;
 always @(ain or bin or cin or lf)
-	for (j=15;j>=0;j=j-1)
+	for (j=15; j>=0; j=j-1)
 	begin
 		mt0[j] = (~ain[j]) & (~bin[j]) & (~cin[j]) & lf[0];
 		mt1[j] = (~ain[j]) & (~bin[j]) & (cin[j]) & lf[1];
@@ -976,7 +944,7 @@ endmodule
 
 //Blitter address generator
 //This module generates the addresses for blitter DMA
-//It has 4 21bit pointer registers,4 16bit modulo 
+//It has 4 21-bit pointer registers, 4 16-bit modulo 
 //registers and an ALU that can add and subtract
 //alu function codes bits [3:2]:
 //00 = bypass (no operation)
@@ -998,16 +966,16 @@ endmodule
 
 module bltaddress
 (
-	input	clk,					//bus clock
-	input	reset,					//reset
-	input	enable,					//cycle enable input
-	input	modb,					//always select modulo B or C (dependening of chs[1])
-	input	[1:0]chs,				//channel select
-	input	[3:0]alu,				//ALU function select
-	output	signout,				//sign output (used for line mode)
-	input	[15:0]datain,			//bus data in
-	input	[8:1]regaddressin,		//register address input
-	output	reg [20:1]addressout	//generated address out
+	input	clk,					// bus clock
+	input	reset,					// reset
+	input	enable,					// cycle enable input
+	input	modb,					// always select modulo B or C (dependening of chs[1])
+	input	[1:0] chs,				// channel select
+	input	[3:0] alu,				// ALU function select
+	output	signout,				// sign output (used for line mode)
+	input	[15:0] data_in,			// bus data in
+	input	[8:1] reg_address_in,	// register address input
+	output	reg [20:1] address_out	// generated address out
 );
 
 //register names and addresses
@@ -1025,17 +993,17 @@ parameter BLTDPTH = 9'h054;
 parameter BLTDPTL = 9'h056;
 
 //local signals
-reg		[15:1]bltamod;		//blitter modulo for source A
-reg		[15:1]bltbmod;		//blitter modulo for source B
-reg		[15:1]bltcmod;		//blitter modulo for source C
-reg		[15:1]bltdmod;		//blitter modulo for destination D
-reg		[20:1]bltapt;		//blitter pointer A
-reg		[20:1]bltbpt;		//blitter pointer B
-reg		[20:1]bltcpt;		//blitter pointer C
-reg		[20:1]bltdpt;		//blitter pointer D
+reg		[15:1] bltamod;		// blitter modulo for source A
+reg		[15:1] bltbmod;		// blitter modulo for source B
+reg		[15:1] bltcmod;		// blitter modulo for source C
+reg		[15:1] bltdmod;		// blitter modulo for destination D
+reg		[20:1] bltapt;		// blitter pointer A
+reg		[20:1] bltbpt;		// blitter pointer B
+reg		[20:1] bltcpt;		// blitter pointer C
+reg		[20:1] bltdpt;		// blitter pointer D
 
-reg		[20:1]newpt;		//new pointer				
-reg		[15:1]modulo;		//modulo
+reg		[20:1] newpt;		// new pointer				
+reg		[15:1] modulo;		// modulo
 
 //--------------------------------------------------------------------------------------
 
@@ -1043,66 +1011,70 @@ reg		[15:1]modulo;		//modulo
 always @(posedge clk)
 	if (reset)
 		bltamod[15:1] <= 0;
-	else if (regaddressin[8:1]==BLTAMOD[8:1])
-		bltamod[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==BLTAMOD[8:1])
+		bltamod[15:1] <= data_in[15:1];
 
 //writing of bltbmod from bus
 always @(posedge clk)
 	if (reset)
 		bltbmod[15:1] <= 0;
-	else if (regaddressin[8:1]==BLTBMOD[8:1])
-		bltbmod[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==BLTBMOD[8:1])
+		bltbmod[15:1] <= data_in[15:1];
 
 //writing of bltcmod from bus
 always @(posedge clk)
 	if (reset)
 		bltcmod[15:1] <= 0;
-	else if (regaddressin[8:1]==BLTCMOD[8:1])
-		bltcmod[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==BLTCMOD[8:1])
+		bltcmod[15:1] <= data_in[15:1];
 
 //writing of bltdmod from bus
 always @(posedge clk)
 	if (reset)
 		bltdmod[15:1] <= 0;
-	else if (regaddressin[8:1]==BLTDMOD[8:1])
-		bltdmod[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==BLTDMOD[8:1])
+		bltdmod[15:1] <= data_in[15:1];
 
 //--------------------------------------------------------------------------------------
 
 //pointer bank input multiplexer
-wire	[20:1]ptin;
-assign ptin[20:1] = (enable)?newpt[20:1]:{datain[4:0],datain[15:1]};
+wire	[20:1] ptin;
+assign ptin[20:1] = (enable) ? newpt[20:1] : {data_in[4:0], data_in[15:1]};
 
 //writing of blitter pointer A
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b00)) || (regaddressin[8:1]==BLTAPTH[8:1]))
+	if ((enable && (chs[1:0]==2'b00)) || (reg_address_in[8:1]==BLTAPTH[8:1]))
 		bltapt[20:16] <= ptin[20:16];
+		
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b00)) || (regaddressin[8:1]==BLTAPTL[8:1]))
+	if ((enable && (chs[1:0]==2'b00)) || (reg_address_in[8:1]==BLTAPTL[8:1]))
 		bltapt[15:1] <= ptin[15:1];
 
 //writing of blitter pointer B
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b01)) || (regaddressin[8:1]==BLTBPTH[8:1]))
+	if ((enable && (chs[1:0]==2'b01)) || (reg_address_in[8:1]==BLTBPTH[8:1]))
 		bltbpt[20:16] <= ptin[20:16];
+		
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b01)) || (regaddressin[8:1]==BLTBPTL[8:1]))
+	if ((enable && (chs[1:0]==2'b01)) || (reg_address_in[8:1]==BLTBPTL[8:1]))
 		bltbpt[15:1] <= ptin[15:1];
 
 //writing of blitter pointer C
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b10)) || (regaddressin[8:1]==BLTCPTH[8:1]))
+	if ((enable && (chs[1:0]==2'b10)) || (reg_address_in[8:1]==BLTCPTH[8:1]))
 		bltcpt[20:16] <= ptin[20:16];
+		
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b10)) || (regaddressin[8:1]==BLTCPTL[8:1]))
+	if ((enable && (chs[1:0]==2'b10)) || (reg_address_in[8:1]==BLTCPTL[8:1]))
 		bltcpt[15:1] <= ptin[15:1];
 
 //writing of blitter pointer D
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b11)) || (regaddressin[8:1]==BLTDPTH[8:1]))
+	if ((enable && (chs[1:0]==2'b11)) || (reg_address_in[8:1]==BLTDPTH[8:1]))
 		bltdpt[20:16] <= ptin[20:16];
+		
 always @(posedge clk)
-	if ((enable && (chs[1:0]==2'b11)) || (regaddressin[8:1]==BLTDPTL[8:1]))
+	if ((enable && (chs[1:0]==2'b11)) || (reg_address_in[8:1]==BLTDPTL[8:1]))
 		bltdpt[15:1] <= ptin[15:1];
 
 //--------------------------------------------------------------------------------------
@@ -1111,13 +1083,13 @@ always @(posedge clk)
 always @(chs or bltapt or bltbpt or bltcpt or bltdpt)
 	case(chs[1:0])
 		2'b00://channel A
-			addressout[20:1] = bltapt;
+			address_out[20:1] = bltapt;
 		2'b01://channel B
-			addressout[20:1] = bltbpt;
+			address_out[20:1] = bltbpt;
 		2'b10://channel C
-			addressout[20:1] = bltcpt;
+			address_out[20:1] = bltcpt;
 		2'b11://channel D
-			addressout[20:1] = bltdpt;
+			address_out[20:1] = bltdpt;
 	endcase
 	    
 //--------------------------------------------------------------------------------------
@@ -1145,18 +1117,18 @@ always @(msel or bltamod or bltbmod or bltcmod or bltdmod)
 reg [20:1]npt;
 
 //first adder/subtracter
-always @(alu or addressout)
-	case(alu[1:0])
-		2'b10:	npt[20:1] = addressout[20:1]+20'h1;	// + 1
-		2'b11:	npt[20:1] = addressout[20:1]-20'h1;	// - 1 
-		default:	npt[20:1] = addressout[20:1];		// bypass 	
+always @(alu or address_out)
+	case (alu[1:0])
+		2'b10:	npt[20:1] = address_out[20:1] + 20'h1;	// + 1
+		2'b11:	npt[20:1] = address_out[20:1] - 20'h1;	// - 1 
+		default:	npt[20:1] = address_out[20:1];		// bypass 	
 	endcase
 
 //second adder/subtracter
 always @(alu or npt or modulo)
-	case(alu[3:2])
-		2'b10:	newpt[20:1] = npt[20:1]+{modulo[15],modulo[15],modulo[15],modulo[15],modulo[15],modulo[15:1]};	// + modulo
-		2'b11:	newpt[20:1] = npt[20:1]-{modulo[15],modulo[15],modulo[15],modulo[15],modulo[15],modulo[15:1]};	// - modulo 
+	case (alu[3:2])
+		2'b10:	newpt[20:1] = npt[20:1] + {modulo[15],modulo[15],modulo[15],modulo[15],modulo[15],modulo[15:1]};	// + modulo
+		2'b11:	newpt[20:1] = npt[20:1] - {modulo[15],modulo[15],modulo[15],modulo[15],modulo[15],modulo[15:1]};	// - modulo 
 		default:	newpt[20:1] = npt[20:1];			// bypass 	
 	endcase
 

@@ -27,22 +27,24 @@
 //				- arm firmare seekfile function very slow: seeking from start to 20MB takes 144 ms (some software improvements required)
 // 2008-10-30	- write support added
 // 2008-12-31	- added hdd enable
+// 2009-05-24	- clean-up & renaming
+// 2009-08-11	- hdd_ena enables Master & Slave drives
 
 module gayle
 (
 	input	clk,
 	input	reset,
-	input	[23:1]address,
-	input	[15:0]datain,
-	output	[15:0]dataout,
+	input	[23:1] address_in,
+	input	[15:0] data_in,
+	output	[15:0] data_out,
 	input	rd,
 	input	hwr,
 	input	lwr,
-	input	selide,		//$DAxxxx
-	input	selgayle,	//$DExxxx
+	input	sel_ide,	//$DAxxxx
+	input	sel_gayle,	//$DExxxx
 	output	irq,
+	input	[1:0] hdd_ena, //enables Master & Slave drives
 
-	input	hdd_ena,
 	output	hdd_cmd_req,
 	output	hdd_dat_req,
 	input	[2:0] hdd_addr,
@@ -73,7 +75,7 @@ $DA2000 - $DA2FFFF : CS1 8-bit speed
 $DA3000 - $DA3FFFF : CS2 8-bit speed
 $DA4000 - $DA7FFFF : reserved
 $DA8000 - $DA8FFFF : IDE INTREQ state status register (not implemented as scsi.device doesn't use it)
-$DA9000 - $DA9FFFF : IDE INTREQ change status register (writing zero's resets selected bits, writing one's doesn't change anything) 
+$DA9000 - $DA9FFFF : IDE INTREQ change status register (writing zeros resets selected bits, writing ones doesn't change anything) 
 $DAA000 - $DAAFFFF : IDE INTENA register (r/w, only MSB matters)
  
 
@@ -83,10 +85,10 @@ PO (PIO Out)
 ND (No Data)
 
 Status:
-DRDY	- Drive Ready
-BSY		- Busy
-DRQ		- Data Request
-ERR		- Error
+#6 - DRDY	- Drive Ready
+#7 - BSY	- Busy
+#3 - DRQ	- Data Request
+#0 - ERR	- Error
 INTRQ	- Interrupt Request
 
 */
@@ -106,7 +108,7 @@ reg		pio_in;
 reg		pio_out;
 reg		error;
 
-reg		dev;	//drive 0/1 select
+reg		dev;	// drive 0/1 select
 
 wire 	bsy;
 wire 	drdy;
@@ -115,23 +117,16 @@ wire 	err;
 wire 	[7:0] status;
 
 wire	fifo_reset;
-wire	[15:0] fifo_din;
-wire	[15:0] fifo_dout;
+wire	[15:0] fifo_data_in;
+wire	[15:0] fifo_data_out;
 wire 	fifo_rd;
 wire 	fifo_wr;
 wire 	fifo_full;
 wire 	fifo_empty;
 
-// gaile id reg
+// gayle id reg
 reg		[1:0] gayleid_cnt;
 wire	gayleid;
-//hdd support enabled (enables decoding of Gayle's registers)
-reg		enabled;
-
-//hdd and hdc enable state can only be changed during reset
-always @(posedge clk)
-	if (reset)
-		enabled <= hdd_ena;
 
 assign status = {bsy,drdy,2'b00,drq,2'b00,err};
 
@@ -139,13 +134,13 @@ assign bsy = busy & ~drq;
 assign drdy = ~(bsy|drq);
 assign err = error;
 
-assign sel_gayleid = enabled && selgayle && address[15:12]==4'b0001 ? 1 : 0;	//$DE1xxx
-assign sel_tfr = enabled && selide && address[15:14]==2'b00 && !address[12] ? 1 : 0;
-assign sel_status = rd && sel_tfr && address[4:2]==3'b111 ? 1 : 0;
-assign sel_command = hwr && sel_tfr && address[4:2]==3'b111 ? 1 : 0;
-assign sel_fifo = sel_tfr && address[4:2]==3'b000 ? 1 : 0;
-assign sel_intreq = enabled && selide && address[15:12]==4'b1001 ? 1 : 0;	//INTREQ
-assign sel_intena = enabled && selide && address[15:12]==4'b1010 ? 1 : 0;	//INTENA
+assign sel_gayleid = sel_gayle && address_in[15:12]==4'b0001 ? 1 : 0;	//$DE1xxx
+assign sel_tfr = sel_ide && address_in[15:14]==2'b00 && !address_in[12] ? 1 : 0;
+assign sel_status = rd && sel_tfr && address_in[4:2]==3'b111 ? 1 : 0;
+assign sel_command = hwr && sel_tfr && address_in[4:2]==3'b111 ? 1 : 0;
+assign sel_fifo = sel_tfr && address_in[4:2]==3'b000 ? 1 : 0;
+assign sel_intreq = sel_ide && address_in[15:12]==4'b1001 ? 1 : 0;	//INTREQ
+assign sel_intena = sel_ide && address_in[15:12]==4'b1010 ? 1 : 0;	//INTENA
 
 //===============================================================================================//
 
@@ -157,10 +152,10 @@ wire	[7:0] tfr_out;
 wire	tfr_we;
 
 assign tfr_we = busy ? hdd_wr : sel_tfr & hwr;
-assign tfr_sel = busy ? hdd_addr : address[4:2];
-assign tfr_in = busy ? hdd_data_out[7:0] : datain[15:8];
+assign tfr_sel = busy ? hdd_addr : address_in[4:2];
+assign tfr_in = busy ? hdd_data_out[7:0] : data_in[15:8];
 
-assign hdd_data_in = tfr_sel==0 ? fifo_dout : {8'h00,tfr_out};
+assign hdd_data_in = tfr_sel==0 ? fifo_data_out : {8'h00,tfr_out};
 
 always @(posedge clk)
 	if (tfr_we)
@@ -171,15 +166,15 @@ assign tfr_out = tfr[tfr_sel];
 always @(posedge clk)
 	if (reset)
 		dev <= 0;
-	else if (sel_tfr && address[4:2]==6 && hwr)
-		dev <= datain[12];
+	else if (sel_tfr && address_in[4:2]==6 && hwr)
+		dev <= data_in[12];
 		
-//IDE interrupt enable register
+// IDE interrupt enable register
 always @(posedge clk)
 	if (reset)
 		intena <= 0;
 	else if (sel_intena && hwr)
-		intena <= datain[15];
+		intena <= data_in[15];
 			
 // gayle id register: reads 1->1->0->1 on MSB
 always @(posedge clk)
@@ -189,7 +184,7 @@ always @(posedge clk)
 		else if (rd)
 			gayleid_cnt <= gayleid_cnt + 1;
 
-assign gayleid = ~gayleid_cnt[1] | gayleid_cnt[0];
+assign gayleid = gayleid_cnt[1:0] == 2'b10 ? 1'b0 : 1'b1;
 
 // status register (write only from SPI host)
 // 7 - busy status (write zero to finish command processing: allow host access to task file registers)
@@ -216,7 +211,7 @@ always @(posedge clk)
 		intreq <= 0;
 	else if (busy && hdd_status_wr && hdd_data_out[4] && intena)	//set by SPI host
 		intreq <= 1;
-	else if (sel_intreq && hwr && !datain[15])
+	else if (sel_intreq && hwr && !data_in[15])
 		intreq <= 0;
 
 assign irq = intreq;
@@ -254,7 +249,7 @@ assign hdd_cmd_req = bsy;
 assign hdd_dat_req = (~fifo_empty & pio_out);
 
 assign fifo_reset = reset | sel_command;
-assign fifo_din = pio_in ? hdd_data_out : datain;
+assign fifo_data_in = pio_in ? hdd_data_out : data_in;
 assign fifo_rd = pio_out ? hdd_data_rd : sel_fifo & rd;
 assign fifo_wr = pio_in ? hdd_data_wr : sel_fifo & hwr & lwr;
 
@@ -263,8 +258,8 @@ fifo256x16 sb1
 (
 	.clk(clk),
 	.reset(fifo_reset),
-	.din(fifo_din),
-	.dout(fifo_dout),
+	.data_in(fifo_data_in),
+	.data_out(fifo_data_out),
 	.rd(fifo_rd),
 	.wr(fifo_wr),
 	.full(fifo_full),
@@ -272,8 +267,8 @@ fifo256x16 sb1
 );
 
 
-//dataout multiplexer
-assign dataout = (sel_fifo && rd ? fifo_dout : sel_status ? dev ? 16'h00_00 : {status,8'h00} : sel_tfr && rd ? {tfr_out,8'h00} : 16'h00_00)
+//data_out multiplexer //dev ? 16'h00_00 :
+assign data_out = (sel_fifo && rd ? fifo_data_out : sel_status ? (!dev && hdd_ena[0]) || (dev && hdd_ena[1]) ? {status,8'h00} : 16'h00_00 : sel_tfr && rd ? {tfr_out,8'h00} : 16'h00_00)
 			   | (sel_intreq && rd ? {intreq,15'b000_0000_0000_0000} : 16'h00_00)				
 			   | (sel_intena && rd ? {intena,15'b000_0000_0000_0000} : 16'h00_00)				
 			   | (sel_gayleid && rd ? {gayleid,15'b000_0000_0000_0000} : 16'h00_00);
@@ -290,14 +285,14 @@ endmodule
 //when rd=1, the next data word is selected 
 module fifo256x16
 (
-	input 	clk,		    	// bus clock
-	input 	reset,			   	// reset 
-	input	[15:0] din,			// data in
-	output	reg [15:0] dout,	// data out
-	input	rd,					// read from fifo
-	input	wr,					// write to fifo
-	output	full,				// fifo is full
-	output	reg empty			// fifo is empty
+	input 	clk,		    		// bus clock
+	input 	reset,			   		// reset 
+	input	[15:0] data_in,			// data in
+	output	reg [15:0] data_out,	// data out
+	input	rd,						// read from fifo
+	input	wr,						// write to fifo
+	output	full,					// fifo is full
+	output	reg empty				// fifo is empty
 );
 
 //local signals and registers
@@ -309,10 +304,10 @@ wire	equal;					// lower 8 bits of inptr and outptr are equal
 //main fifo memory (implemented using synchronous block ram)
 always @(posedge clk)
 	if (wr && !full)
-		mem[inptr[7:0]] <= din;
+		mem[inptr[7:0]] <= data_in;
 		
 always @(posedge clk)
-	dout <= mem[outptr[7:0]];
+	data_out <= mem[outptr[7:0]];
 
 //fifo write pointer control
 always @(posedge clk)

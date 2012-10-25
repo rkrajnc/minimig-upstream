@@ -22,24 +22,27 @@
 // The bootrom will download the kickstart rom image trough the floppy 
 // interface to the kickstart ram area. 
 //
-// 11-04-2005	-removed rd signal because it is no longer necessary
-// 19-04-2005	-expanded to 2Kbyte address space
-// 21-12-2005	-added rd input
-// 27-11-2006	-rom now implemented using blockram
+// 11-04-2005	- removed rd signal because it is no longer necessary
+// 19-04-2005	- expanded to 2Kbyte address space
+// 21-12-2005	- added rd input
+// 27-11-2006	- rom now implemented using blockram
+// ----------
 //
 // JB:
 // 2008-05-14	- Verilog 2001 style module definition
 // 2008-05-14	- new bootloader
-// 2008-09-27	- FPGA core version updated
-//				- code clean-up
+// 2008-09-27	- FPGA core version updated & code clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-06-06	- adapted bootloader for firmware with high resolution OSD display
+// 2009-09-11	- updated bootloader code
  
 module bootrom
 (
 	input 	clk,					// bus clock
 	input 	aen,    				// rom enable
 	input	rd,						// bus read
-	input 	[10:1] address,			// address in
-	output 	reg [15:0] dataout		// data out
+	input 	[10:1] address_in,		// address in
+	output 	reg [15:0] data_out		// data out
 );
 
 reg	 	[10:1] romaddress;
@@ -47,7 +50,7 @@ reg		[15:0] romdata;
 
 // use clocked address to infer blockram
 always @(negedge clk)
-	romaddress[10:1] <= address[10:1];
+	romaddress[10:1] <= address_in[10:1];
 
 // the rom itself
 // FPGA core version is stored in words 4-7 as 8 ASCII characters 
@@ -222,7 +225,7 @@ begin
 		0158:	romdata[15:0] = 16'h0000;
 		0159:	romdata[15:0] = 16'h4000;
 		0160:	romdata[15:0] = 16'h0C58;
-		0161:	romdata[15:0] = 16'hAA55;
+		0161:	romdata[15:0] = 16'hAA67;
 		0162:	romdata[15:0] = 16'h6600;
 		0163:	romdata[15:0] = 16'h0118;
 		0164:	romdata[15:0] = 16'h3018;
@@ -578,8 +581,8 @@ begin
 		0514:	romdata[15:0] = 16'h2042;
 		0515:	romdata[15:0] = 16'h5951;
 		0516:	romdata[15:0] = 16'h3039;
-		0517:	romdata[15:0] = 16'h3032;
-		0518:	romdata[15:0] = 16'h3135;
+		0517:	romdata[15:0] = 16'h3039;
+		0518:	romdata[15:0] = 16'h3131;
 		0519:	romdata[15:0] = 16'h0A00;
 		0520:	romdata[15:0] = 16'h0A46;
 		0521:	romdata[15:0] = 16'h5047;
@@ -646,8 +649,8 @@ begin
 		0582:	romdata[15:0] = 16'h7469;
 		0583:	romdata[15:0] = 16'h626C;
 		0584:	romdata[15:0] = 16'h6520;
-		0585:	romdata[15:0] = 16'h5049;
-		0586:	romdata[15:0] = 16'h4320;
+		0585:	romdata[15:0] = 16'h4D43;
+		0586:	romdata[15:0] = 16'h5520;
 		0587:	romdata[15:0] = 16'h6669;
 		0588:	romdata[15:0] = 16'h726D;
 		0589:	romdata[15:0] = 16'h7761;
@@ -1092,8 +1095,8 @@ end
 // output enable
 always @(romdata or aen or rd)
 	if (aen && rd)
-		dataout[15:0] = romdata[15:0];
+		data_out[15:0] = romdata[15:0];
 	else
-		dataout[15:0] = 16'h0000;
+		data_out[15:0] = 16'h0000;
 
 endmodule

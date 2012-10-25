@@ -19,61 +19,61 @@
 //
 // This is the top module for the Minimig rev1.0 board
 //
-// 19-03-2005 		-started coding
-// 10-04-2005		-added cia's 
+// 19-03-2005 	-started coding
+// 10-04-2005	-added cia's 
 //				-verified timers a/b and I/O ports
-// 11-04-2005		-adapted top to cleaned up address decoder
+// 11-04-2005	-adapted top to cleaned up address decoder
 //				-connected cia's to .clk(~qclk) and .tick(e) for testing
-// 13-04-2005		-_foe and _loe are now made with clocks driving FF's
+// 13-04-2005	-_foe and _loe are now made with clocks driving FF's
 //				-sram_bridge now also gets .clk(clk)
-// 18-04-2005		-added second synchronisation latch for mreset
-// 19-04-2005		-bootrom is now 2Kbyte large
-// 05-05-2005		-made preparations for dma (bus multiplexers between agnus and cpu)
-// 15-05-2005		-added denise
+// 18-04-2005	-added second synchronisation latch for mreset
+// 19-04-2005	-bootrom is now 2Kbyte large
+// 05-05-2005	-made preparations for dma (bus multiplexers between agnus and cpu)
+// 15-05-2005	-added denise
 // 				-connected vertb (vertical blank intterupt) to int3 input of paula
-// 18-05-2005		-removed interlaced top input pin
-// 28-06-2005		-done some experimentation to solve logic loop in Agnus
-// 17-07-2005		-connected second ram bank to hold kickstart rom
+// 18-05-2005	-removed interlaced top input pin
+// 28-06-2005	-done some experimentation to solve logic loop in Agnus
+// 17-07-2005	-connected second ram bank to hold kickstart rom
 // 				-added ovl (kickstart overlay) and boot (bootrom overlay) signals
 //				-wired cia in/out ports more correctly
 //				-wired vsync/hsync to cia's
-// 18-07-2005		-experimented to get kickstart running
-// 20-07-2005		-still experimenting..
-// 07-08-2005		-Jahoeee!! kickstart doesn't guru anymore but 'clicks' the floppy drive !
+// 18-07-2005	-experimented to get kickstart running
+// 20-07-2005	-still experimenting..
+// 07-08-2005	-Jahoeee!! kickstart doesn't guru anymore but 'clicks' the floppy drive !
 //				-the guru's were caused by spurious writes to ram which is fixed now in the sram controller
 //				-unfortunately still no insert workbench screen but that may be caused by the missing blitter
-// 04-09-2005		-added blitter finished interrupt
-// 11-09-2005		-added 2meg addressing for Agnus
-// 13-09-2005		-added 4bit (per color) video output
-// 16-10-2005		-added user IO module
-// 23-10-2005		-added dmal signal wire
-// 08-11-2005		-fixed typo in instantiation of Paula
-// 21-11-2005		-added some signals to handle floppy
-// 22-11-2005		-adapted to new add-on develop board
+// 04-09-2005	-added blitter finished interrupt
+// 11-09-2005	-added 2meg addressing for Agnus
+// 13-09-2005	-added 4bit (per color) video output
+// 16-10-2005	-added user IO module
+// 23-10-2005	-added dmal signal wire
+// 08-11-2005	-fixed typo in instantiation of Paula
+// 21-11-2005	-added some signals to handle floppy
+// 22-11-2005	-adapted to new add-on develop board
 //				-added joystick 1 port
-// 10-12-2005		-done some experimentation to find floppy bug
-// 21-12-2005		-reworked code to use new style gary module
-// 27-12-2005		-added dskindx interrupt
-// 03-01-2006		-added dmas to avoid interference with copper cycles
-// 11-01-2006		-added Amber
-// 15-01-2006		-added syscontrol module to handle automatic boot sequence
-// 22-01-2006		-removed _csync port from agnus
-// 23-01-2006		-added fastblit input
-// 24-01-2006		-cia's now count positive _hsync/_vsync transitions
-// 14-02-2006		-code clean up
+// 10-12-2005	-done some experimentation to find floppy bug
+// 21-12-2005	-reworked code to use new style gary module
+// 27-12-2005	-added dskindx interrupt
+// 03-01-2006	-added dmas to avoid interference with copper cycles
+// 11-01-2006	-added Amber
+// 15-01-2006	-added syscontrol module to handle automatic boot sequence
+// 22-01-2006	-removed _csync port from agnus
+// 23-01-2006	-added fastblit input
+// 24-01-2006	-cia's now count positive _hsync/_vsync transitions
+// 14-02-2006	-code clean up
 //				-added fastchip input
-// 19-02-2006		-improved indx disk interrupt timing
+// 19-02-2006	-improved indx disk interrupt timing
 //				-cia timers now connect to sol/sof
-// 12-11-2006		-started porting code to Minimig rev1.0 board
-// 17-11-2006		-added address decoding for Minimig rev1.0 ram
-// 22-11-2006		-added keyboard reset
-// 27-11-2006		-code adapted to new synchronous bootrom
-// 03-12-2006		-added dimming powerled
-// 11-12-2006		-updated code to new ciaa
-// 27-12-2006		-updated code to new ciab
-// 24-06-2007		-moved cpu/sram/clock and syscontrol to this file to reduce number of source files
+// 12-11-2006	-started porting code to Minimig rev1.0 board
+// 17-11-2006	-added address decoding for Minimig rev1.0 ram
+// 22-11-2006	-added keyboard reset
+// 27-11-2006	-code adapted to new synchronous bootrom
+// 03-12-2006	-added dimming powerled
+// 11-12-2006	-updated code to new ciaa
+// 27-12-2006	-updated code to new ciab
+// 24-06-2007	-moved cpu/sram/clock and syscontrol to this file to reduce number of source files
 //
-// TODO: 			-fixs bug and implement things I forgot.....
+// TODO: 		-fixs bug and implement things I forgot.....
 
 //JB:
 // 2008-07-17
@@ -109,29 +109,39 @@
 //
 // Thanks to Loriano, Darrin, Richard, Edwin, Sascha, Peter and others for their help, support, ideas, testing, bug reports and feature requests.
 //
+// 2009-05-17	- hires OSD
+// 2009-05-23	- more cycle exact CPU bus timing during CIA access
+// 2009-05-24	- clean-up & renaming
+// 2009-05-29	- changed blitter timing to be more cycle exact
+// 2009-06-09	- fixed disk index pulses to 5 Hz (300 RPM)
+// 2009-06-10	- fixed non-interlaced frames to be long
+// 2009-06-11	- fixed serial port divider
+// 2009-06-12	- CIA's SDR register returns written value
+// 2009-07-01	- enabling of ddfstrt/ddfstop ECS extension bits is configurable
+// 2009-08-11	- support for second hardfile
+// 2009-08-16	- Action Replay problem fixed (thanks Sascha)
 
 module Minimig1
 (
 	//m68k pins
-	inout 	[15:0]cpudata,		//m68k data bus
-	input	[23:1]cpuaddress,	//m68k address bus
-	output	[2:0]_ipl,			//m68k interrupt request
-	input	_as,				//m68k address strobe
-	input	_uds,				//m68k upper data strobe
-	input	_lds,				//m68k lower data strobe
-	input	r_w,				//m68k read / write
-	output	_dtack,				//m68k data acknowledge
-	output	_cpureset,			//m68k reset
-	output	cpuclk,				//m68k clock
+	inout 	[15:0] cpu_data,	//m68k data bus
+	input	[23:1] cpu_address,	//m68k address bus
+	output	[2:0] _cpu_ipl,		//m68k interrupt request
+	input	_cpu_as,			//m68k address strobe
+	input	_cpu_uds,			//m68k upper data strobe
+	input	_cpu_lds,			//m68k lower data strobe
+	input	cpu_r_w,			//m68k read / write
+	output	_cpu_dtack,			//m68k data acknowledge
+	output	_cpu_reset,			//m68k reset
+	output	cpu_clk,			//m68k clock
 	//sram pins
-	inout	[15:0]ramdata,		//sram data bus
-	output	[19:1]ramaddress,	//sram address bus
-	output	_ramsel0,			//sram enable bank 0
-	output	_ramsel1,			//sram enable bank 1
-	output	_ub,				//sram upper byte select
-	output	_lb,				//sram lower byte select
-	output	_we,				//sram write enable
-	output	_oe,				//sram output enable
+	inout	[15:0] ram_data,	//sram data bus
+	output	[19:1] ram_address,	//sram address bus
+	output	[3:0] _ram_ce,		//sram chip enable
+	output	_ram_bhe,			//sram upper byte select
+	output	_ram_ble,			//sram lower byte select
+	output	_ram_we,			//sram write enable
+	output	_ram_oe,			//sram output enable
 	//system	pins
 	input	mclk,				//master system clock (4.433619MHz)
 	//rs232 pins
@@ -149,25 +159,21 @@ module Minimig1
 	inout	kbddat,				//PS2 keyboard data
 	inout	kbdclk,				//PS2 keyboard clk
 	//host controller interface (SPI)
-	input	_spisel0,			//SPI enable 0
-	input	_spisel1,			//SPI enable 1
-	input	_spisel2,			//SPI enable 2
-	input	spidin,				//SPI data input
-	inout	spidout,			//SPI data output
-	input	spiclk,				//SPI clock
+	input	[2:0]_scs,			//SPI chip select
+	input	sdi,				//SPI data input
+	inout	sdo,				//SPI data output
+	input	sck,				//SPI clock
 	//video
-	output	_hsyncout,			//horizontal sync
-	output	_vsyncout,			//vertical sync
-	output	[3:0]redout,		//red
-	output	[3:0]greenout,		//green
-	output	[3:0]blueout,		//blue
+	output	_hsync,				//horizontal sync
+	output	_vsync,				//vertical sync
+	output	[3:0] red,			//red
+	output	[3:0] green,		//green
+	output	[3:0] blue,			//blue
 	//audio
 	output	left,				//audio bitstream left
 	output	right,				//audio bitstream right
 	//user i/o
-	output	gpio0,
-	output	gpio1,
-	output	gpio2
+	output	gpio
 );
 
 //--------------------------------------------------------------------------------------
@@ -177,41 +183,42 @@ module Minimig1
 //--------------------------------------------------------------------------------------
 
 //local signals for data bus
-wire		[15:0] data;			//main databus
-wire		[15:0] customdatain;	//custom chips databus in
-wire		[15:0] pauladataout;	//paula databus out
-wire		[15:0] userdataout;		//user IO data out
-wire		[15:0] denisedataout;	//denise databus out
-wire		[15:0] cpudataout;		//cpu databus out
-wire		[15:0] ramdataout;		//ram databus out
-wire		[15:0] bootdataout;		//boot rom databus out
-wire		[15:0] ciadataout;		//cia A+B databus out
-wire		[15:0] agnusdataout;	//agnus data out
-wire		[15:0] cartdataout;		//Action Replay data out
-wire		[15:0] gayledataout;	//Gayle data out
+wire		[15:0] cpu_data_in;		//cpu data bus in
+wire		[15:0] cpu_data_out;	//cpu data bus out
+wire		[15:0] ram_data_in;		//ram data bus in
+wire		[15:0] ram_data_out;	//ram data bus out
+wire		[15:0] custom_data_in;	//custom chips data bus in
+wire		[15:0] custom_data_out;	//custom chips data bus out
+wire		[15:0] agnus_data_out;	//agnus data out
+wire		[15:0] paula_data_out;	//paula data bus out
+wire		[15:0] denise_data_out;	//denise data bus out
+wire		[15:0] user_data_out;	//user IO data out
+wire		[15:0] gary_data_out;	//data out from memory bus multiplexer
+wire		[15:0] gayle_data_out;	//Gayle data out
+wire		[15:0] boot_data_out;	//boot rom data bus out
+wire		[15:0] cia_data_out;	//cia A+B data bus out
+wire		[15:0] ar3_data_out;	//Action Replay data out
 
 //local signals for spi bus
-wire		paulaspidout; 			//paula spi data out
-wire		userspidout;			//userio spi data out
+wire		paula_sdo; 				//paula spi data out
+wire		user_sdo;				//userio spi data out
 
 //local signals for address bus
-reg			[23:1] address;			//main address bus
-wire		[20:1] address_agnus;	//agnus address out
+wire		[23:1] cpu_address_out;	//cpu address out
+wire		[20:1] dma_address_out;	//agnus address out
+wire		[18:1] ram_address_out;	//ram address out
 
 //local signals for control bus
-wire		hwr;					//main high write enable 
-wire		lwr;					//main low write enable 
-wire		rd;						//main read enable
-wire		cpurd; 					//cpu read enable
-wire		cpuhwr;					//cpu high write enable
-wire		cpulwr;					//cpu low write enable
-wire		dma;					//agnus gets bus
-wire		dmawr;					//agnus write
-wire		dmapri;					//agnus has priority	
+wire		ram_rd;					//ram read enable
+wire		ram_hwr;				//ram high byte write enable 
+wire		ram_lwr;				//ram low byte write enable 
+wire		cpu_rd; 				//cpu read enable
+wire		cpu_hwr;				//cpu high byte write enable
+wire		cpu_lwr;				//cpu low byte write enable
 wire		cck;					//colour clock (chipset dma slots indication)
 
 //register address bus
-wire		[8:1]regaddress; 		//main register address bus
+wire		[8:1] reg_address; 		//main register address bus
 
 //rest of local signals
 wire		kbdrst;					//keyboard reset
@@ -219,31 +226,34 @@ wire		reset;					//global reset
 wire		clk;					//bus clock
 wire		clk28m;					//28MHz clock for Amber (and ECS Denise in future)
 wire		c1,c3;					//clock enable signals
-wire		e;						//e clock enable
-wire		dbr;					//data bus request, Gary tells CPU bridge that current bus cycle is not available (dbr=1)
-reg			dbr_del;				//delayed dbr
+wire		[9:0] eclk;				//E clock enable
+wire		dbr;					//data bus request, Agnus tells CPU that she is using the bus
+wire		dbwe;					//data bus write enable, Agnus tells the RAM it's writing data
+wire		dbs;					//data bus slow down, used for slowing down CPU access to chip, slow and custor register address space
+wire		xbs;					//cross bridge access (memory and custom registers)
 wire		ovl;					//kickstart overlay enable
 wire		_led;					//power led
 wire		boot;    				//bootrom overlay enable
-wire		selchip;				//chip ram select
-wire		selslow;				//slow ram select
-wire		selkick;				//rom select
-wire		selreg;					//chip register select
-wire		selciaa;				//cia A select
-wire		selciab;				//cia B select
-wire		selboot;				//boot rom select
+wire		[3:0] sel_chip;			//chip ram select
+wire		[2:0] sel_slow;			//slow ram select
+wire		sel_kick;				//rom select
+wire		sel_cia;				//CIA address space
+wire		sel_reg;				//chip register select
+wire		sel_cia_a;				//cia A select
+wire		sel_cia_b;				//cia B select
+wire		sel_boot;				//boot rom select
 wire		int2;					//intterrupt 2
 wire		int3;					//intterrupt 3 
 wire		int6;					//intterrupt 6
-wire		[7:0] osdctrl;			//OSD control
+wire		[7:0] osd_ctrl;			//OSD control
 wire		freeze;					//Action Replay freeze button
-wire		_fire0;					//joystick 1 fire signal	to cia A
+wire		_fire0;					//joystick 1 fire signal to cia A
 wire		_fire1;					//joystick 2 fire signal to cia A
 wire		[3:0] audio_dmal;		//audio dma data transfer request from Paula to Agnus
 wire		[3:0] audio_dmas;		//audio dma location pointer restart from Paula to Agnus
 wire		disk_dmal;				//disk dma data transfer request from Paula to Agnus
 wire		disk_dmas;				//disk dma special request from Paula to Agnus
-wire		indx;					//disk index interrupt
+wire		index;					//disk index interrupt
 
 //local video signals
 wire		blank;					//blanking signal
@@ -251,14 +261,14 @@ wire		sol;					//start of video line
 wire		sof;					//start of video frame
 wire		strhor_denise;			//horizontal strobe for Denise
 wire		strhor_paula;			//horizontal strobe for Paula
-wire		[3:0]nred;				//denise (pal) red
-wire		[3:0]ngreen;			//denise (pal) green
-wire		[3:0]nblue;				//denise (pal) blue
-wire		osdblank;				//osd blanking 
-wire		osdpixel;				//osd pixel(video) data
-wire		_hsync;					//horizontal sync
-wire		_vsync;					//vertical sync
-wire		_csync;					//composite sync
+wire		[3:0]red_i;				//denise red (internal)
+wire		[3:0]green_i;			//denise green (internal)
+wire		[3:0]blue_i;			//denise blue (internal)
+wire		osd_blank;				//osd blanking 
+wire		osd_pixel;				//osd pixel(video) data
+wire		_hsync_i;				//horizontal sync (internal)
+wire		_vsync_i;				//vertical sync (internal)
+wire		_csync_i;				//composite sync (internal)
 wire		[8:0] htotal;			//video line length (140ns units)
 
 //local floppy signals (CIA<-->Paula)
@@ -275,9 +285,8 @@ wire		_change;				//disk has been removed from drive
 wire		_ready;					//disk is ready
 wire		_wprot;					//disk is write-protected
 
-
 //--------------------------------------------------------------------------------------
-//JB:
+
 wire	bls;					//blitter slowdown - required for sharing bus cycles between Blitter and CPU
 
 wire	int7;					//int7 interrupt request from Action Replay
@@ -297,14 +306,14 @@ wire	turbo;					//CPU is working in turbo mode
 wire	[3:0] memory_config;	//memory configuration
 wire	[3:0] floppy_config;	//floppy drives configuration (drive number and speed)
 wire	[3:0] chipset_config;	//CPU & blitter speed and video mode selection
-wire	hdd_ena;				//hdd and gayle enable
+wire	[2:0] ide_config;		//HDD & HDC config: bit #0 enables Gayle, bit #1 enables Master drive, bit #2 enables Slave drive
 
 //gayle stuff
-wire	selide;					//select IDE drive registers
-wire	selgayle;				//select GAYLE control registers
-wire	gayleint;				//interrupt request
+wire	sel_ide;				//select IDE drive registers
+wire	sel_gayle;				//select GAYLE control registers
+wire	gayle_irq;				//interrupt request
 //emulated hard disk drive signals
-wire	hdd_cmd_req;			//hard disk controller has has written command register and requests processing
+wire	hdd_cmd_req;			//hard disk controller has written command register and requests processing
 wire	hdd_dat_req;			//hard disk controller requests data from emulated hard disk drive
 wire	[2:0] hdd_addr;			//emulated hard disk drive register address bus
 wire	[15:0] hdd_data_out;	//data output port of emulated hard disk drive
@@ -312,11 +321,9 @@ wire	[15:0] hdd_data_in;		//data input port of emulated hard disk drive
 wire	hdd_wr;					//register write strobe
 wire	hdd_status_wr;			//status register write strobe
 wire	hdd_data_wr;			//data port write strobe
-wire	hdd_data_rd;			//data pport read strobe
+wire	hdd_data_rd;			//data port read strobe
 
 wire	[7:0] bank;				//memory bank select
-wire	_ramsel2;				//memory chip select for extra RAM chip
-wire	_ramsel3;				//memory chip select for extra RAM chip
 
 wire	keyboard_disable;		//disables Amiga keyboard while OSD is active
 wire	disk_led;				//floppy disk activity LED
@@ -337,61 +344,48 @@ always @(posedge clk)
 assign pwrled = _led ? 1'bz : 1'b1;
 
 //extra memory Chip Selects for additional RAM chips
-assign {gpio2,gpio1,gpio0} = {_ramsel2,1'bz,_ramsel3};
+assign gpio = 1'bz;
+
+// SPI clock buffer
+wire buf_sck;
+BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 
 //--------------------------------------------------------------------------------------
 
-//indx signal generation, this signal is the disk index interrupt and is needed to let some
-//loaders function correctly
-//indx is asserted every 10 scanlines to simulate disk at 300 RPM
-reg [3:0] indxcnt;
-
+//index signal generation, this signal is the disk index interrupt and is needed to let some loaders function correctly
+//index is asserted every 10 video frames to simulate disk at 300 RPM
+reg [3:0] index_cnt;
 always @(posedge clk)
-	if (indx)
-		indxcnt[3:0] <= 0;
+	if (index)
+		index_cnt[3:0] <= 4'b0000;
 	else if (sof)
-		indxcnt[3:0] <= indxcnt[3:0] + 1;
+		index_cnt[3:0] <= index_cnt[3:0] + 1;
 		
-assign indx = (indxcnt[3:0]==9) ? 1 : 0;
-
-//--------------------------------------------------------------------------------------
-
-//switch address and control bus between agnus and cpu
-always @(dma or cpuaddress or address_agnus)
-	if (!dma)//address bus and control bus belongs to cpu
-		address[23:1] = cpuaddress[23:1];
-	else//address bus and control bus belongs to agnus
-		address[23:1] = {cpuaddress[23:21],address_agnus[20:1]};
-
-//--------------------------------------------------------------------------------------
-
-//custom chips data input (workaround for reading of write-only registers)
-assign customdatain = rd && !dma ? 16'hFFFF : data;
-
+assign index = index_cnt[3:0]==9 && sof ? 1'b1 : 1'b0;
+	
 //--------------------------------------------------------------------------------------
 
 //instantiate agnus
-Agnus A1
+Agnus AGNUS1
 (
 	.clk(clk),
 	.clk28m(clk28m),
 	.cck(cck),
 	.reset(reset),
-	.aen(selreg),
-	.rd(rd),
-	.hwr(hwr),
-	.lwr(lwr),
-	.datain(customdatain),
-	.dataout(agnusdataout),
-	.addressin(address[8:1]),
-	.addressout(address_agnus),
-	.regaddress(regaddress),
-	.bus(dma),
-	.buswr(dmawr),
-	.buspri(dmapri),
-	._hsync(_hsync),
-	._vsync(_vsync),
-	._csync(_csync),
+	.aen(sel_reg),
+	.rd(cpu_rd),
+	.hwr(cpu_hwr),
+	.lwr(cpu_lwr),
+	.data_in(custom_data_in),
+	.data_out(agnus_data_out),
+	.address_in(cpu_address_out[8:1]),
+	.address_out(dma_address_out),
+	.reg_address_out(reg_address),
+	.dbr(dbr),
+	.dbwe(dbwe),
+	._hsync(_hsync_i),
+	._vsync(_vsync_i),
+	._csync(_csync_i),
 	.blank(blank),
 	.sol(sol),
 	.sof(sof),
@@ -405,24 +399,25 @@ Agnus A1
 	.disk_dmas(disk_dmas),
 	.bls(bls),
 	.ntsc(ntsc),
+	.ecsena(chipset_config[3]),
 	.floppy_speed(floppy_config[0]),
-	.fastblitter((turbo|dbr_del)&chipset_config[1])	//in non-turbo mode blitter is blocked in any consecutive memory cycle accessed by chipset
+	.fastblitter(turbo)
 );
 
 //instantiate paula
-Paula P1
+Paula PAULA1
 (
 	.clk(clk),
 	.cck(cck),
 	.reset(reset),
-	.regaddress(regaddress),
-	.datain(customdatain),
-	.dataout(pauladataout),
+	.reg_address_in(reg_address),
+	.data_in(custom_data_in),
+	.data_out(paula_data_out),
 	.txd(txd),
 	.rxd(rxd),
 	.strhor(strhor_paula),
 	.sof(sof),
-	.int2(int2|gayleint),
+	.int2(int2|gayle_irq),
 	.int3(int3),
 	.int6(int6),
 	._ipl(_iplx),
@@ -440,17 +435,17 @@ Paula P1
 	._ready(_ready),
 	._wprot(_wprot),
 	.disk_led(disk_led),
-	._den(_spisel0),
-	.din(spidin),
-	.dout(paulaspidout),
-	.dclk(spiclk),
+	._scs(_scs[0]),
+	.sdi(sdi),
+	.sdo(paula_sdo),
+	.sck(buf_sck),
 	.left(left),
 	.right(right),
 
 	.floppy_drives(floppy_config[3:2]),
 	//ide stuff
-	.direct_sel(~_spisel2),
-	.direct_din(spidout),
+	.direct_scs(~_scs[2]),
+	.direct_sdi(sdo),
 	.hdd_cmd_req(hdd_cmd_req),	
 	.hdd_dat_req(hdd_dat_req),
 	.hdd_addr(hdd_addr),
@@ -463,36 +458,39 @@ Paula P1
 );
 
 //instantiate user IO
-userio UI1 
+userio USERIO1 
 (	
 	.clk(clk),
 	.reset(reset),
+	.clk28m(clk28m),
+	.c1(c1),
+	.c3(c3),
 	.sol(sol),
 	.sof(sof),
-	.regaddress(regaddress),
-	.datain(data),
-	.dataout(userdataout),
+	.reg_address_in(reg_address),
+	.data_in(custom_data_in),
+	.data_out(user_data_out),
 	.ps2mdat(msdat),
 	.ps2mclk(msclk),
 	._fire0(_fire0),
 	._fire1(_fire1),
 	._joy1(_joy1),
 	._joy2(_joy2),
-	.osdctrl(osdctrl),
+	.osd_ctrl(osd_ctrl),
 	.keydis(keyboard_disable),
-	._den(_spisel1),
-	.din(spidin),
-	.dout(userspidout),
-	.dclk(spiclk),
-	.osdblank(osdblank),
-	.osdpixel(osdpixel),
+	._scs(_scs[1]),
+	.sdi(sdi),
+	.sdo(user_sdo),
+	.sck(buf_sck),
+	.osd_blank(osd_blank),
+	.osd_pixel(osd_pixel),
 	.lr_filter(lr_filter),
 	.hr_filter(hr_filter),
 	.memory_config(memory_config),
 	.chipset_config(chipset_config),
 	.floppy_config(floppy_config),
 	.scanline(scanline),
-	.hdd_ena(hdd_ena),
+	.ide_config(ide_config),
 	.usrrst(usrrst),
 	.bootrst(bootrst)
 );
@@ -500,25 +498,24 @@ userio UI1
 assign cpu_speed = chipset_config[0];
 
 //instantiate Denise
-Denise DN1
+Denise DENISE1
 (		
 	.clk(clk),
 	.reset(reset),
 	.strhor(strhor_denise),
-	.regaddress(regaddress),
-	.datain(customdatain),
-	.dataout(denisedataout),
+	.reg_address_in(reg_address),
+	.data_in(custom_data_in),
+	.data_out(denise_data_out),
 	.blank(blank),
-	.red(nred),
-	.green(ngreen),
-	.blue(nblue),
+	.red(red_i),
+	.green(green_i),
+	.blue(blue_i),
 	.hires(hires)
 );
 
 //instantiate Amber
-Amber AMB1
+Amber AMBER1
 (		
-	.clk(clk),
 	.clk28m(clk28m),
 	.dblscan(_15khz),
 	.lr_filter(lr_filter),
@@ -526,107 +523,109 @@ Amber AMB1
 	.scanline(scanline),
 	.htotal(htotal),
 	.hires(hires),
-	.osdblank(osdblank),
-	.osdpixel(osdpixel),
-	.redin(nred),
-	.bluein(nblue),
-	.greenin(ngreen),
-	._hsyncin(_hsync),
-	._vsyncin(_vsync),
-	._csyncin(_csync),
-	.redout(redout),
-	.blueout(blueout),
-	.greenout(greenout),
-	._hsyncout(_hsyncout),
-	._vsyncout(_vsyncout)
+	.osd_blank(osd_blank),
+	.osd_pixel(osd_pixel),
+	.red_in(red_i),
+	.blue_in(blue_i),
+	.green_in(green_i),
+	._hsync_in(_hsync_i),
+	._vsync_in(_vsync_i),
+	._csync_in(_csync_i),
+	.red_out(red),
+	.blue_out(blue),
+	.green_out(green),
+	._hsync_out(_hsync),
+	._vsync_out(_vsync)
 );
 
 //instantiate cia A
-ciaa ciaa
+ciaa CIAA1
 (
 	.clk(clk),
-	.aen(selciaa),
-	.rd(rd),
-	.wr(lwr),
+	.aen(sel_cia_a),
+	.rd(cpu_rd),
+	.wr(cpu_lwr|cpu_hwr),
 	.reset(reset),
-	.rs(address[11:8]),
-	.datain(data[7:0]),
-	.dataout(ciadataout[7:0]),
+	.rs(cpu_address_out[11:8]),
+	.data_in(cpu_data_out[7:0]),
+	.data_out(cia_data_out[7:0]),
 	.tick(sof),//vsync count
-	.e(e),
+	.eclk(eclk[9]),
 	.irq(int2),
-	.portain({_fire1,_fire0,_ready,_track0,_wprot,_change}),
-	.portaout({_led,ovl}),
+	.porta_in({_fire1,_fire0,_ready,_track0,_wprot,_change}),
+	.porta_out({_led,ovl}),
 	.kbdrst(kbdrst),
 	.kbddat(kbddat),
 	.kbdclk(kbdclk),
 	.keydis(keyboard_disable),
-	.osdctrl(osdctrl),
+	.osd_ctrl(osd_ctrl),
 	.freeze(freeze),
 	.disk_led(disk_led)
 );
 
 //instantiate cia B
-ciab ciab 
+ciab CIAB1 
 (
 	.clk(clk),
-	.aen(selciab),
-	.rd(rd),
-	.wr(hwr),
+	.aen(sel_cia_b),
+	.rd(cpu_rd),
+	.wr(cpu_hwr|cpu_lwr),
 	.reset(reset),
-	.rs(address[11:8]),
-	.datain(data[15:8]),
-	.dataout(ciadataout[15:8]),
+	.rs(cpu_address_out[11:8]),
+	.data_in(cpu_data_out[15:8]),
+	.data_out(cia_data_out[15:8]),
 	.tick(sol),//hsync count
-	.e(e),
-	.flag(indx),
+	.eclk(eclk[9]),
+	.flag(index),
 	.irq(int6),
-	.portain({1'b0,cts,1'b0}),
-	.portaout({dtr,rts}),
-	.portbout({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
+	.porta_in({1'b0,cts,1'b0}),
+	.porta_out({dtr,rts}),
+	.portb_out({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
 );
 
 
 //instantiate cpu bridge
-m68k_bridge M1 
+m68k_bridge CPU1 
 (
-	.cpuaddress(cpuaddress),
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
 	.cck(cck),
 	.clk(clk),
+	.eclk(eclk),
+	.vpa(sel_cia),
 	.dbr(dbr),
+	.dbs(dbs),
+	.xbs(xbs),
 	.bls(bls),
-	.cpuclk(cpuclk),
 	.cpu_speed(cpu_speed),
 	.turbo(turbo),
-	._as(_as),
-	._lds(_lds),
-	._uds(_uds),
-	.r_w(r_w),
-	._dtack(_dtack),
-	.rd(cpurd),
-	.hwr(cpuhwr),
-	.lwr(cpulwr),
-	.data(cpudata),
-	.dataout(cpudataout),
-	.datain(data)
+	._as(_cpu_as),
+	._lds(_cpu_lds),
+	._uds(_cpu_uds),
+	.r_w(cpu_r_w),
+	._dtack(_cpu_dtack),
+	.rd(cpu_rd),
+	.hwr(cpu_hwr),
+	.lwr(cpu_lwr),
+	.address(cpu_address),
+	.address_out(cpu_address_out),
+	.data(cpu_data),
+	.data_out(cpu_data_out),
+	.data_in(cpu_data_in)
 );
 
 //instantiate RAM banks mapper
-bank_mapper BM1
+bank_mapper BMAP1
 (
-	.clk(clk),
-	.reset(reset),
-	.chip0((~ovr|~cpurd) & selchip & ~address[20] & ~address[19]),
-	.chip1(selchip & ~address[20] & address[19]),
-	.chip2(selchip & address[20] & ~address[19]),
-	.chip3(selchip & address[20] & address[19]),	
-	.slow0(selslow & ~address[20] & ~address[19]),
-	.slow1(selslow & ~address[20] & address[19]),
-	.slow2(selslow & address[20] & ~address[19]),
-	.rom(selkick&(boot|rd)),
+	.chip0((~ovr|~cpu_rd|dbr) & sel_chip[0]),
+	.chip1(sel_chip[1]),
+	.chip2(sel_chip[2]),
+	.chip3(sel_chip[3]),	
+	.slow0(sel_slow[0]),
+	.slow1(sel_slow[1]),
+	.slow2(sel_slow[2]),
+	.kick(sel_kick),
 	.cart(selcart),
 	.aron(aron),
 	.memory_config(memory_config),
@@ -634,42 +633,43 @@ bank_mapper BM1
 );
 
 //instantiate sram bridge
-sram_bridge S1 
+sram_bridge RAM1 
 (
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),	
-	.clk(clk),
 	.bank(bank),
-	.address(address[18:1]),
-	.datain(data),
-	.dataout(ramdataout),
-	.rd(rd),
-	.hwr(hwr),
-	.lwr(lwr),
-	._ub(_ub),
-	._lb(_lb),
-	._we(_we),
-	._oe(_oe),
-	._ce({_ramsel3,_ramsel2,_ramsel1,_ramsel0}),
-	.ramaddress(ramaddress),
-	.ramdata(ramdata)	
+	.address_in(ram_address_out),
+	.data_in(ram_data_in),
+	.data_out(ram_data_out),
+	.rd(ram_rd),
+	.hwr(ram_hwr),
+	.lwr(ram_lwr),
+	._bhe(_ram_bhe),
+	._ble(_ram_ble),
+	._we(_ram_we),
+	._oe(_ram_oe),
+	._ce({_ram_ce[3],_ram_ce[2],_ram_ce[1],_ram_ce[0]}),
+	.address(ram_address),
+	.data(ram_data)	
 );
 
-ActionReplay AR1
+ActionReplay CART1
 (
 	.clk(clk),
 	.reset(reset),
-	.cpuaddress(cpuaddress[23:1]),
-	.cpuclk(cpuclk),
-	._as(_as),
-	.regaddress(regaddress),
-	.datain(data),
-	.dataout(cartdataout),
-	.cpurd(cpurd),
-	.cpuhwr(cpuhwr),
-	.cpulwr(cpulwr),
-	.dma(dma),
+	.cpu_address(cpu_address),
+	.cpu_address_in(cpu_address_out),
+	.cpu_clk(cpu_clk),
+	._cpu_as(_cpu_as),
+	.reg_address_in(reg_address),
+	.reg_data_in(custom_data_in),
+	.data_in(cpu_data_out),
+	.data_out(ar3_data_out),
+	.cpu_rd(cpu_rd),
+	.cpu_hwr(cpu_hwr),
+	.cpu_lwr(cpu_lwr),
+	.dbr(dbr),
 	.boot(boot),
 	.freeze(freeze),
 	.int7(int7),
@@ -679,53 +679,61 @@ ActionReplay AR1
 );
 
 //level 7 interrupt for CPU
-assign _ipl = int7 ? 3'b000 : _iplx;	//m68k interrupt request
+assign _cpu_ipl = int7 ? 3'b000 : _iplx;	//m68k interrupt request
 
 //instantiate gary
-gary G1 
+gary GARY1 
 (
-	.clk(clk),
-	.cck(cck),
-	.e(e),
-	.cpuaddress(cpuaddress[23:12]),
-	.cpurd(cpurd),
-	.cpuhwr(cpuhwr),
-	.cpulwr(cpulwr),
-	.dbr(dbr),
-	.dma(dma),
-	.dmawr(dmawr),
-	.dmapri(dmapri),
+	.cpu_address_in(cpu_address_out),
+	.dma_address_in(dma_address_out),
+	.ram_address_out(ram_address_out),
+	.cpu_data_out(cpu_data_out),
+	.cpu_data_in(gary_data_out),
+	.custom_data_out(custom_data_out),
+	.custom_data_in(custom_data_in),
+	.ram_data_out(ram_data_out),
+	.ram_data_in(ram_data_in),
+	.cpu_rd(cpu_rd),
+	.cpu_hwr(cpu_hwr),
+	.cpu_lwr(cpu_lwr),
 	.ovl(ovl),
 	.boot(boot),
-	.rd(rd),
-	.hwr(hwr),
-	.lwr(lwr),
-	.selreg(selreg),
-	.selchip(selchip),
-	.selslow(selslow),
-	.selciaa(selciaa),
-	.selciab(selciab),
-	.selkick(selkick),
-	.selboot(selboot),
-	.selide(selide),
-	.selgayle(selgayle)
+	.dbr(dbr),
+	.dbwe(dbwe),
+	.dbs(dbs),
+	.xbs(xbs),
+	.memory_config(memory_config),
+	.hdc_ena(ide_config[0]), // Gayle decoding enable	
+	.ram_rd(ram_rd),
+	.ram_hwr(ram_hwr),
+	.ram_lwr(ram_lwr),
+	.sel_chip(sel_chip),
+	.sel_slow(sel_slow),
+	.sel_kick(sel_kick),
+	.sel_boot(sel_boot),
+	.sel_cia(sel_cia),
+	.sel_reg(sel_reg),
+	.sel_cia_a(sel_cia_a),
+	.sel_cia_b(sel_cia_b),
+	.sel_ide(sel_ide),
+	.sel_gayle(sel_gayle)
 );
 
-gayle GL1
+gayle GAYLE1
 (
 	.clk(clk),
 	.reset(reset),
-	.address(cpuaddress),
-	.datain(data),
-	.dataout(gayledataout),
-	.rd(cpurd),
-	.hwr(cpuhwr),
-	.lwr(cpulwr),
-	.selide(selide),
-	.selgayle(selgayle),
-	.irq(gayleint),
+	.address_in(cpu_address_out),
+	.data_in(cpu_data_out),
+	.data_out(gayle_data_out),
+	.rd(cpu_rd),
+	.hwr(cpu_hwr),
+	.lwr(cpu_lwr),
+	.sel_ide(sel_ide),
+	.sel_gayle(sel_gayle),
+	.irq(gayle_irq),
+	.hdd_ena(ide_config[2:1]),
 
-	.hdd_ena(hdd_ena),	
 	.hdd_cmd_req(hdd_cmd_req),
 	.hdd_dat_req(hdd_dat_req),
 	.hdd_data_in(hdd_data_in),
@@ -739,28 +747,29 @@ gayle GL1
 );
 	
 //instantiate boot rom
-bootrom R1 
+bootrom BOOTROM1 
 (	
 	.clk(clk),
-	.aen(selboot),
-	.rd(rd),
-	.address(cpuaddress[10:1]),
-	.dataout(bootdataout)	
+	.aen(sel_boot),
+	.rd(cpu_rd),
+	.address_in(cpu_address_out[10:1]),
+	.data_out(boot_data_out)	
 );
 
 //instantiate system control
-syscontrol L1 
+syscontrol CONTROL1 
 (	
 	.clk(clk),
-	.mrst(kbdrst|usrrst),
-	.bootdone(selciaa&selciab),
+	.cnt(sof),
+	.mrst(kbdrst | usrrst),
+	.boot_done(sel_cia_a & sel_cia_b),
 	.reset(reset),
 	.boot(boot),
-	.bootrst(bootrst)
+	.boot_rst(bootrst)
 );
 
 //instantiate clock generator
-clock_generator CG1
+clock_generator CLOCK1
 (	
 	.mclk(mclk),
 	.clk28m(clk28m),	// 28.37516 MHz clock output
@@ -768,36 +777,35 @@ clock_generator CG1
 	.c3(c3),			// clock enable signal
 	.cck(cck),			// colour clock enable
 	.clk(clk),			// 7.09379  MHz clock output
-	.e(e)				// ECLK enable (1/10th of CLK)
+	.cpu_clk(cpu_clk),
+	.turbo(turbo),
+	.eclk(eclk)			// ECLK enable (1/10th of CLK)
 );
 
-//used for blocking blitter access in compatibility mode
-always @(posedge clk)
-	dbr_del <= dbr;
 
 //-------------------------------------------------------------------------------------
 
 //data multiplexer
-assign data[15:0] = ramdataout[15:0]
-				  | cpudataout[15:0]
-				  | pauladataout[15:0]
-				  | userdataout
-				  | denisedataout[15:0]
-				  | bootdataout[15:0]
-				  | ciadataout[15:0]
-				  | agnusdataout[15:0]
-				  | cartdataout[15:0]
-				  | gayledataout[15:0];
+assign cpu_data_in[15:0] = gary_data_out[15:0]
+						 | boot_data_out[15:0]
+						 | cia_data_out[15:0]
+						 | ar3_data_out[15:0]
+						 | gayle_data_out[15:0];
+
+assign custom_data_out[15:0] = agnus_data_out[15:0]
+							 | paula_data_out[15:0]
+							 | denise_data_out[15:0]
+							 | user_data_out[15:0];
 
 //--------------------------------------------------------------------------------------
 
 //spi multiplexer
-assign spidout=(!_spisel0 || !_spisel1) ? (paulaspidout|userspidout) : 1'bz;
+assign sdo = (!_scs[0] || !_scs[1]) ? (paula_sdo | user_sdo) : 1'bz;
 
 //--------------------------------------------------------------------------------------
 
 //cpu reset and clock
-assign _cpureset = ~reset;
+assign _cpu_reset = ~reset;
 
 //--------------------------------------------------------------------------------------
 
@@ -816,50 +824,53 @@ endmodule
 //This resets the system for a second time but it also de-asserts boot.
 //Thus, the system now boots as a regular amiga.
 //Subsequent resets by asserting mrst will not assert boot again.
-//JB:
-//2008-07-11	- reset to bootloader
-//2009-03-13	- shorter reset
+// JB:
+// 2008-07-11	- reset to bootloader
+// 2009-03-13	- shorter reset
+// 2009-08-17	- reset generator modification
 
 module syscontrol
 (
 	input	clk,			//bus clock
+	input	cnt,			//pulses for counting
 	input	mrst,			//master/user reset input
-	input	bootdone,		//bootrom program finished input
-	output	reg reset,		//global synchronous system reset
-	output	reg boot,		//bootrom overlay enable output
-	input	bootrst			//reset to bootloader
+	input	boot_done,		//bootrom program finished input
+	output	reset,			//global synchronous system reset
+	output	boot,			//bootrom overlay enable output
+	input	boot_rst		//reset to bootloader
 );
 
 //local signals
 reg		smrst;					//registered input
-reg		bootff = 0;				//boot control SHOULD BE CLEARED BY CONFIG
-reg		[7:0] rstcnt = 0;		//reset timer SHOULD BE CLEARED BY CONFIG
+reg		_boot = 0;
+reg		[1:0] rst_cnt = 0;		//reset timer SHOULD BE CLEARED BY CONFIG
+wire	_rst;					//local reset signal
 
-//asynchronous mrst input synchronizer (JB: hmmm, it seems that all reset inputs are synchronous)
+//asynchronous mrst input synchronizer
 always @(posedge clk)
 	smrst <= mrst;
 
 //reset timer and mrst control
 always @(posedge clk)
-	if (smrst || (boot && bootdone && rstcnt[7]))
-		rstcnt <= 0;
-	else if (!rstcnt[7])
-		rstcnt <= rstcnt+1;
+	if (smrst || (boot && boot_done && _rst))
+		rst_cnt <= 0;
+	else if (!_rst && cnt)
+		rst_cnt <= rst_cnt + 1;
+
+assign _rst = rst_cnt[1];
 
 //boot control
 always @(posedge clk)
-	if (bootrst)
-		bootff <= 0;
-	else if (bootdone && rstcnt[7])
-		bootff <= 1;
+	if (boot_rst)
+		_boot <= 0;
+	else if (boot_done)
+		_boot <= 1;
+
+//global boot output
+assign boot = ~_boot;
 
 //global reset output
-always @(posedge clk)
-	reset <= ~rstcnt[7];
-
-//boot output
-always @(posedge clk)
-	boot <= ~bootff;
+assign reset = ~_rst;
 
 endmodule
 
@@ -870,8 +881,6 @@ endmodule
 //This module maps physical 512KB blocks of every memory chip to different memory ranges in Amiga
 module bank_mapper
 (
-	input	clk,				// system clock
-	input	reset,				// system reset
 	input	chip0,				// chip ram select: 1st 512 KB block
 	input	chip1,				// chip ram select: 2nd 512 KB block
 	input	chip2,				// chip ram select: 3rd 512 KB block
@@ -879,56 +888,50 @@ module bank_mapper
 	input	slow0,				// slow ram select: 1st 512 KB block 
 	input	slow1,				// slow ram select: 2nd 512 KB block 
 	input	slow2,				// slow ram select: 3rd 512 KB block 
-	input	rom,				// ROM address range select
+	input	kick,				// Kickstart ROM address range select
 	input	cart,				// Action Reply memory range select
 	input	aron,				// Action Reply enable
 	input	[3:0] memory_config,// memory configuration
 	output	reg [7:0] bank		// bank select
 );
 
-reg	[3:0] memcfg;
-
-//memory configuration changes takes effect after reset
-always @(posedge clk)
-	if (reset)
-		memcfg <= memory_config;
 		
-always @(aron or memcfg or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or rom or cart)
+always @(aron or memory_config or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or kick or cart)
 begin
-	case ({aron,memcfg})
-		5'b0_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom,  1'b0,  1'b0, chip0};	//0.5M CHIP
-		5'b0_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom,  1'b0, chip1, chip0}; //1.0M CHIP
-		5'b0_0010 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom, chip2, chip1, chip0}; //1.5M CHIP
-		5'b0_0011 : bank = {  1'b0,  1'b0, chip3,  1'b0,     rom, chip2, chip1, chip0}; //2.0M CHIP
-		5'b0_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom, slow0,  1'b0, chip0};	//0.5M CHIP + 0.5MB SLOW
-		5'b0_0101 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom, slow0, chip1, chip0}; //1.0M CHIP + 0.5MB SLOW
-		5'b0_0110 : bank = {  1'b0,  1'b0,  1'b0, slow0,     rom, chip2, chip1, chip0}; //1.5M CHIP + 0.5MB SLOW
-		5'b0_0111 : bank = {  1'b0,  1'b0, chip3, slow0,     rom, chip2, chip1, chip0}; //2.0M CHIP + 0.5MB SLOW
-		5'b0_1000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom, slow0, slow1, chip0};	//0.5M CHIP + 1.0MB SLOW
-		5'b0_1001 : bank = {  1'b0,  1'b0, slow1,  1'b0,     rom, slow0, chip1, chip0}; //1.0M CHIP + 1.0MB SLOW
-		5'b0_1010 : bank = {  1'b0,  1'b0, slow1, slow0,     rom, chip2, chip1, chip0}; //1.5M CHIP + 1.0MB SLOW
-		5'b0_1011 : bank = { slow1,  1'b0, chip3, slow0,     rom, chip2, chip1, chip0}; //2.0M CHIP + 1.0MB SLOW
-		5'b0_1100 : bank = {  1'b0,  1'b0,  1'b0, slow2,     rom, slow0, slow1, chip0};	//0.5M CHIP + 1.5MB SLOW
-		5'b0_1101 : bank = {  1'b0,  1'b0, slow1, slow2,     rom, slow0, chip1, chip0}; //1.0M CHIP + 1.5MB SLOW
-		5'b0_1110 : bank = {  1'b0, slow2, slow1, slow0,     rom, chip2, chip1, chip0}; //1.5M CHIP + 1.5MB SLOW
-		5'b0_1111 : bank = { slow1, slow2, chip3, slow0,     rom, chip2, chip1, chip0}; //2.0M CHIP + 1.5MB SLOW
+	case ({aron,memory_config})
+		5'b0_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  1'b0,  1'b0, chip0}; //0.5M CHIP
+		5'b0_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  1'b0, chip1, chip0}; //1.0M CHIP
+		5'b0_0010 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, chip2, chip1, chip0}; //1.5M CHIP
+		5'b0_0011 : bank = {  1'b0,  1'b0, chip3,  1'b0,     kick, chip2, chip1, chip0}; //2.0M CHIP
+		5'b0_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0,  1'b0, chip0}; //0.5M CHIP + 0.5MB SLOW
+		5'b0_0101 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0, chip1, chip0}; //1.0M CHIP + 0.5MB SLOW
+		5'b0_0110 : bank = {  1'b0,  1'b0,  1'b0, slow0,     kick, chip2, chip1, chip0}; //1.5M CHIP + 0.5MB SLOW
+		5'b0_0111 : bank = {  1'b0,  1'b0, chip3, slow0,     kick, chip2, chip1, chip0}; //2.0M CHIP + 0.5MB SLOW
+		5'b0_1000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0, slow1, chip0}; //0.5M CHIP + 1.0MB SLOW
+		5'b0_1001 : bank = {  1'b0,  1'b0, slow1,  1'b0,     kick, slow0, chip1, chip0}; //1.0M CHIP + 1.0MB SLOW
+		5'b0_1010 : bank = {  1'b0,  1'b0, slow1, slow0,     kick, chip2, chip1, chip0}; //1.5M CHIP + 1.0MB SLOW
+		5'b0_1011 : bank = { slow1,  1'b0, chip3, slow0,     kick, chip2, chip1, chip0}; //2.0M CHIP + 1.0MB SLOW
+		5'b0_1100 : bank = {  1'b0,  1'b0,  1'b0, slow2,     kick, slow0, slow1, chip0}; //0.5M CHIP + 1.5MB SLOW
+		5'b0_1101 : bank = {  1'b0,  1'b0, slow1, slow2,     kick, slow0, chip1, chip0}; //1.0M CHIP + 1.5MB SLOW
+		5'b0_1110 : bank = {  1'b0, slow2, slow1, slow0,     kick, chip2, chip1, chip0}; //1.5M CHIP + 1.5MB SLOW
+		5'b0_1111 : bank = { slow1, slow2, chip3, slow0,     kick, chip2, chip1, chip0}; //2.0M CHIP + 1.5MB SLOW
 		
-		5'b1_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom,  cart,  1'b0, chip0};	//0.5M CHIP
-		5'b1_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom,  cart, chip1, chip0}; //1.0M CHIP
-		5'b1_0010 : bank = {  1'b0,  1'b0,  1'b0, chip2,     rom,  cart, chip1, chip0}; //1.5M CHIP
-		5'b1_0011 : bank = {  1'b0,  1'b0, chip3, chip2,     rom,  cart, chip1, chip0}; //2.0M CHIP
-		5'b1_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     rom,  cart, slow0, chip0};	//0.5M CHIP + 0.5MB SLOW
-		5'b1_0101 : bank = {  1'b0,  1'b0,  1'b0, slow0,     rom,  cart, chip1, chip0}; //1.0M CHIP + 0.5MB SLOW
-		5'b1_0110 : bank = {  1'b0,  1'b0, slow0, chip2,     rom,  cart, chip1, chip0}; //1.5M CHIP + 0.5MB SLOW
-		5'b1_0111 : bank = {  1'b0, slow0, chip3, chip2,     rom,  cart, chip1, chip0}; //2.0M CHIP + 0.5MB SLOW
-		5'b1_1000 : bank = {  1'b0,  1'b0, slow1,  1'b0,     rom,  cart, slow0, chip0};	//0.5M CHIP + 1.0MB SLOW
-		5'b1_1001 : bank = {  1'b0,  1'b0, slow1, slow0,     rom,  cart, chip1, chip0}; //1.0M CHIP + 1.0MB SLOW
-		5'b1_1010 : bank = { slow1,  1'b0, slow0, chip2,     rom,  cart, chip1, chip0}; //1.5M CHIP + 1.0MB SLOW
-		5'b1_1011 : bank = { slow1, slow0, chip3, chip2,     rom,  cart, chip1, chip0}; //2.0M CHIP + 1.0MB SLOW
-		5'b1_1100 : bank = {  1'b0,  1'b0, slow1, slow2,     rom,  cart, slow0, chip0};	//0.5M CHIP + 1.5MB SLOW
-		5'b1_1101 : bank = {  1'b0, slow2, slow1, slow0,     rom,  cart, chip1, chip0}; //1.0M CHIP + 1.5MB SLOW
-		5'b1_1110 : bank = { slow1, slow2, slow0, chip2,     rom,  cart, chip1, chip0}; //1.5M CHIP + 1.5MB SLOW
-		5'b1_1111 : bank = { slow1, slow0, chip3, chip2,     rom,  cart, chip1, chip0}; //2.0M CHIP + 1.5MB SLOW
+		5'b1_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart,  1'b0, chip0}; //0.5M CHIP
+		5'b1_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, chip1, chip0}; //1.0M CHIP
+		5'b1_0010 : bank = {  1'b0,  1'b0,  1'b0, chip2,     kick,  cart, chip1, chip0}; //1.5M CHIP
+		5'b1_0011 : bank = {  1'b0,  1'b0, chip3, chip2,     kick,  cart, chip1, chip0}; //2.0M CHIP
+		5'b1_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, slow0, chip0}; //0.5M CHIP + 0.5MB SLOW
+		5'b1_0101 : bank = {  1'b0,  1'b0,  1'b0, slow0,     kick,  cart, chip1, chip0}; //1.0M CHIP + 0.5MB SLOW
+		5'b1_0110 : bank = {  1'b0,  1'b0, slow0, chip2,     kick,  cart, chip1, chip0}; //1.5M CHIP + 0.5MB SLOW
+		5'b1_0111 : bank = {  1'b0, slow0, chip3, chip2,     kick,  cart, chip1, chip0}; //2.0M CHIP + 0.5MB SLOW
+		5'b1_1000 : bank = {  1'b0,  1'b0, slow1,  1'b0,     kick,  cart, slow0, chip0}; //0.5M CHIP + 1.0MB SLOW
+		5'b1_1001 : bank = {  1'b0,  1'b0, slow1, slow0,     kick,  cart, chip1, chip0}; //1.0M CHIP + 1.0MB SLOW
+		5'b1_1010 : bank = { slow1,  1'b0, slow0, chip2,     kick,  cart, chip1, chip0}; //1.5M CHIP + 1.0MB SLOW
+		5'b1_1011 : bank = { slow1, slow0, chip3, chip2,     kick,  cart, chip1, chip0}; //2.0M CHIP + 1.0MB SLOW
+		5'b1_1100 : bank = {  1'b0,  1'b0, slow1, slow2,     kick,  cart, slow0, chip0}; //0.5M CHIP + 1.5MB SLOW
+		5'b1_1101 : bank = {  1'b0, slow2, slow1, slow0,     kick,  cart, chip1, chip0}; //1.0M CHIP + 1.5MB SLOW
+		5'b1_1110 : bank = { slow1, slow2, slow0, chip2,     kick,  cart, chip1, chip0}; //1.5M CHIP + 1.5MB SLOW
+		5'b1_1111 : bank = { slow1, slow0, chip3, chip2,     kick,  cart, chip1, chip0}; //2.0M CHIP + 1.5MB SLOW
 	endcase
 end
 
@@ -950,23 +953,22 @@ module sram_bridge
 	input	clk28m,						// 28 MHz system clock
 	input	c1,							// clock enable signal
 	input	c3,							// clock enable signal	
-	input	clk,						// bus clock
 	//chipset internal port
 	input	[7:0] bank,					// memory bank select (512KB)
-	input	[18:1] address,				// bus address
-	input	[15:0] datain,				// bus data in
-	output	[15:0] dataout,				// bus data out
+	input	[18:1] address_in,			// bus address
+	input	[15:0] data_in,				// bus data in
+	output	[15:0] data_out,			// bus data out
 	input	rd,			   				// bus read
 	input	hwr,						// bus high byte write
 	input	lwr,						// bus low byte write
 	//SRAM external signals
-	output	reg _ub = 1,				// sram upper byte
-	output	reg _lb = 1,   				// sram lower byte
+	output	reg _bhe = 1,				// sram upper byte
+	output	reg _ble = 1,   				// sram lower byte
 	output	reg _we = 1,				// sram write enable
 	output	reg _oe = 1,				// sram output enable
 	output	reg [3:0] _ce = 4'b1111,	// sram chip enable
-	output	reg [19:1] ramaddress,		// sram address bus
-	inout	[15:0] ramdata	  			// sram data das
+	output	reg [19:1] address,			// sram address bus
+	inout	[15:0] data		  			// sram data das
 );	 
 
 /* basic timing diagram
@@ -1020,23 +1022,23 @@ always @(posedge clk28m)
 	else if (c1 && !c3 && enable && rd)	//assert output enable in Q1 during read cycle
 		_oe <= 1'b0;
 
-// generate ram upper byte enable _ub
+// generate ram upper byte enable _bhe
 always @(posedge clk28m)
 	if (!c1 && !c3) // deassert upper byte enable in Q0
-		_ub <= 1'b1;
+		_bhe <= 1'b1;
 	else if (c1 && !c3 && enable && rd) // assert upper byte enable in Q1 during read cycle
-		_ub <= 1'b0;
+		_bhe <= 1'b0;
 	else if (c1 && c3 && enable && hwr) // assert upper byte enable in Q2 during write cycle
-		_ub <= 1'b0;
+		_bhe <= 1'b0;
 		
-// generate ram lower byte enable _lb
+// generate ram lower byte enable _ble
 always @(posedge clk28m)
 	if (!c1 && !c3) // deassert lower byte enable in Q0
-		_lb <= 1'b1;
+		_ble <= 1'b1;
 	else if (c1 && !c3 && enable && rd) // assert lower byte enable in Q1 during read cycle
-		_lb <= 1'b0;	
+		_ble <= 1'b0;	
 	else if (c1 && c3 && enable && lwr) // assert lower byte enable in Q2 during write cycle
-		_lb <= 1'b0;
+		_ble <= 1'b0;
 			
 //generate data buffer output enable
 always @(posedge clk28m)
@@ -1055,13 +1057,13 @@ always @(posedge clk28m)
 // ram address bus
 always @(posedge clk28m)
 	if (c1 && !c3 && enable)	// set address in Q1		
-		ramaddress <= {bank[7]|bank[5]|bank[3]|bank[1],address[18:1]};
+		address <= {bank[7]|bank[5]|bank[3]|bank[1],address_in[18:1]};
 			
-// dataout multiplexer
-assign dataout[15:0] = (enable && rd) ? ramdata[15:0] : 16'b0000000000000000;
+// data_out multiplexer
+assign data_out[15:0] = (enable && rd) ? data[15:0] : 16'b0000000000000000;
 
 // data bus output buffers
-assign ramdata[15:0] = doe ? datain[15:0] : 16'bz;
+assign data[15:0] = doe ? data_in[15:0] : 16'bz;
 
 endmodule
 
@@ -1069,20 +1071,47 @@ endmodule
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 
-// This module interfaces the minimig's synchronous bus to the asynchronous 
-// MC68SEC000 bus on the Minimig rev1.0 board
+// This module interfaces Minimig's synchronous bus to the 68SEC000 CPU
+//
+// cycle exact CIA interface:
+// ECLK low for 6 cycles and high for 4
+// data latched with falling edge of ECLK
+// VPA sampled 3 CLKs before rising edge of ECLK
+// VMA asserted one clock later if VPA recognized
+// DTACK sampled one clock before ECLK falling edge
+//
+//             ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___
+// CLK     ___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___
+//         ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___
+// CPU_CLK    \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/
+//         ___ _______ _______ _______ _______ _______ _______ _______ _______ _______ _______ _______
+//         ___X___0___X___1___X___2___X___3___X___4___X___5___X___6___X___7___X___8___X___9___X___0___
+//         ___                                                 _______________________________
+// ECLK       \_______________________________________________/                               \_______
+//                                    |       |_VMA_asserted                          
+//                                    |_VPA_sampled                   _______________           ______
+//                                                                            \\\\\\\\_________/       DTACK asserted (7MHz)
+//                                                                                    |__DTACK_sampled (7MHz) 
+//                                                                    _____________________     ______
+//                                                                                         \___/       DTACK asserted (28MHz)
+//                                                                                          |__DTACK_sampled (28MHz)
+//
+// NOTE: in 28MHz mode this timing model is not (yet?) supported, CPU talks to CIAs with no waitstates
+//
 
 module m68k_bridge
 (
-	input	[23:1] cpuaddress,
 	input	clk28m,					// 28 MHz system clock
 	input	c1,						// clock enable signal
 	input	c3,						// clock enable signal
 	input	clk,					// bus clock
-	input	dbr, 					// data bus request, Gary keeps CPU off the bus
+	input	[9:0] eclk,				// ECLK enable signal
+	input	vpa,					// valid peripheral address (CIAs)
+	input	dbr, 					// data bus request, Gary keeps CPU off the bus (custom chips transfer data)
+	input	dbs,					// data bus slowdown (access to chip ram or custom registers)
+	input	xbs,					// cross bridge access (active dbr holds off CPU access)
 	output	bls,					// blitter slowdown, tells the blitter that CPU wants the bus
 	input	cck,					// colour clock enable, active when dma can access the memory bus
-	output	cpuclk,					// m68k clock
 	input	cpu_speed,				// CPU speed select request
 	output	reg turbo,				// indicates current CPU speed mode
 	input	_as,					// m68k adress strobe
@@ -1093,9 +1122,11 @@ module m68k_bridge
 	output	rd,						// bus read 
 	output	hwr,					// bus high write
 	output	lwr,					// bus low write
-	inout	[15:0] data,			// m68k data
-	output	reg [15:0] dataout,		// bus data out
-	input	[15:0] datain			// bus data in
+	input	[23:1] address,			// external cpu address bus
+	output	reg [23:1] address_out,	// internal cpu address bus output
+	inout	[15:0] data,			// external cpu data bus
+	output	reg [15:0] data_out,	// internal data bus output
+	input	[15:0] data_in			// internal data bus input
 );
 
 /*
@@ -1131,34 +1162,50 @@ DOUT   -------------------------------------------------<___________________>---
 */
 
 wire	doe;					// data buffer output enable
-reg		[15:0] ldatain;			// latched datain
+reg		[15:0] ldata_in;		// latched data_in
 wire	enable;					// enable
 reg		lr_w,l_as,l_dtack;  	// synchronised inputs
 reg		l_uds,l_lds;
 
-reg		ldbr;					// latched data bus request
+reg		lvpa;					// latched valid peripheral address (CIAs)
+reg		vma;					// valid memory address (synchronised VPA with ECLK)
 reg		_ta;					// transfer acknowledge
 
 //CPU speed mode is allowed to change only when there is no bus access
-always @(posedge clk28m)
+always @(posedge clk)
 	if (_as)
 		turbo <= cpu_speed;
+		
+//latched valid peripheral address
+always @(posedge clk)
+	lvpa <= vpa;
 
-//latched data bus request (chipset dma cycle)
-always @(posedge clk28m)
-	ldbr <= dbr;
+//vma output
+always @(posedge clk)
+	if (eclk[9])
+		vma <= 0;
+	else if (eclk[3] && lvpa)
+		vma <= 1;
 
 //latched CPU bus control signals
 always @(posedge clk)
 	{lr_w,l_as,l_uds,l_lds,l_dtack} <= {r_w,_as,_uds,_lds,_dtack};
+	
+reg	_as28m;
+always @(posedge clk28m)
+	_as28m <= _as;
 
+reg	l_as28m;
+always @(posedge clk)
+	l_as28m <= _as28m;
+	
 //transfer acknowledge
 always @(posedge clk28m or posedge _as)
 	if (_as)
 		_ta <= 1;
-	else if (!l_as && cck && !ldbr && c1 && c3 && !turbo)
+	else if (!l_as && cck && ((!vpa && !(dbr && dbs)) || (vpa && vma && eclk[8])) && c1 && c3 && !turbo)
 		_ta <= 0;	
-	else if (!l_as && !ldbr && c1 && c3 && turbo)
+	else if (!l_as28m && !(dbr && xbs) && c1 && c3 && turbo)
 		_ta <= 0;
 
 // CPU data transfer acknowledge
@@ -1168,50 +1215,37 @@ always @(negedge clk28m or posedge _as)
 	else
 		_dtack <= _ta;
 		
-assign enable = (~l_as & ~l_dtack & ~cck & ~turbo) | (~l_as & l_dtack /*~cck*/ & ~dbr & turbo);
+assign enable = (~l_as & ~l_dtack & ~cck & ~turbo) | (~l_as28m & l_dtack & ~(dbr & xbs) & turbo);
 assign rd = enable & lr_w;
-//during write cycles _uds/_lds are asserted one clock after _as
-//in 7MHz operation everything is fine since _as is sampled one 7M clock before asserting _dtack, 
-//actual register/memory access cycle takes place when _dtack is asserted (cck is low)
-//in 28MHz mode _uds/_lds might be asserted one 28M clock after _as was sampled,
-//it's needed at the rising edge of 7M clock for qualifying chipset writes, 
-//memory writes use hwr/lwr at the falling edge of 7M clock to assert memory byte enables (_ub/_lb)
-assign hwr = enable & ~lr_w & ~_uds; 
-assign lwr = enable & ~lr_w & ~_lds;
-//blitter slow down signalling, asserted whenever CPU is missing bus access
-//to chip ram, slow ram and custom registers 
-assign bls = !turbo && (cpuaddress[23:21]==3'b000 || cpuaddress[23:21]==3'b110) ? ~l_as & l_dtack : 0;
+assign hwr = enable & ~lr_w & ~l_uds; 
+assign lwr = enable & ~lr_w & ~l_lds;
+//blitter slow down signalling, asserted whenever CPU is missing bus access to chip ram, slow ram and custom registers 
+assign bls = dbs & ~l_as & l_dtack;
 
 // generate data buffer output enable
 assign doe = r_w & ~_as;
 
 //--------------------------------------------------------------------------------------
 
-// dataout multiplexer and latch 	
-always @(enable or lr_w or data)
-	if (enable && !lr_w)
-		dataout = data;
-	else
-		dataout = 16'b0000_0000_0000_0000;
+// data_out multiplexer and latch 	
+always @(posedge clk)
+	data_out <= data;
 
-// datain latch
-always @(enable or datain)
-	if (enable)
-		ldatain <= datain;
+reg latch_enable;
+always @(posedge clk28m)
+	latch_enable <= !c1 && c3 && enable;
+	
+always @(latch_enable or data_in)
+	if (latch_enable)
+		ldata_in <= data_in;
 
 //--------------------------------------------------------------------------------------
 
 // CPU data bus tristate buffers
-assign data[15:0] = doe ? ldatain[15:0] : 16'bz;
+assign data[15:0] = doe ? ldata_in[15:0] : 16'bz;
 
-//CPU clock multiplexer
-BUFGMUX cpuclk_buf 
-(
-	.O(cpuclk),		// Clock MUX output
-	.I0(~clk),		// Clock0 input
-	.I1(~clk28m),	// Clock1 input
-	.S(turbo)		// Clock select input
-);
+always @(posedge clk)
+	address_out[23:1] <= address[23:1];
 
 endmodule
 

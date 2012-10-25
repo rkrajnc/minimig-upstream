@@ -36,33 +36,36 @@
 // doing a step trace ("tr" command) and then exit works ok: consecutive breakpoint triggers.
 //
 //
-// 2008-03-25		- first version, INT7 freeze button
-// 2008-03-26		- loading of ROM @ $400000
-// 2008-03-27		- mode register, ram overlay and INT7 on reset
-// 2008-03-28		- custom register shadow
-// 2008-03-29		- custom register shadow written from RGA bus
-// 2008-03-30		- mem watch breakpoint circuit 
-// 2008-04-11		- AR style breakpoint circuit 
-// 2008-07-10		- added disabling of AR when no ROM was uploaded
-// 2008-07-17		- code clean up
-// 2008-07-28		- code clean up
-// 2008-10-07		- improvements for 28MHz CPU
+// 2008-03-25	- first version, INT7 freeze button
+// 2008-03-26	- loading of ROM @ $400000
+// 2008-03-27	- mode register, ram overlay and INT7 on reset
+// 2008-03-28	- custom register shadow
+// 2008-03-29	- custom register shadow written from RGA bus
+// 2008-03-30	- mem watch breakpoint circuit 
+// 2008-04-11	- AR style breakpoint circuit 
+// 2008-07-10	- added disabling of AR when no ROM was uploaded
+// 2008-07-17	- code clean up
+// 2008-07-28	- code clean up
+// 2008-10-07	- improvements for 28MHz CPU
+// 2009-05-24	- clean-up & renaming
+// 2009-08-16	- reg_data_in port added (thanks Sascha)
 
 module ActionReplay
 (
-	output	[2:0] test,
 	input	clk,
 	input	reset,
-	input	[23:1] cpuaddress,
-	input	cpuclk,
-	input	_as,
-	input	[8:1] regaddress,
-	input	[15:0] datain,
-	output	[15:0] dataout,
-	input	cpurd,
-	input	cpuhwr,
-	input	cpulwr,
-	input	dma,
+	input	[23:1] cpu_address,
+	input	[23:1] cpu_address_in,
+	input	cpu_clk,
+	input	_cpu_as,
+	input	[8:1] reg_address_in,
+	input	[15:0] reg_data_in,
+	input	[15:0] data_in,
+	output	[15:0] data_out,
+	input	cpu_rd,
+	input	cpu_hwr,
+	input	cpu_lwr,
+	input	dbr,
 	input	boot,
 	output	ovr,
 	input	freeze,
@@ -81,8 +84,8 @@ reg		l_int7;
 wire	reset_req;
 wire	break_req;
 reg		after_reset;
-reg		[1:0]mode;
-reg		[1:0]status;
+reg		[1:0] mode;
+reg		[1:0] status;
 reg		ram_ovl;	//override chip memory and show its rom for int7 vector
 reg		active;		//cartridge is active (rom is visible)
 
@@ -94,24 +97,24 @@ wire	sel_status;	//status register $400000-$400003 (repeated twice)
 wire	sel_mode;	//mode register $400000/1
 
 //output signals
-wire	[15:0]custom_out;
-wire	[15:0]status_out;
+wire	[15:0] custom_out;
+wire	[15:0] status_out;
 
 //-------------------------------------------------------------------------------------------------
 
 //see above
-assign sel_cart = aron & ~dma & (cpuaddress[23:19]==5'b0100_0);
-assign sel_rom = sel_cart & ~cpuaddress[18] & |cpuaddress[17:2];
-assign sel_ram = sel_cart & cpuaddress[18] & (cpuaddress[17:9]!=9'b001111_000);
-assign sel_custom = sel_cart & cpuaddress[18] & (cpuaddress[17:9]==9'b001111_000) & cpurd;
-assign sel_mode = sel_cart & ~|cpuaddress[18:1];
-assign sel_status = sel_cart & ~|cpuaddress[18:2] & cpurd;
-assign sel_ovl = ram_ovl & (cpuaddress[23:19]==5'b0000_0) & cpurd;
-assign selmem = (sel_rom&boot) | (((sel_rom&cpurd) | sel_ram | sel_ovl));
+assign sel_cart = aron & ~dbr & (cpu_address_in[23:19]==5'b0100_0);
+assign sel_rom = sel_cart & ~cpu_address_in[18] & |cpu_address_in[17:2];
+assign sel_ram = sel_cart & cpu_address_in[18] & (cpu_address_in[17:9]!=9'b001111_000);
+assign sel_custom = sel_cart & cpu_address_in[18] & (cpu_address_in[17:9]==9'b001111_000) & cpu_rd;
+assign sel_mode = sel_cart & ~|cpu_address_in[18:1];
+assign sel_status = sel_cart & ~|cpu_address_in[18:2] & cpu_rd;
+assign sel_ovl = ram_ovl & (cpu_address_in[23:19]==5'b0000_0) & cpu_rd;
+assign selmem = (sel_rom&boot) | (((sel_rom&cpu_rd) | sel_ram | sel_ovl));
 
 //Action Replay is activated by writing to its ROM area during bootloading
 always @(posedge clk)
-	if (boot && cpuaddress[23:18]==6'b0100_00 && cpulwr)
+	if (boot && cpu_address_in[23:18]==6'b0100_00 && cpu_lwr)
 		aron <= 1;	//rom will miss first write but since 2 first words of rom are not readable it doesn't matter
 
 //delayed signal for edge dettection
@@ -126,12 +129,12 @@ assign int7_req = aron & ~boot & (freeze_req | reset_req | break_req);
 
 //level7 interrupt ack cycle, on Amiga interrupt vector number is read from kickstart rom
 //A[23:4] all high, A[3:1] vector number
-assign int7_ack = &cpuaddress & ~_as;
+assign int7_ack = &cpu_address & ~_cpu_as;
 
 //level 7 interrupt request logic
 // interrupt request lines are sampled during S4->S5 transition (falling cpu clock edge)
 //always @(posedge clk)
-always @(posedge cpuclk)
+always @(posedge cpu_clk)
 	if (reset)
 		int7 <= 0;
 	else if (int7_req)
@@ -147,19 +150,17 @@ always @(posedge clk)
 		l_int7 <= 0;
 	else if (l_int7_req)
 		l_int7 <= 1;
-	else if (l_int7_ack && cpurd)
+	else if (l_int7_ack && cpu_rd)
 		l_int7 <= 0;
 		
-assign test = {mode[1],mode[0],break_req};
-
 //triggers int7 when first CPU write after reset to memory location $8
 // AR rom checks if PC==$FC0144 or $F80160, other kickstarts need to path these values
-//_IPLx lines are sampled durring S4->S5 transition, _AS is asserted during S2, 
+//_IPLx lines are sampled durring S4->S5 transition, _cpu_as is asserted during S2, 
 //if we assert _IPLx lines too late the AR rom code won't properly recognize this request
-assign reset_req = ~boot & (cpuaddress[23:1]==23'h04) & ~_as & after_reset;
+assign reset_req = ~boot & (cpu_address[23:1]==23'h04) & ~_cpu_as & after_reset;
 
 //set after reset, cleared by first INT7 req
-always @(posedge cpuclk)
+always @(posedge cpu_clk)
 	if (reset)
 		after_reset <= 1;
 	else if (int7_ack)
@@ -170,9 +171,9 @@ always @(posedge cpuclk)
 always @(posedge clk)
 	if (reset)
 		ram_ovl <= 0;
-	else if (l_int7 && l_int7_ack && cpurd) //once again we don't know the state of CPU's FCx signals
+	else if (l_int7 && l_int7_ack && cpu_rd) //once again we don't know the state of CPU's FCx signals
 		ram_ovl <= 1;
-	else if (sel_rom && (cpuaddress[2:1]==2'b11) && (cpuhwr|cpulwr))
+	else if (sel_rom && (cpu_address_in[2:1]==2'b11) && (cpu_hwr|cpu_lwr))
 		ram_ovl <= 0;
 
 //when INT7 is activated AR's rom and ram apear in its address space ($400000-$47FFFF)
@@ -182,9 +183,9 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reset)
 		active <= 0;
-	else if (l_int7 && l_int7_ack && cpurd)//once again we don't know the state of CPU's FC signals
+	else if (l_int7 && l_int7_ack && cpu_rd)//once again we don't know the state of CPU's FC signals
 		active <= 1;
-	else if (sel_mode && (cpuaddress[2:1]==2'b00) && (cpuhwr|cpulwr))
+	else if (sel_mode && (cpu_address_in[2:1]==2'b00) && (cpu_hwr|cpu_lwr))
 		active <= 0;
 
 //override chipram decoding (externally gated with rd)
@@ -198,8 +199,8 @@ assign ovr = ram_ovl;
 always @(posedge clk)
 	if (reset)
 		mode <= 2'b11;
-	else if (sel_mode && cpulwr)	//cpu write to mode register
-		mode <= datain[1:0];
+	else if (sel_mode && cpu_lwr)	//cpu write to mode register
+		mode <= data_in[1:0];
 
 always @(posedge clk)
 	if (reset)
@@ -214,24 +215,24 @@ assign status_out = sel_status ? {14'h00,status} : 16'h00_00;
 
 //===============================================================================================//
 //custom registers shadow memory - all writes by cpu and dma are reflected
-reg		[15:0]custom[255:0];
-reg		[8:1]custom_adr;
+reg		[15:0] custom [255:0];
+reg		[8:1] custom_adr;
 
 //use clocked address to infer blockram
 always @(negedge clk)
-	custom_adr[8:1] <= cpuaddress[8:1];
+	custom_adr[8:1] <= cpu_address_in[8:1];
 
 // custom registers shadow buffer write
 always @(posedge clk)
-	custom[regaddress] <= datain;
+	custom[reg_address_in] <= reg_data_in;
 
 // custom registers shadow buffer read
 assign custom_out = sel_custom ? custom[custom_adr[8:1]] : 16'h00_00;
 
 //===============================================================================================//
 
-//dataout multiplexer
-assign dataout = custom_out | status_out;
+//data_out multiplexer
+assign data_out = custom_out | status_out;
 
 //===============================================================================================//
 
@@ -249,13 +250,13 @@ assign dataout = custom_out | status_out;
 
 //Action Replay is activated when memory at address $BFE001 is accessed from $000-$400
 
-reg	cpuaddress_hit;
+reg	cpu_address_hit;
 
 //address range access $000-$3FF		
-always @(posedge _as)
-	cpuaddress_hit <= cpuaddress[23:10]==14'h00 ? 1 : 0;
+always @(posedge _cpu_as)
+	cpu_address_hit <= cpu_address[23:10]==14'h00 ? 1 : 0;
 
 //access of $BFE001 from $000-$3FF memory range
-assign break_req = mode[1] && cpuaddress_hit && cpuaddress==(24'hBFE001>>1) && !_as ? 1 : 0;
+assign break_req = mode[1] && cpu_address_hit && cpu_address==(24'hBFE001>>1) && !_cpu_as ? 1 : 0;
 
 endmodule

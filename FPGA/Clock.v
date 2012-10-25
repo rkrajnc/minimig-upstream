@@ -18,12 +18,13 @@
 //
 //
 
-//Master clock generator for minimig
-//This module generates all necessary clocks from the 4.433619 PAL clock
-//JB:
+// Master clock generator for minimig
+// This module generates all necessary clocks from the 4.433619 PAL clock
+// JB:
 // 2008-03-01	- added ddl for generating in phase system clock with 28MHz clock
 // 2008-09-23	- added c1 and c3 clock enable outputs
 // 2008-10-15	- adapted e clock enable to be in sync with cck
+// 2009-05-23	- eclk modification
 
 module clock_generator
 (
@@ -33,7 +34,9 @@ module clock_generator
 	output	reg c3,		// clk28m clock domain signal synchronous with clk signal delayed by 90 degrees
 	input	cck,		// colour clock from Agnus hpos[0] (3.54 MHz)
 	output 	clk, 		// 7.09379  MHz clock output
-	output 	reg e		// 0.709379 MHz clock enable output (clk domain pulse)
+	output	cpu_clk,
+	input	turbo,
+	output 	[9:0] eclk	// 0.709379 MHz clock enable output (clk domain pulse)
 );
 
 //            __    __    __    __    __
@@ -45,8 +48,6 @@ module clock_generator
 //                  ___________
 // c3      ________/           \________ <- clk28m domain
 //
-
-	reg		[3:0]ediv;	//used to generate e clock enable
 
 	wire	pll_mclk;
 	wire	pll_c28m;
@@ -107,16 +108,38 @@ module clock_generator
 	BUFG clk28m_buf ( .I(dll_c28m), .O(clk28m) );
 	BUFG clk_buf ( .I(dll_c7m), .O(clk) );
 
-//generate e in sync with cck
-always @(posedge clk)
-	if (ediv[3] && ediv[0])	//if 9 reset counter
-		ediv <= 0;
-	else
-		ediv <= ediv + 1;
-		
-always @(posedge clk)
-	e <= ediv[3] & ~cck;
+	BUFGMUX cpu_clk_buf 
+	(
+		.O(cpu_clk),	// Clock MUX output
+		.I0(~clk),		// Clock0 input
+		.I1(~clk28m),	// Clock1 input
+		.S(turbo)		// Clock select input
+	);
 
+	reg		[3:0] e_cnt;	//used to generate e clock enable
+
+//generate e in sync with cck
+always @(cck)
+	e_cnt[0] <= ~cck;
+	
+always @(posedge clk)
+	if (e_cnt[0])
+		if (e_cnt[3])	//if e_cnt==9 reset counter
+			e_cnt[3:1] <= 0;
+		else
+			e_cnt[3:1] <= e_cnt[3:1] + 1;
+
+assign eclk[0] = ~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 0
+assign eclk[1] = ~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 1
+assign eclk[2] = ~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] & ~e_cnt[0]; // e_cnt == 2
+assign eclk[3] = ~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] &  e_cnt[0]; // e_cnt == 3
+assign eclk[4] = ~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 4
+assign eclk[5] = ~e_cnt[3] &  e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 5
+assign eclk[6] = ~e_cnt[3] &  e_cnt[2] &  e_cnt[1] & ~e_cnt[0]; // e_cnt == 6
+assign eclk[7] = ~e_cnt[3] &  e_cnt[2] &  e_cnt[1] &  e_cnt[0]; // e_cnt == 7
+assign eclk[8] =  e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]; // e_cnt == 8
+assign eclk[9] =  e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]; // e_cnt == 9
+		
 always @(posedge clk28m)
 	c3 <= clk;
 	

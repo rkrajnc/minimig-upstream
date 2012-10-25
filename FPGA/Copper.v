@@ -49,6 +49,8 @@
 //				- dma_bpl implementation 
 //				- WAIT and SKIP states no longer keep CPU and blitter off the bus
 // 2009-01-16	- clean-up
+// 2009-05-24	- clean-up & renaming
+// 2009-05-29	- dma_bpl replaced with dma_ena
 
 module copper
 (
@@ -56,15 +58,15 @@ module copper
 	input 	reset,	 					//reset
 	output	reqdma,						//copper requests dma cycle
 	input	ackdma,						//agnus dma priority logic grants dma cycle
-	input	dma_bpl,					//current slot is used by display DMA
+	input	enadma,						//current slot is not used by any higher priority DMA channel
 	input	sof,						//start of frame input
 	input	bbusy,						//blitter busy flag input
 	input	[7:0] vpos,					//vertical beam counter
 	input	[8:0] hpos,
-	input 	[15:0] datain,	    		//bus data in
-	input 	[8:1] regaddressin,			//register address inputs
-	output 	reg [8:1] regaddressout,	//register address outputs
-	output 	reg [20:1] addressout 		//chip address outputs
+	input 	[15:0] data_in,	    		//bus data in
+	input 	[8:1] reg_address_in,		//register address inputs
+	output 	reg [8:1] reg_address_out,	//register address outputs
+	output 	reg [20:1] address_out 		//chip address outputs
 );
 
 //register names and adresses		
@@ -85,8 +87,8 @@ reg		[15:1] cop2lcl;		//copper location register 2
 reg		cdang;				//copper danger bit
 reg		[15:1] ir1;			//instruction register 1
 reg		[15:0] ir2;			//instruction register 2
-reg		[2:0] copperstate;	//current state of copper state machine
-reg		[2:0] coppernext;	//next state of copper state machine
+reg		[2:0] copper_state;	//current state of copper state machine
+reg		[2:0] copper_next;	//next state of copper state machine
 
 reg		strobe1;			//strobe 1 
 reg		strobe2;			//strobe 2 
@@ -114,41 +116,41 @@ reg		beam_match;			//delayed beam match signal by 4 CLKs
 always @(posedge clk)
 	if (reset)
 		cop1lch[20:16] <= 0;
-	else if (regaddressin[8:1]==COP1LCH[8:1])
-		cop1lch[20:16] <= datain[4:0];
+	else if (reg_address_in[8:1]==COP1LCH[8:1])
+		cop1lch[20:16] <= data_in[4:0];
 		
 always @(posedge clk)
 	if (reset)
 		cop1lcl[15:1] <= 0;
-	else if (regaddressin[8:1]==COP1LCL[8:1])
-		cop1lcl[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==COP1LCL[8:1])
+		cop1lcl[15:1] <= data_in[15:1];
 
 //write copper location register 2 high and low word
 always @(posedge clk)
 	if (reset)
 		cop2lch[20:16]<=0;
-	else if (regaddressin[8:1]==COP2LCH[8:1])
-		cop2lch[20:16]<=datain[4:0];
+	else if (reg_address_in[8:1]==COP2LCH[8:1])
+		cop2lch[20:16]<=data_in[4:0];
 
 always @(posedge clk)
 	if (reset)
 		cop2lcl[15:1] <= 0;
-	else if (regaddressin[8:1]==COP2LCL[8:1])
-		cop2lcl[15:1] <= datain[15:1];
+	else if (reg_address_in[8:1]==COP2LCL[8:1])
+		cop2lcl[15:1] <= data_in[15:1];
 
 //write copcon register (copper danger bit)
 always @(posedge clk)
 	if (reset)
 		cdang <= 0;
-	else if (regaddressin[8:1]==COPCON[8:1])
-		cdang <= datain[1];
+	else if (reg_address_in[8:1]==COPCON[8:1])
+		cdang <= data_in[1];
 
 //copper instruction registers ir1 and ir2
 always @(posedge clk)
-	if (regaddressin[8:1]==COPINS[8:1])
+	if (reg_address_in[8:1]==COPINS[8:1])
 	begin
 		ir1[15:1] <= ir2[15:1];
-		ir2[15:0] <= datain[15:0];
+		ir2[15:0] <= data_in[15:0];
 	end
 
 //--------------------------------------------------------------------------------------
@@ -156,11 +158,11 @@ always @(posedge clk)
 //chip address pointer (or copper program counter) controller
 always @(posedge clk)
 	if (strobe1 || sof)//load pointer with location register 1
-		addressout[20:1] <= {cop1lch[20:16],cop1lcl[15:1]};
+		address_out[20:1] <= {cop1lch[20:16],cop1lcl[15:1]};
 	else if (strobe2)//load pointer with location register 2
-		addressout[20:1] <= {cop2lch[20:16],cop2lcl[15:1]};
+		address_out[20:1] <= {cop2lch[20:16],cop2lcl[15:1]};
 	else if (ackdma && (selins || selreg))//increment address pointer (when not dummy cycle) 
-		addressout[20:1] <= addressout[20:1] + 1;
+		address_out[20:1] <= address_out[20:1] + 1;
 
 //--------------------------------------------------------------------------------------
 
@@ -172,11 +174,11 @@ always @(posedge clk)
 //(if you ask yourself: IR2? is this a bug? then check how ir1/ir2 are loaded in this design)
 always @(selins or selreg or ir2)
 	if (selins && !selreg) //load our instruction register
-		regaddressout[8:1] = COPINS[8:1];
+		reg_address_out[8:1] = COPINS[8:1];
 	else if (selreg && !selins)//load register in move instruction
-		regaddressout[8:1] = ir2[8:1];
+		reg_address_out[8:1] = ir2[8:1];
 	else
-		regaddressout[8:1] = 8'hFF;//during dummy cycle null register address is present
+		reg_address_out[8:1] = 8'hFF;//during dummy cycle null register address is present
 
 //detect illegal register access
 always @(ir2 or cdang)
@@ -188,15 +190,15 @@ always @(ir2 or cdang)
 //--------------------------------------------------------------------------------------
 
 //strobe1 (also triggered by sof, start of frame)
-always @(regaddressin)
-	if (regaddressin[8:1]==COPJMP1[8:1])
+always @(reg_address_in)
+	if (reg_address_in[8:1]==COPJMP1[8:1])
 		strobe1 = 1;
 	else
 		strobe1 = 0;
 
 //strobe2
-always @(regaddressin)
-	if (regaddressin[8:1]==COPJMP2[8:1])
+always @(reg_address_in)
+	if (reg_address_in[8:1]==COPJMP2[8:1])
 		strobe2 = 1;
 	else
 		strobe2 = 0;
@@ -287,6 +289,7 @@ assign enable = dmaena & hpos[0];
 
 assign reqdma = dma_req & enable;
 assign dma_ack = ackdma;
+assign dma_ena = enadma; //dma slot is empty and can be used by copper
 
 always @(posedge clk)
 	if (hpos[0])
@@ -298,20 +301,20 @@ always @(posedge clk)
 //copper state machine and skip_flag latch
 always @(posedge clk)
 	if (sof)
-		copperstate <= RESET1;
+		copper_state <= RESET1;
 	else if (reset || strobe1 || strobe2)//on strobe or reset fetch first instruction word
-		copperstate <= RESET1;
-	//else if (ackdma || (copperstate==RESET1 && dmaena && hpos[0]))//if granted dma cycle go to next state
+		copper_state <= RESET1;
+	//else if (ackdma || (copper_state==RESET1 && dmaena && hpos[0]))//if granted dma cycle go to next state
 	else if (enable) //go to next state
-		copperstate <= coppernext;
+		copper_state <= copper_next;
 
 always @(posedge clk)
 	if (enable)//if granted dma cycle go to next state
 		skip_flag <= skip;
 	
-always @(copperstate or ir2 or beam_match or illegalreg or skip_flag or dma_ack or dma_bpl)
+always @(copper_state or ir2 or beam_match or illegalreg or skip_flag or dma_ack or dma_ena)
 begin
-	case (copperstate)
+	case (copper_state)
 	
 		//when COPJMPx is written there is 2 cycle delay before data from new location is read to COPINS
 		//usually first cycle is a read of the next instruction to COPINS or bitplane DMA,
@@ -324,7 +327,7 @@ begin
 			selins = 0;
 			selreg = 0;
 			dma_req = 0;
-			coppernext = RESET2;
+			copper_next = RESET2;
 		end
 		
 		//after reset or strobe write allocated DMA cycle is required to reload instruction pointer from location registers
@@ -335,9 +338,9 @@ begin
 			selreg = 0;
 			dma_req = 1;
 			if (dma_ack)
-				coppernext = FETCH1;
+				copper_next = FETCH1;
 			else
-				coppernext = RESET2;
+				copper_next = RESET2;
 		end
 		
 		//fetch first instruction word
@@ -348,9 +351,9 @@ begin
 			selreg = 0;
 			dma_req = 1;
 			if (dma_ack)
-				coppernext = FETCH2;
+				copper_next = FETCH2;
 			else
-				coppernext = FETCH1;
+				copper_next = FETCH1;
 		end
 
 		//fetch second instruction word, skip or do MOVE instruction or halt copper
@@ -362,7 +365,7 @@ begin
 				selins = 0;
 				selreg = 0;
 				dma_req = 0;
-				coppernext = FETCH2;
+				copper_next = FETCH2;
 			end
 			else if (!ir2[0] && skip_flag)//skip this MOVE instruction
 			begin
@@ -372,12 +375,12 @@ begin
 				if (dma_ack)
 				begin
 					skip = 0;
-					coppernext = FETCH1;
+					copper_next = FETCH1;
 				end
 				else
 				begin
 					skip = 1;
-					coppernext = FETCH2;
+					copper_next = FETCH2;
 				end
 			end
 			else if(!ir2[0])//MOVE instruction
@@ -387,9 +390,9 @@ begin
 				selreg = 1;
 				dma_req = 1;
 				if (dma_ack)
-					coppernext = FETCH1;
+					copper_next = FETCH1;
 				else
-					coppernext = FETCH2;
+					copper_next = FETCH2;
 			end
 			else//fetch second instruction word of WAIT or SKIP instruction
 			begin
@@ -398,9 +401,9 @@ begin
 				selreg = 0;
 				dma_req = 1;
 				if (dma_ack)
-					coppernext = WAITSKIP1;
+					copper_next = WAITSKIP1;
 				else
-					coppernext = FETCH2;				
+					copper_next = FETCH2;				
 			end
 		end
 		
@@ -414,12 +417,11 @@ begin
 			selins = 0;
 			selreg = 0;
 			dma_req = 0;
-			if (dma_bpl)
-				coppernext = WAITSKIP1;
+			if (dma_ena)
+				copper_next = WAITSKIP2;
 			else
-				coppernext = WAITSKIP2;
+				copper_next = WAITSKIP1;
 		end
-		
 		
 		//second cycle of WAIT or SKIP (allocated dma)
 		//WAIT or SKIP instruction
@@ -433,10 +435,10 @@ begin
 					selins = 0;//both selins and selreg high --> this is a dummy cycle
 					selreg = 0;//both selins and selreg high --> this is a dummy cycle
 					dma_req = 0;
-					if (dma_bpl)
-						coppernext = WAITSKIP2;
-					else					
-						coppernext = FETCH1;
+					if (dma_ena)
+						copper_next = FETCH1;
+					else
+						copper_next = WAITSKIP2;
 				end
 				else//still waiting
 				begin
@@ -444,7 +446,7 @@ begin
 					selins = 0;
 					selreg = 0;
 					dma_req = 0;
-					coppernext = WAITSKIP2;
+					copper_next = WAITSKIP2;
 				end
 			end
 			else//SKIP instruction
@@ -455,10 +457,10 @@ begin
 					selins = 0;
 					selreg = 0;
 					dma_req = 0;			
-					if (dma_bpl)
-						coppernext = WAITSKIP2;
-					else					
-						coppernext = FETCH1;
+					if (dma_ena)
+						copper_next = FETCH1;
+					else
+						copper_next = WAITSKIP2;
 				end
 				else//do not skip, fetch next instruction
 				begin
@@ -466,10 +468,10 @@ begin
 					selins = 0;
 					selreg = 0;
 					dma_req = 0;						
-					if (dma_bpl)
-						coppernext = WAITSKIP2;
-					else					
-						coppernext = FETCH1;
+					if (dma_ena)
+						copper_next = FETCH1;
+					else
+						copper_next = WAITSKIP2;
 				end
 			end
 		end
@@ -481,7 +483,7 @@ begin
 			selins = 0;
 			selreg = 0;
 			dma_req = 0;			
-			coppernext = FETCH1;
+			copper_next = FETCH1;
 		end
 		
 	endcase
