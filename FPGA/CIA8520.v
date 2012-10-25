@@ -148,7 +148,7 @@ assign	crb  = (enable && rs==4'hF) ? 1'b1 : 1'b0;
 //----------------------------------------------------------------------------------
 // data_out multiplexer
 //----------------------------------------------------------------------------------
-assign data_out = icr_out | tmra_out | tmrb_out | tmrd_out | sdr_out | pb_out | pa_out;
+assign data_out = (icr_out | tmra_out | tmrb_out | tmrd_out | sdr_out | pb_out | pa_out);
 
 //----------------------------------------------------------------------------------
 // instantiate keyboard module
@@ -183,12 +183,12 @@ always @(posedge clk)
 	if (reset)
 		sdr_latch[7:0] <= 8'h00;
 	else if (keystrobe & ~keyboard_disabled)
-		sdr_latch[7:0] <= ~{keydat[6:0],keydat[7]};
+		sdr_latch[7:0] <= (~{keydat[6:0],keydat[7]});
 	else if (wr & sdr)
-		sdr_latch[7:0] <= data_in[7:0];
+		sdr_latch[7:0] <= (data_in[7:0]);
 
 // sdr register	read
-assign sdr_out = (!wr && sdr) ? sdr_latch[7:0] : 8'h00;
+assign sdr_out = (!wr && sdr) ? (sdr_latch[7:0]) : 8'h00;
 // keyboard acknowledge
 assign keyack = (!wr && sdr) ? 1'b1 : 1'b0;
 
@@ -206,9 +206,9 @@ always @(posedge clk)
 	if (!ser_tx_run)
 		ser_tx_cnt <= 0;
 	else if (tmra_ovf) // bits are transmitted when tmra overflows
-		ser_tx_cnt <= ser_tx_cnt + 1;
+		ser_tx_cnt <= (ser_tx_cnt + 1);
 
-assign ser_tx_irq = &ser_tx_cnt & tmra_ovf; // signal irq when ser_tx_cnt overflows
+assign ser_tx_irq = (&ser_tx_cnt & tmra_ovf); // signal irq when ser_tx_cnt overflows
 
 //----------------------------------------------------------------------------------
 // porta
@@ -219,35 +219,35 @@ reg [7:0] ddrporta;
 
 // synchronizing of input data
 always @(posedge clk)
-	porta_in2[7:2] <= porta_in[7:2];
+	porta_in2[7:2] <= (porta_in[7:2]);
 
 // writing of output port
 always @(posedge clk)
 	if (reset)
 		regporta[1:0] <= 0;
 	else if (wr && pra)
-		regporta[1:0] <= data_in[1:0];
+		regporta[1:0] <= (data_in[1:0]);
 
 // writing of ddr register 
 always @(posedge clk)
 	if (reset)
 		ddrporta[7:0] <= 0;
 	else if (wr && ddra)
- 		ddrporta[7:0] <= data_in[7:0];
+ 		ddrporta[7:0] <= (data_in[7:0]);
 
 // reading of port/ddr register
 always @(wr or pra or porta_in2 or porta_out or ddra or ddrporta)
 begin
 	if (!wr && pra)
-		pa_out[7:0] = {porta_in2[7:2],porta_out[1:0]};
+		pa_out[7:0] = ({porta_in2[7:2],porta_out[1:0]});
 	else if (!wr && ddra)
-		pa_out[7:0] = ddrporta[7:0];
+		pa_out[7:0] = (ddrporta[7:0]);
 	else
 		pa_out[7:0] = 8'h00;
 end
 		
 // assignment of output port while keeping in mind that the original 8520 uses pull-ups
-assign porta_out[1:0] = (~ddrporta[1:0]) | regporta[1:0];	
+assign porta_out[1:0] = ((~ddrporta[1:0]) | regporta[1:0]);
 
 // reading of port B data register
 always @(wr or prb)
@@ -260,7 +260,7 @@ end
  
 // deleyed tick signal for edge detection
 always @(posedge clk)
-	tick_del <= tick;
+	tick_del <= (tick);
 
 //----------------------------------------------------------------------------------
 // instantiate cia interrupt controller
@@ -275,7 +275,7 @@ ciaint cnt
 	.tb(tb),
 	.alrm(alrm),
 	.flag(1'b0),
-	.ser(keystrobe & ~keyboard_disabled | ser_tx_irq),
+	.ser((keystrobe & ~keyboard_disabled | ser_tx_irq)),
 	.data_in(data_in),
 	.data_out(icr_out),
 	.irq(irq)	
@@ -332,7 +332,7 @@ timerd tmrd
 	.tcr(crb),
 	.data_in(data_in),
 	.data_out(tmrd_out),
-	.count(tick & ~tick_del),
+	.count((tick & ~tick_del)),
 	.irq(alrm)	
 ); 
 
@@ -385,7 +385,7 @@ module ciab
 	wire	pra,prb,ddra,ddrb,cra,talo,tahi,crb,tblo,tbhi,tdlo,tdme,tdhi,sdr,icrs;
 	wire	enable;
 
-assign enable = aen & (rd | wr);
+assign enable = (aen & (rd | wr));
 
 // decoder
 assign	pra  = (enable && rs==4'h0) ? 1'b1 : 1'b0;
@@ -407,17 +407,17 @@ assign	crb  = (enable && rs==4'hF) ? 1'b1 : 1'b0;
 //----------------------------------------------------------------------------------
 // data_out multiplexer
 //----------------------------------------------------------------------------------
-assign data_out = icr_out | tmra_out | tmrb_out | tmrd_out | pa_out | pb_out | sdr_out;
+assign data_out = (icr_out | tmra_out | tmrb_out | tmrd_out | pa_out | pb_out | sdr_out);
 
 // fake serial port data register
 always @(posedge clk)
 	if (reset)
 		sdr_latch[7:0] <= 8'h00;
 	else if (wr & sdr)
-		sdr_latch[7:0] <= data_in[7:0];
+		sdr_latch[7:0] <= (data_in[7:0]);
 		
 // sdr register read
-assign sdr_out = (!wr && sdr) ? sdr_latch[7:0] : 8'h00;		
+assign sdr_out = (!wr && sdr) ? (sdr_latch[7:0]) : 8'h00;		
 
 //----------------------------------------------------------------------------------
 // porta
@@ -428,35 +428,35 @@ reg [7:0] ddrporta;
 
 // synchronizing of input data
 always @(posedge clk)
-	porta_in2[5:3] <= porta_in[5:3];
+	porta_in2[5:3] <= (porta_in[5:3]);
 
 // writing of output port
 always @(posedge clk)
 	if (reset)
 		regporta[7:6] <= 0;
 	else if (wr && pra)
-		regporta[7:6] <= data_in[7:6];
+		regporta[7:6] <= (data_in[7:6]);
 
 // writing of ddr register 
 always @(posedge clk)
 	if (reset)
 		ddrporta[7:0] <= 0;
 	else if (wr && ddra)
- 		ddrporta[7:0] <= data_in[7:0];
+ 		ddrporta[7:0] <= (data_in[7:0]);
 
 // reading of port/ddr register
 always @(wr or pra or porta_in2 or porta_out or ddra or ddrporta)
 begin
 	if (!wr && pra)
-		pa_out[7:0] = {porta_out[7:6],porta_in2[5:3],3'b111};
+		pa_out[7:0] = ({porta_out[7:6],porta_in2[5:3],3'b111});
 	else if (!wr && ddra)
-		pa_out[7:0] = ddrporta[7:0];
+		pa_out[7:0] = (ddrporta[7:0]);
 	else
 		pa_out[7:0] = 8'h00;
 end
 		
 // assignment of output port while keeping in mind that the original 8520 uses pull-ups
-assign porta_out[7:6] = (~ddrporta[7:6]) | regporta[7:6];	
+assign porta_out[7:6] = ((~ddrporta[7:6]) | (regporta[7:6]));
 
 //----------------------------------------------------------------------------------
 // portb
@@ -469,32 +469,32 @@ always @(posedge clk)
 	if (reset)
 		regportb[7:0] <= 0;
 	else if (wr && prb)
-		regportb[7:0] <= data_in[7:0];
+		regportb[7:0] <= (data_in[7:0]);
 
 // writing of ddr register 
 always @(posedge clk)
 	if (reset)
 		ddrportb[7:0] <= 0;
 	else if (wr && ddrb)
- 		ddrportb[7:0] <= data_in[7:0];
+ 		ddrportb[7:0] <= (data_in[7:0]);
 
 // reading of port/ddr register
 always @(wr or prb or portb_out or ddrb or ddrportb)
 begin
 	if (!wr && prb)
-		pb_out[7:0] = portb_out[7:0];
+		pb_out[7:0] = (portb_out[7:0]);
 	else if (!wr && ddrb)
-		pb_out[7:0] = ddrportb[7:0];
+		pb_out[7:0] = (ddrportb[7:0]);
 	else
 		pb_out[7:0] = 8'h00;
 end
 		
 // assignment of output port while keeping in mind that the original 8520 uses pull-ups
-assign portb_out[7:0] = (~ddrportb[7:0]) | regportb[7:0];	
+assign portb_out[7:0] = ((~ddrportb[7:0]) | (regportb[7:0]));
 
 // deleyed tick signal for edge detection
 always @(posedge clk)
-	tick_del <= tick;
+	tick_del <= (tick);
 	
 //----------------------------------------------------------------------------------
 // instantiate cia interrupt controller
@@ -565,7 +565,7 @@ timerd tmrd
 	.tcr(crb),
 	.data_in(data_in),
 	.data_out(tmrd_out),
-	.count(tick & ~tick_del),
+	.count((tick & ~tick_del)),
 	.irq(alrm)
 ); 
 
@@ -597,7 +597,7 @@ reg  [4:0] icr = 0;			// interrupt register
 reg  [4:0] icrmask = 0;		// interrupt mask register
 
 // reading of interrupt data register 
-assign data_out[7:0] = icrs && !wr ? {irq,2'b00,icr[4:0]} : 8'b0000_0000;
+assign data_out[7:0] = (icrs && !wr) ? ({irq,2'b00,icr[4:0]}) : 8'b0000_0000;
 
 // writing of interrupt mask register
 always @(posedge clk)
@@ -606,9 +606,9 @@ always @(posedge clk)
 	else if (icrs && wr)
 	begin
 		if (data_in[7])
-			icrmask[4:0] <= icrmask[4:0] | data_in[4:0];
+			icrmask[4:0] <= (icrmask[4:0] | data_in[4:0]);
 		else
-			icrmask[4:0] <= icrmask[4:0] & (~data_in[4:0]);
+			icrmask[4:0] <= (icrmask[4:0] & (~data_in[4:0]));
 	end
 
 // register new interrupts and/or changes by user reads
@@ -682,14 +682,14 @@ always @(posedge clk)
 	if (reset)	// synchronous reset
 		tmcr[6:0] <= 0;
 	else if (tcr && wr)	// load control register, bit 4(strobe) is always 0
-		tmcr[6:0] <= {data_in[6:5],1'b0,data_in[3:0]};
+		tmcr[6:0] <= ({data_in[6:5],1'b0,data_in[3:0]});
 	else if (thi_load && oneshot)	// start timer if thi is written in one-shot mode
 		tmcr[0] <= 1;
 	else if (underflow && oneshot) // stop timer in one-shot mode
 		tmcr[0] <= 0;
 
 always @(posedge clk)
-	forceload <= tcr & wr & data_in[4];	// force load strobe 
+	forceload <= (tcr & wr & data_in[4]);	// force load strobe 
 	
 assign oneshot = tmcr[3];		// oneshot alias
 assign start = tmcr[0];			// start alias
@@ -700,41 +700,41 @@ always @(posedge clk)
 	if (reset)
 		tmll[7:0] <= 8'b1111_1111;
 	else if (tlo && wr)
-		tmll[7:0] <= data_in[7:0];
+		tmll[7:0] <= (data_in[7:0]);
 		
 always @(posedge clk)
 	if (reset)
 		tmlh[7:0] <= 8'b1111_1111;
 	else if (thi && wr)
-		tmlh[7:0] <= data_in[7:0];
+		tmlh[7:0] <= (data_in[7:0]);
 
 // thi is written in one-shot mode so tmr must be reloaded
 always @(posedge clk)
-	thi_load <= thi & wr & (~start | oneshot);
+	thi_load <= (thi & wr & (~start | oneshot));
 
 // timer counter reload signal
-assign reload = thi_load | forceload | underflow;
+assign reload = (thi_load | forceload | underflow);
 
 // timer counter	
 always @(posedge clk)
 	if (reset)
 		tmr[15:0] <= 16'hFF_FF;
 	else if (reload)
-		tmr[15:0] <= {tmlh[7:0],tmll[7:0]};
+		tmr[15:0] <= ({tmlh[7:0],tmll[7:0]});
 	else if (start && count)
-		tmr[15:0] <= tmr[15:0] - 1;
+		tmr[15:0] <= (tmr[15:0] - 1);
 
 // timer counter equals zero		
-assign zero = ~|tmr;		
+assign zero = (~|tmr);
 
 // timer counter is going to underflow
-assign underflow = zero & start & count;
+assign underflow = (zero & start & count);
 
 // Timer A underflow signal for Timer B
-assign tmra_ovf = underflow;
+assign tmra_ovf = (underflow);
 
 // timer underflow interrupt request
-assign irq = underflow;
+assign irq = (underflow);
 
 // data output
 assign data_out[7:0] = ({8{~wr&tlo}} & tmr[7:0]) 
@@ -772,62 +772,62 @@ wire	underflow;				// timer is going to underflow
 wire	count;					// count enable signal
 
 // Timer B count signal source
-assign count = tmcr[6] ? tmra_ovf : eclk;
+assign count = (tmcr[6] ? tmra_ovf : eclk);
 
 // writing timer control register
 always @(posedge clk)
 	if (reset)	// synchronous reset
 		tmcr[6:0] <= 0;
 	else if (tcr && wr)	// load control register, bit 4(strobe) is always 0
-		tmcr[6:0] <= {data_in[6:5],1'b0,data_in[3:0]};
+		tmcr[6:0] <= ({data_in[6:5],1'b0,data_in[3:0]});
 	else if (thi_load && oneshot)	// start timer if thi is written in one-shot mode
 		tmcr[0] <= 1;
 	else if (underflow && oneshot) // stop timer in one-shot mode
 		tmcr[0] <= 0;
 
 always @(posedge clk)
-	forceload <= tcr & wr & data_in[4];	// force load strobe 
+	forceload <= (tcr & wr & data_in[4]);	// force load strobe 
 	
-assign oneshot = tmcr[3];					// oneshot alias
-assign start = tmcr[0];					// start alias
+assign oneshot = (tmcr[3]);					// oneshot alias
+assign start = (tmcr[0]);					// start alias
 
 // timer B latches for high and low byte
 always @(posedge clk)
 	if (reset)
 		tmll[7:0] <= 8'b1111_1111;
 	else if (tlo && wr)
-		tmll[7:0] <= data_in[7:0];
+		tmll[7:0] <= (data_in[7:0]);
 		
 always @(posedge clk)
 	if (reset)
 		tmlh[7:0] <= 8'b1111_1111;
 	else if (thi && wr)
-		tmlh[7:0] <= data_in[7:0];
+		tmlh[7:0] <= (data_in[7:0]);
 
 // thi is written in one-shot mode so tmr must be reloaded
 always @(posedge clk)
-	thi_load <= thi & wr & (~start | oneshot);
+	thi_load <= (thi & wr & (~start | oneshot));
 
 // timer counter reload signal
-assign reload = thi_load | forceload | underflow;
+assign reload = (thi_load | forceload | underflow);
 
 // timer counter	
 always @(posedge clk)
 	if (reset)
 		tmr[15:0] <= 16'hFF_FF;
 	else if (reload)
-		tmr[15:0] <= {tmlh[7:0],tmll[7:0]};
+		tmr[15:0] <= ({tmlh[7:0],tmll[7:0]});
 	else if (start && count)
-		tmr[15:0] <= tmr[15:0] - 1;
+		tmr[15:0] <= (tmr[15:0] - 1);
 
 // timer counter equals zero		
-assign zero = ~|tmr;		
+assign zero = (~|tmr);
 
 // timer counter is going to underflow
-assign underflow = zero & start & count;
+assign underflow = (zero & start & count);
 
 // timer underflow interrupt request
-assign irq = underflow;
+assign irq = (underflow);
 
 // data output
 assign data_out[7:0] = ({8{~wr&tlo}} & tmr[7:0]) 
@@ -878,25 +878,25 @@ always @(posedge clk)
 	end
 always @(posedge clk)
 	if (latch_ena)
-		tod_latch[15:0] <= tod[15:0];
+		tod_latch[15:0] <= (tod[15:0]);
 
 // timer D and crb7 read 
 always @(wr or tlo or tme or thi or tcr or tod or tod_latch or crb7)
 	if (!wr)
 	begin
 		if (thi) // high byte of timer D
-			data_out[7:0] = tod[23:16];
+			data_out[7:0] = (tod[23:16]);
 		else if (tme) // medium byte of timer D (latched)
-			data_out[7:0] = tod_latch[15:8];
+			data_out[7:0] = (tod_latch[15:8]);
 		else if (tlo) // low byte of timer D (latched)
-			data_out[7:0] = tod_latch[7:0];
+			data_out[7:0] = (tod_latch[7:0]);
 		else if (tcr) // bit 7 of crb
-			data_out[7:0] = {crb7,7'b000_0000};
+			data_out[7:0] = ({crb7,7'b000_0000});
 		else
-			data_out[7:0] = 0;
+			data_out[7:0] = 8'b0000_0000;
 	end
 	else
-		data_out[7:0] = 0;  
+		data_out[7:0] = 8'b0000_0000;
 
 // timer D count enable control
 always @(posedge clk)
@@ -919,14 +919,14 @@ always @(posedge clk)
 	else if (wr && !crb7) // crb7==0 enables writing to TOD counter
 	begin
 		if (tlo)
-			tod[7:0] <= data_in[7:0];
+			tod[7:0] <= (data_in[7:0]);
 		if (tme)
-			tod[15:8] <= data_in[7:0];
+			tod[15:8] <= (data_in[7:0]);
 		if (thi)
-			tod[23:16] <= data_in[7:0];
+			tod[23:16] <= (data_in[7:0]);
 	end
 	else if (count_ena && count)
-		tod[23:0] <= tod[23:0] + 1;
+		tod[23:0] <= (tod[23:0] + 1);
 
 // alarm write
 always @(posedge clk)
@@ -939,11 +939,11 @@ always @(posedge clk)
 	else if (wr && crb7) // crb7==1 enables writing to ALARM
 	begin
 		if (tlo)
-			alarm[7:0] <= data_in[7:0];
+			alarm[7:0] <= (data_in[7:0]);
 		if (tme)
-			alarm[15:8] <= data_in[7:0];
+			alarm[15:8] <= (data_in[7:0]);
 		if (thi)
-			alarm[23:16] <= data_in[7:0];
+			alarm[23:16] <= (data_in[7:0]);
 	end
 
 // crb7 write
@@ -951,11 +951,11 @@ always @(posedge clk)
 	if (reset)
 		crb7 <= 0;
 	else if (wr && tcr)
-		crb7 <= data_in[7];
+		crb7 <= (data_in[7]);
 
 // delayed count enable signal
 always @(posedge clk)
-	count_del <= count & count_ena;
+	count_del <= (count & count_ena);
 	
 // alarm interrupt request
 assign irq = (tod[23:0]==alarm[23:0] && count_del) ? 1'b1 : 1'b0;

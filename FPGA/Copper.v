@@ -126,7 +126,7 @@ reg		bus_blk;			// bus blocked by attempting an access in the "unusable" cycle
 
 // since Minimig's memory bus runs twice as fast as its real Amiga counterpart
 // the chipset is required to use every other memory cycle to run virtually at the same speed
-assign clk_ena = hpos[0];
+assign clk_ena = (hpos[0]);
 
 // horizontal counter in Agnus is advanced 4 lores pixels in comparision with the one in Denise
 // if the horizontal line contains odd number of CCK cycles (short lines of NTSC mode and all lines of PAL mode)
@@ -138,40 +138,40 @@ always @(posedge clk)
 	if (reset)
 		cop1lch[20:16] <= 0;
 	else if (reg_address_in[8:1]==COP1LCH[8:1])
-		cop1lch[20:16] <= data_in[4:0];
+		cop1lch[20:16] <= (data_in[4:0]);
 		
 always @(posedge clk)
 	if (reset)
 		cop1lcl[15:1] <= 0;
 	else if (reg_address_in[8:1]==COP1LCL[8:1])
-		cop1lcl[15:1] <= data_in[15:1];
+		cop1lcl[15:1] <= (data_in[15:1]);
 
 //write copper location register 2 high and low word
 always @(posedge clk)
 	if (reset)
-		cop2lch[20:16]<=0;
+		cop2lch[20:16] <= 0;
 	else if (reg_address_in[8:1]==COP2LCH[8:1])
-		cop2lch[20:16]<=data_in[4:0];
+		cop2lch[20:16] <= (data_in[4:0]);
 
 always @(posedge clk)
 	if (reset)
 		cop2lcl[15:1] <= 0;
 	else if (reg_address_in[8:1]==COP2LCL[8:1])
-		cop2lcl[15:1] <= data_in[15:1];
+		cop2lcl[15:1] <= (data_in[15:1]);
 
 //write copcon register (copper danger bit)
 always @(posedge clk)
 	if (reset)
 		cdang <= 0;
 	else if (reg_address_in[8:1]==COPCON[8:1])
-		cdang <= data_in[1];
+		cdang <= (data_in[1]);
 
 //copper instruction registers ir1 and ir2
 always @(posedge clk)
 	if (reg_address_in[8:1]==COPINS[8:1])
 	begin
-		ir1[15:1] <= ir2[15:1];
-		ir2[15:0] <= data_in[15:0];
+		ir1[15:1] <= (ir2[15:1]);
+		ir2[15:0] <= (data_in[15:0]);
 	end
 
 //--------------------------------------------------------------------------------------
@@ -179,11 +179,11 @@ always @(posedge clk)
 //chip address pointer (or copper program counter) controller
 always @(posedge clk)
 	if (dma_ack && strobe1 && copper_state==RESET)//load pointer with location register 1
-		address_out[20:1] <= {cop1lch[20:16],cop1lcl[15:1]};
+		address_out[20:1] <= ({cop1lch[20:16],cop1lcl[15:1]});
 	else if (dma_ack && strobe2 && copper_state==RESET)//load pointer with location register 2
-		address_out[20:1] <= {cop2lch[20:16],cop2lcl[15:1]};
+		address_out[20:1] <= ({cop2lch[20:16],cop2lcl[15:1]});
 	else if (dma_ack && (selins || selreg))//increment address pointer (when not dummy cycle) 
-		address_out[20:1] <= address_out[20:1] + 1;
+		address_out[20:1] <= (address_out[20:1] + 1);
 
 //--------------------------------------------------------------------------------------
 
@@ -195,9 +195,9 @@ always @(posedge clk)
 // (if you ask yourself: IR2? is this a bug? then check how ir1/ir2 are loaded in this design)
 always @(selins or selreg or ir2)
 	if (enable & selins) //load our instruction register
-		reg_address_out[8:1] = COPINS[8:1];
+		reg_address_out[8:1] = (COPINS[8:1]);
 	else if (enable & selreg)//load register in move instruction
-		reg_address_out[8:1] = ir2[8:1];
+		reg_address_out[8:1] = (ir2[8:1]);
 	else
 		reg_address_out[8:1] = 8'hFF;//during dummy cycle null register address is present
 
@@ -243,7 +243,7 @@ always @(posedge clk)
 		
 always @(posedge clk)
 	if (clk_ena)
-		strobe = copjmp1 | copjmp2;		
+		strobe = (copjmp1 | copjmp2);
 		
 //--------------------------------------------------------------------------------------
 
@@ -273,21 +273,21 @@ assign vercmp[3] = (ir2[11]) ? ir1[11] : vpos[3];
 assign vercmp[4] = (ir2[12]) ? ir1[12] : vpos[4];
 assign vercmp[5] = (ir2[13]) ? ir1[13] : vpos[5];
 assign vercmp[6] = (ir2[14]) ? ir1[14] : vpos[6];
-assign vercmp[7] = ir1[15];
+assign vercmp[7] = (ir1[15]);
  
 // actual beam position comparator
 always @(posedge clk)
 	if (clk_ena)
-		if ({vpos[7:0],hpos[8:2]} >= {vercmp[7:0],horcmp[8:2]}) 
+		if (({vpos[7:0],hpos[8:2]}) >= ({vercmp[7:0],horcmp[8:2]})) 
 			beam_match <= 1'b1;
 		else
 			beam_match <= 1'b0;
 
-assign beam_match_skip = beam_match & (ir2[15] | ~blit_busy);
+assign beam_match_skip = (beam_match & (ir2[15] | ~blit_busy));
 
 always @(posedge clk)
 	if (clk_ena)
-		beam_match_wait <= beam_match_skip;
+		beam_match_wait <= (beam_match_skip);
 
 //--------------------------------------------------------------------------------------
 /*
@@ -321,13 +321,13 @@ always @(posedge clk)
 		if (bus_blk)
 			bus_ena <= 1; //cycle $E2 is usable
 		else
-			bus_ena <= ~bus_ena;
+			bus_ena <= (~bus_ena);
 						
-assign enable = ~bus_blk & bus_ena & clk_ena;
+assign enable = (~bus_blk & bus_ena & clk_ena);
 
-assign reqdma = dma_req & bus_ena & clk_ena; //dma is request also during $E1 but output register address is idle
-assign dma_ack = ackdma & enable; //dma ack is masked during $E1
-assign dma_ena = enadma; //dma slot is empty and can be used by copper
+assign reqdma = (dma_req & bus_ena & clk_ena); //dma is request also during $E1 but output register address is idle
+assign dma_ack = (ackdma & enable); //dma ack is masked during $E1
+assign dma_ena = (enadma); //dma slot is empty and can be used by copper
 
 
 //hint: during vblank copper instruction pointer is reloaded just after the first refresh slot	
@@ -335,15 +335,15 @@ assign dma_ena = enadma; //dma slot is empty and can be used by copper
 //copper state machine and skip_flag latch
 always @(posedge clk)
 	if (reset || clk_ena && strobe) // on strobe or reset fetch first instruction word
-		copper_state <= RESET;
+		copper_state <= (RESET);
 	else if (enable) // go to next state
-		copper_state <= copper_next;
+		copper_state <= (copper_next);
 
 always @(posedge clk)
 	if (enable)
-		skip_flag <= skip;
+		skip_flag <= (skip);
 	
-always @(copper_state or ir2 or beam_match_wait or beam_match_skip or illegalreg or skip_flag or dma_ack or dma_ena)
+always @*//(copper_state or ir2 or beam_match_wait or beam_match_skip or illegalreg or skip_flag or dma_ack or dma_ena)
 begin
 	case (copper_state)
 	
@@ -511,7 +511,6 @@ begin
 end	
 
 //--------------------------------------------------------------------------------------
-
 
 
 //--------------------------------------------------------------------------------------

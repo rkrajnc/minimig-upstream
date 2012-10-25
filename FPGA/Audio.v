@@ -122,8 +122,8 @@ assign aen[3] = (reg_address_in[8:4]==AUD3BASE[8:4]) ? 1'b1 : 1'b0;
 always @(posedge clk)
 	if (strhor)
 	begin
-		dmal <= dmareq;
-		dmas <= dmaspc;
+		dmal <= (dmareq);
+		dmas <= (dmaspc);
 	end
 		
 //--------------------------------------------------------------------------------------
@@ -207,7 +207,7 @@ audiochannel ach3
 //instantiate volume control and sigma/delta modulator
 sigmadelta dac0 
 (
-	.clk(clk28m),
+	.clk(clk),
 	.sample0(sample0),
 	.sample1(sample1),
 	.sample2(sample2),
@@ -216,6 +216,7 @@ sigmadelta dac0
 	.vol1(vol1),
 	.vol2(vol2),
 	.vol3(vol3),
+	.strhor(strhor),
 	.left(left),
 	.right(right)	
 );
@@ -244,6 +245,7 @@ module sigmadelta
 	input	[6:0] vol1,			//volume 1 input
 	input	[6:0] vol2,			//volume 2 input
 	input	[6:0] vol3,			//volume 3 input
+	input	strhor,
 	output	left,				//left bitstream output
 	output	right				//right bitsteam output
 );
@@ -263,7 +265,10 @@ reg		mxc;					//multiplex control
 
 //multiplexer control
 always @(posedge clk)
-		mxc <= ~mxc;
+	if (strhor)
+		mxc <= 0;
+	else
+		mxc <= (~mxc);
 
 //sample multiplexer
 assign leftsmux = (mxc) ? sample1 : sample2;
@@ -278,12 +283,12 @@ assign rightvmux = (mxc) ? vol0 : vol3;
 svmul sv0
 (
 	.sample(leftsmux),
-	.volume({	(leftvmux[6] | leftvmux[5]),
+	.volume(({	(leftvmux[6] | leftvmux[5]),
 				(leftvmux[6] | leftvmux[4]),
 				(leftvmux[6] | leftvmux[3]),
 				(leftvmux[6] | leftvmux[2]),
 				(leftvmux[6] | leftvmux[1]),
-				(leftvmux[6] | leftvmux[0]) }),
+				(leftvmux[6] | leftvmux[0]) })),
 	.out(ldata)
 );
 
@@ -292,12 +297,12 @@ svmul sv0
 svmul sv1
 (
 	.sample(rightsmux),
-	.volume({	(rightvmux[6] | rightvmux[5]),
+	.volume(({	(rightvmux[6] | rightvmux[5]),
 				(rightvmux[6] | rightvmux[4]),
 				(rightvmux[6] | rightvmux[3]),
 				(rightvmux[6] | rightvmux[2]),
 				(rightvmux[6] | rightvmux[1]),
-				(rightvmux[6] | rightvmux[0])}),
+				(rightvmux[6] | rightvmux[0])})),
 	.out(rdata)	
 	);
 
@@ -305,13 +310,19 @@ svmul sv1
 
 //left sigma/delta modulator
 always @(posedge clk)
-	acculeft[14:0] <= {1'b0,acculeft[13:0]} + {1'b0,~ldata[13],ldata[12:0]};
+	if (strhor)
+		acculeft[14:0] <= 15'b000_0000_0000_0000;
+	else
+		acculeft[14:0] <= ({1'b0,acculeft[13:0]} + {1'b0,~ldata[13],ldata[12:0]});
 	
 assign left = acculeft[14];
 
 //right sigma/delta modulator
 always @(posedge clk)
-	accuright[14:0] <= {1'b0,accuright[13:0]} + {1'b0,~rdata[13],rdata[12:0]};
+	if (strhor)
+		accuright[14:0] <= 15'b000_0000_0000_0000;
+	else
+		accuright[14:0] <= ({1'b0,accuright[13:0]} + {1'b0,~rdata[13],rdata[12:0]});
 	
 assign right = accuright[14];
 
@@ -333,12 +344,12 @@ module svmul
 wire	[13:0] sesample;   		//sign extended sample
 wire	[13:0] sevolume;		//sign extended volume
 
-//sign extend input parameters
-assign 	sesample[13:0] = {{6{sample[7]}},sample[7:0]};
-assign	sevolume[13:0] = {8'b00000000,volume[5:0]};
+//sign extend input parameters - fixed by ASC (boing4000)
+assign 	sesample[13:0] = ({{6{sample[7]}},sample[7:0]});
+assign	sevolume[13:0] = ({8'b00000000,volume[5:0]});
 
 //multiply, synthesizer should infer multiplier here
-assign out[13:0] = sesample[13:0] * sevolume[13:0];
+assign out[13:0] = ({sesample[13:0] * sevolume[13:0]});
 
 endmodule
 
@@ -415,23 +426,23 @@ reg		penhi;					//enable high byte of sample buffer
 //length register bus write
 always @(posedge clk)
 	if (reset)
-		audlen[15:0] <= 0;	
+		audlen[15:0] <= 16'h00_00;
 	else if (aen && (reg_address_in[3:1]==AUDLEN[3:1]))
-		audlen[15:0] <= data[15:0];
+		audlen[15:0] <= (data[15:0]);
 
 //period register bus write
 always @(posedge clk)
 	if (reset)
-		audper[15:0] <= 0;	
+		audper[15:0] <= 16'h00_00;
 	else if (aen && (reg_address_in[3:1]==AUDPER[3:1]))
-		audper[15:0] <= data[15:0];
+		audper[15:0] <= (data[15:0]);
 
 //volume register bus write
 always @(posedge clk)
 	if (reset)
-		audvol[6:0] <= 0;	
+		audvol[6:0] <= 7'b000_0000;	
 	else if (aen && (reg_address_in[3:1]==AUDVOL[3:1]))
-		audvol[6:0] <= data[6:0];
+		audvol[6:0] <= (data[6:0]);
 
 //data register strobe
 assign datwrite = (aen && (reg_address_in[3:1]==AUDDAT[3:1])) ? 1:0;
@@ -439,9 +450,9 @@ assign datwrite = (aen && (reg_address_in[3:1]==AUDDAT[3:1])) ? 1:0;
 //data register bus write
 always @(posedge clk)
 	if (reset)
-		auddat[15:0] <= 0;	
+		auddat[15:0] <= 16'h00_00;
 	else if (datwrite)
-		auddat[15:0] <= data[15:0];
+		auddat[15:0] <= (data[15:0]);
 
 always @(posedge clk)
 	if (datwrite)
@@ -451,29 +462,29 @@ always @(posedge clk)
 	
 //--------------------------------------------------------------------------------------
 
-assign	AUDxON = dmaena;	//dma enable
+assign	AUDxON = (dmaena);	//dma enable
 
-assign	AUDxIP = intpen;	//audio interrupt pending
+assign	AUDxIP = (intpen);	//audio interrupt pending
 
-assign intreq = AUDxIR;		//audio interrupt request
+assign intreq = (AUDxIR);		//audio interrupt request
 	
 //--------------------------------------------------------------------------------------
 
 //period counter 
 always @(posedge clk)
 	if (percntrld && cck)//load period counter from audio period register
-		percnt[15:0] <= audper[15:0];
+		percnt[15:0] <= (audper[15:0]);
 	else if (percount && cck)//period counter count down
-		percnt[15:0] <= percnt[15:0] - 1;
+		percnt[15:0] <= (percnt[15:0] - 1);
 		
 assign perfin = (percnt[15:0]==1 && cck) ? 1 : 0;
 
 //length counter 
 always @(posedge clk)
 	if (lencntrld && cck)//load length counter from audio length register
-		lencnt[15:0] <= audlen[15:0];
+		lencnt[15:0] <= (audlen[15:0]);
 	else if (lencount && cck)//length counter count down
-		lencnt[15:0] <= lencnt[15:0] - 1;
+		lencnt[15:0] <= (lencnt[15:0] - 1);
 		
 assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
 
@@ -482,14 +493,14 @@ assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
 //audio buffer
 always @(posedge clk)
 	if (reset)
-		datbuf[15:0] <= 0;
+		datbuf[15:0] <= 16'h00_00;
 	else if (pbufld1 && cck)
-		datbuf[15:0] <= auddat[15:0];
+		datbuf[15:0] <= (auddat[15:0]);
 
-assign sample[7:0] = penhi ? datbuf[15:8] : datbuf[7:0];
+assign sample[7:0] = (penhi) ? (datbuf[15:8]) : datbuf[7:0];
 
 //volume output
-assign volume[6:0] = audvol[6:0];
+assign volume[6:0] = (audvol[6:0]);
 
 //--------------------------------------------------------------------------------------
 
@@ -504,7 +515,7 @@ begin
 	else if (AUDxDR && cck)
 	begin
 		dmareq <= 1;
-		dmas <= dmasen | lenfin;
+		dmas <= (dmasen | lenfin);
 	end
 	else if (strhor) //dma request are cleared when transfered to Agnus
 	begin
@@ -532,9 +543,9 @@ parameter AUDIO_STATE_4 = 3'b110;
 always @(posedge clk)
 begin
 	if (reset)
-		audio_state <= AUDIO_STATE_0;
+		audio_state <= (AUDIO_STATE_0);
 	else if (cck)
-		audio_state <= audio_next;
+		audio_state <= (audio_next);
 end
 
 //transition function
@@ -752,10 +763,6 @@ begin
 		
 	endcase
 end
-
-
-
-
 
 //--------------------------------------------------------------------------------------
 

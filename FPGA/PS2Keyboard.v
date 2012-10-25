@@ -659,7 +659,7 @@ begin
 			9'h07b:		keyrom[15:0] <= 16'h824a;//KP -
 			9'h07c:		keyrom[15:0] <= 16'h825d;//KP *
 			9'h07d:		keyrom[15:0] <= 16'h823f;//KP 9
-			9'h07e:		keyrom[15:0] <= 16'h0000;//SCROLL LOCK / KP )
+			9'h07e:		keyrom[15:0] <= 16'h0169;//SCROLL LOCK = OSD (asc)
 			9'h07f:		keyrom[15:0] <= 16'h0000;
 			9'h080:		keyrom[15:0] <= 16'h0000;
 			9'h081:		keyrom[15:0] <= 16'h0000;
