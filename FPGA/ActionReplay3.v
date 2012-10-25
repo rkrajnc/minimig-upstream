@@ -128,7 +128,7 @@ always @(posedge clk)
 assign freeze_req = freeze & ~freeze_del & (~active | ~aron);
 
 // int7 request
-assign int7_req = ~boot & (freeze_req | reset_req | break_req);
+assign int7_req = ~boot & aron & (freeze_req | reset_req | break_req);
 
 // level7 interrupt ack cycle, on Amiga interrupt vector number is read from kickstart rom
 // A[23:4] all high, A[3:1] vector number

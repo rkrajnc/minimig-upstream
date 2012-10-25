@@ -330,7 +330,7 @@ parameter INTREQ  = 9'h09c;
 
 //local signals
 reg		[14:0] intena;			//int enable write register
-reg 	[15:0] intenar;			//int enable read register
+reg 		[15:0] intenar;			//int enable read register
 reg		[14:0] intreq;			//int request register
 reg		[15:0] intreqr;			//int request readback
 
@@ -426,6 +426,7 @@ end
 
 //create m68k interrupt request signals
 reg	[14:0]intreqena;
+
 always @(intena or intreq)
 begin
 	//and int enable and request signals together

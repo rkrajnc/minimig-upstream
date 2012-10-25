@@ -344,9 +344,11 @@ always @(posedge clk)
 	if (reset)
 	begin
 		chipset_config[1] <= t_chipset_config[1];
-		memory_config <= t_memory_config;
 		ide_config <= t_ide_config;
 	end
+
+always @(posedge clk)
+		memory_config <= t_memory_config;
 
 always @(t_chipset_config)
 begin
@@ -857,4 +859,3 @@ end
 //--------------------------------------------------------------------------------------
 
 endmodule
-

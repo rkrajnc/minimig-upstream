@@ -288,6 +288,7 @@ ps2keyboardmap km1
 //therefore, amiga-like caps lock behaviour is simulated here
 wire keyequal;
 reg [7:0]keydat2;
+
 assign keyequal = keydat2[6:0]==keydat[6:0] ? 1 : 0;//detect if latched key equals new key
 //latch last key downstroke event
 always @(posedge clk)
@@ -298,7 +299,7 @@ always @(posedge clk)
 	else if (valid && keydat[7] && keyequal)//upstroke event for latched key received
 		keydat2[7:0] <= keydat[7:0];
 
-//toggle capslock status on capslock downstroke event		
+//toggle capslock status on capslock downstroke event
 always @(posedge clk)
 	if (reset)
 		capslock <= 0;
@@ -306,7 +307,6 @@ always @(posedge clk)
 		capslock <= ~capslock;
 
 //generate keystrobe to indicate valid keycode				
-//assign keystrobe = (keyequal && (keydat[7]==keydatlatch[7]))?0:keyok;
 always @(capslock or caps or keyequal or keydat or keydat2 or valid)
 	if (capslock && caps)//filter out capslock downstroke && capslock upstroke events if capslock is set
 		keystrobe = 0;
@@ -319,8 +319,9 @@ always @(capslock or caps or keyequal or keydat or keydat2 or valid)
 
 //Keyboard reset detector. 
 //Reset is accomplished by holding down the
-//ctrl, left alt en right alt keys all at the same time
+//ctrl or caps, left alt and right alt keys all at the same time
 reg [2:0]kbdrststatus;
+
 always @(posedge clk)
 begin
 	//latch status of control key
@@ -617,7 +618,7 @@ begin
 			9'h052:		keyrom[15:0] <= 16'h802a;//"
 			9'h053:		keyrom[15:0] <= 16'h0000;
 			9'h054:		keyrom[15:0] <= 16'h801a;//[
-			9'h055:		keyrom[15:0] <= 16'h800c;// = 
+			9'h055:		keyrom[15:0] <= 16'h800c;//= 
 			9'h056:		keyrom[15:0] <= 16'h0000;
 			9'h057:		keyrom[15:0] <= 16'h0000;
 			9'h058:		keyrom[15:0] <= 16'h8862;//CAPSLOCK
@@ -652,7 +653,7 @@ begin
 			9'h075:		keyrom[15:0] <= 16'h823e;//KP 8
 			9'h076:		keyrom[15:0] <= 16'h8045;//ESCAPE
 			9'h077:		keyrom[15:0] <= 16'h0400;//NUMLOCK
-			9'h078:		keyrom[15:0] <= 16'h0168;//F11 <OSD>
+			9'h078:		keyrom[15:0] <= 16'h0000;//0168;//F11 <OSD>
 			9'h079:		keyrom[15:0] <= 16'h825e;//KP +
 			9'h07a:		keyrom[15:0] <= 16'h821f;//KP 3
 			9'h07b:		keyrom[15:0] <= 16'h824a;//KP -

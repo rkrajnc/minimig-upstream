@@ -128,6 +128,9 @@
 // 2010-07-28	- added vsync for the MCU
 // 2010-08-05	- added cache for the CPU
 // 2010-08-15	- added joystick emulation
+//
+// SB:
+// 2010-12-22  - better drive step sound at 31KHz mode
 
 module Minimig1
 (
@@ -361,7 +364,7 @@ BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 // when _led=1, pwrled=powered by weak pullup
 assign pwrled = _led ? 1'b0 : 1'b1;
 
-// drive step sound simulation
+// 
 reg	_step_del;
 always @(posedge clk)
 	_step_del <= _step; // delayed version of _step for edge detection
@@ -369,16 +372,16 @@ always @(posedge clk)
 wire	step_pulse;
 assign	step_pulse = _step & ~_step_del; // rising edge detection
 
-reg	_hsync_del;
+reg	sol_del;
 always @(posedge clk)
-	_hsync_del <= _hsync; // delayed version of _hsync for edge detection
+	sol_del <= sol; // delayed version of sol (Amiga display line) for edge detection
 
-wire	hsync_pulse;
-assign hsync_pulse = _hsync & ~_hsync_del; // rising edge detection
+wire	sol_pulse;
+assign sol_pulse = sol & ~sol_del; // rising edge detection
 
 reg	[3:0] drv_cnt;
 always @(posedge clk)
-	if (drv_cnt != 0 && hsync_pulse || drv_cnt == 0 && step_pulse) // count only hsync pulses when counter is not zero or step pulses otherwise
+	if (drv_cnt != 0 && sol_pulse || drv_cnt == 0 && step_pulse) // count only sol pulses when counter is not zero or step pulses otherwise
 		drv_cnt <= drv_cnt + 1;
 
 reg	drvsnd;
@@ -694,6 +697,7 @@ bank_mapper BMAP1
 	.kick(sel_kick),
 	.cart(selcart),
 	.aron(aron),
+	.ecs(chipset_config[3]),
 	.memory_config(memory_config),
 	.bank(bank)
 );
@@ -773,6 +777,7 @@ gary GARY1
 	.ram_rd(ram_rd),
 	.ram_hwr(ram_hwr),
 	.ram_lwr(ram_lwr),
+	.ecs(chipset_config[3]),
 	.sel_chip(sel_chip),
 	.sel_slow(sel_slow),
 	.sel_kick(sel_kick),
@@ -877,11 +882,12 @@ always @(posedge clk)
 	rst_sel <= ~rst_sel;
 
 // cpu reset output
-assign _cpu_reset = rst_sel ? ~reset_out : 1'bz;
+//assign _cpu_reset = rst_sel ? ~reset_out : 1'bz;
+assign _cpu_reset = ~reset_out;
 
 // input reset from the CPU control bus
 always @(posedge clk)
-	if (~rst_sel)
+//	if (~rst_sel)
 		reset <= ~_cpu_reset;
 	
 //--------------------------------------------------------------------------------------
@@ -969,19 +975,20 @@ module bank_mapper
 	input	kick,				// Kickstart ROM address range select
 	input	cart,				// Action Reply memory range select
 	input	aron,				// Action Reply enable
+	input	ecs,				// ECS chipset enable
 	input	[3:0] memory_config,// memory configuration
 	output	reg [7:0] bank		// bank select
 );
 
 		
-always @(aron or memory_config or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or kick or cart)
+always @(aron or memory_config or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or kick or cart or ecs)
 begin
 	case ({aron,memory_config})
 		5'b0_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  1'b0,  1'b0, chip0 | chip1 | chip2 | chip3 }; // 0.5M CHIP
 		5'b0_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  1'b0, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP
 		5'b0_0010 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, chip2, chip1, chip0 }; // 1.5M CHIP
 		5'b0_0011 : bank = {  1'b0,  1'b0, chip3,  1'b0,     kick, chip2, chip1, chip0 }; // 2.0M CHIP
-		5'b0_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0,  1'b0, chip0 | chip1 | chip2 | chip3 }; // 0.5M CHIP + 0.5MB SLOW
+		5'b0_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0,  1'b0, chip0 | (chip1 & !ecs) | chip2 | (chip3 & !ecs) }; // 0.5M CHIP + 0.5MB SLOW
 		5'b0_0101 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick, slow0, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP + 0.5MB SLOW
 		5'b0_0110 : bank = {  1'b0,  1'b0,  1'b0, slow0,     kick, chip2, chip1, chip0 }; // 1.5M CHIP + 0.5MB SLOW
 		5'b0_0111 : bank = {  1'b0,  1'b0, chip3, slow0,     kick, chip2, chip1, chip0 }; // 2.0M CHIP + 0.5MB SLOW
@@ -998,7 +1005,7 @@ begin
 		5'b1_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP
 		5'b1_0010 : bank = {  1'b0,  1'b0,  1'b0, chip2,     kick,  cart, chip1, chip0 }; // 1.5M CHIP
 		5'b1_0011 : bank = {  1'b0,  1'b0, chip3, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP
-		5'b1_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, slow0, chip0 | chip1 | chip2 | chip3 }; // 0.5M CHIP + 0.5MB SLOW
+		5'b1_0100 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, slow0, chip0 | (chip1 & !ecs) | chip2 | (chip3 & !ecs) }; // 0.5M CHIP + 0.5MB SLOW
 		5'b1_0101 : bank = {  1'b0,  1'b0,  1'b0, slow0,     kick,  cart, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP + 0.5MB SLOW
 		5'b1_0110 : bank = {  1'b0,  1'b0, slow0, chip2,     kick,  cart, chip1, chip0 }; // 1.5M CHIP + 0.5MB SLOW
 		5'b1_0111 : bank = {  1'b0, slow0, chip3, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP + 0.5MB SLOW
@@ -1010,6 +1017,7 @@ begin
 		5'b1_1101 : bank = {  1'b0, slow2, slow1, slow0,     kick,  cart, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP + 1.5MB SLOW
 		5'b1_1110 : bank = { slow1, slow2, slow0, chip2,     kick,  cart, chip1, chip0 }; // 1.5M CHIP + 1.5MB SLOW
 		5'b1_1111 : bank = { slow1, slow0, chip3, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP + 1.5MB SLOW
+//		5'b1_1111 : bank = { slow1, slow0, slow2, chip2,     kick,  cart, chip1, chip0 }; // 2.0M CHIP + 1.5MB SLOW
 	endcase
 end
 
