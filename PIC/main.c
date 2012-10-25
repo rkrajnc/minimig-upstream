@@ -1,5 +1,5 @@
 /*
-Copyright 2005, 2006, 2007 Dennis van Weeren
+Copyright 2005, 2006, 2007, 2008 Dennis van Weeren
 
 This file is part of Minimig
 
@@ -25,28 +25,36 @@ Minimig boot controller / floppy emulator / on screen display
 02-01-2007		-added osd support
 11-02-2007		-added insert floppy progress bar
 01-07-2007		-added filetype filtering for directory routines
+20-01-2008		-adapted code to use new ata.h
+				-adapted code to use new fat16.h
+				-fixed filetype filtering in scroll code
+27-04-2008		-added support for 256kb and encrypted roms
+				-added led error posting
 */
 
 #include <pic18.h>
-#include <hardware.h>
-#include <osd.h>
+#include "hardware.h"
+#include "osd.h"
 #include <stdio.h>
 #include <string.h>
-#include <ata18.h>
-#include <fat1618_2.h>
+#include "ata.h"
+#include "fat16.h"
 
 void CheckTrack(struct adfTYPE *drive);
 void ReadTrack(struct adfTYPE *drive);
-void ReadRom(unsigned char track);
+void ReadRom(const unsigned char *fn);
+void ReadRomSend(unsigned char *data, unsigned short n);
 void WriteTrack(struct adfTYPE *drive);
 void SectorToFpga(unsigned char sector,unsigned char track);
-void Open(const unsigned char *name);
-unsigned char ConfigureFpga(void);
+unsigned char Open(const unsigned char *name);
+void ConfigureFpga(void);
 void HandleFpgaCmd(unsigned char c1, unsigned char c2);
 void InsertFloppy(struct adfTYPE *drive);
 void ScrollDir(const unsigned char *type, unsigned char mode);
 void PrintDir(void);
 void User(void);
+void ErrorFlash(unsigned char error);
+
 
 /*FPGA commands <c1> argument*/
 #define		CMD_USERSELECT		0x80	/*user interface SELECT*/
@@ -73,6 +81,15 @@ void User(void);
 #define		REPEATTIME			50		/*repeat delay in 10ms units*/
 #define		REPEATRATE			5		/*repeat rate in 10ms units*/
 
+/*error numbers*/
+#define		ERR_NOBIN			2		/*no .bin FPGA CORE file found*/
+#define		ERR_NOROM			3		/*no .rom AMIGA ROM file found*/
+#define		ERR_NOKEY			4		/*no .key KEY file found*/
+#define		ERR_CONFIG			5		/*FPGA config failed*/
+#define		ERR_MMC				6		/*no MMC card found*/
+#define		ERR_FILE			7		/*generic file error*/
+
+
 
 /*variables*/
 struct adfTYPE
@@ -86,8 +103,8 @@ struct adfTYPE
 	unsigned char name[12];				/*floppy name*/
 };
 struct adfTYPE df0;						/*drive 0 information structure*/
-struct file2TYPE file;					/*global file handle*/
-struct file2TYPE directory[DIRSIZE];	/*directory array*/
+struct fileTYPE file;					/*global file handle*/
+struct fileTYPE directory[DIRSIZE];		/*directory array*/
 unsigned char dirptr;					/*pointer into directory array*/
 
 unsigned char s[25];					/*used to build strings*/
@@ -101,29 +118,25 @@ void main(void)
 	/*initialize hardware*/
 	HardwareInit();
 
-	printf("\rMinimig Controller\r");
-	printf("\rby Dennis van Weeren\r");
+	printf("\r\nMinimig Controller\r\n");
+	printf("by Dennis van Weeren\r\n");
+	printf("build 27-04-2008\r\n\r\n");
 
 	/*intialize mmc card*/
-	SDCARD_Init();
-	
+	if(!CARD_Init())
+		ErrorFlash(ERR_MMC);	
 	/*initalize FAT partition*/
-	if(FindDrive2())
-	{	
-		printf("MMC card found!\r");
-	}
-	else
-	{
-		printf("MMC card error\r");
-	}
+	if(!FindDrive())
+		ErrorFlash(ERR_MMC);
+	printf("MMC device found\r\n");
 	
 	/*configure FPGA*/
-	if(ConfigureFpga())
-		printf("FPGA configured\r");
-	else
-		printf("FPGA configuration failed\r");
+	printf("configuring FPGA\r\n");
+	ConfigureFpga();
+	printf("FPGA configured\r\n");
 		
 	/*wait for FPGA to load kickstart*/
+	printf("waiting for FPGA to boot...");
 	df0.status=1;
 	while(1)
 	{
@@ -136,10 +149,10 @@ void main(void)
 		/*FPGA asking for kickstart by reading track 0 ?*/
 		if((c1==CMD_RDTRCK) && (c2==0))
 		{
-			printf("loading kickstart\r");
+			printf("done\r\nloading kickstart\r\n");
 			/*send rom image to FPGA and exit this loop*/
-			ReadRom(c2);
-			printf("\rkickstart loaded\r");
+			ReadRom("KICK    ROM");
+			printf("kickstart loaded\r\n");
 			break;
 		}
 		
@@ -155,6 +168,7 @@ void main(void)
 	/******************************************************************************/
 	/******************************************************************************/
 
+	printf("System is up\r\n");
 
 	/*fill initial directory*/
 	ScrollDir("ADF",0);
@@ -384,18 +398,24 @@ void ScrollDir(const unsigned char *type, unsigned char mode)
 		default:
 			i=0;
 			m=FILESEEK_START;
-			/*fill directory with available files*/
-			while(i<DIRSIZE)
+			while(i<DIRSIZE)							/*fill directory with available files*/
 			{
-				if(!FileSearch2(&file,m))/*search file*/
+				if(!FileSearch(&file,m))				/*search file*/
 					break;
 				m=FILESEEK_NEXT;
-				if((type[0]=='*')||(strncmp(&file.name[8],type,3)));/*check filetype*/
+
+				if((type[0]=='*') || (!strncmp(&file.name[8],type,3)))	/*check filetype(i.o.w. file extension)*/
+				{
 					directory[i++]=file;
+				}
 			}
-			/*clear rest of directory*/
-			while(i<DIRSIZE)
-				directory[i++].len=0;
+
+			while(i<DIRSIZE)							/*there are no more directory entries, so we must fill the buffer with empty lines*/
+			{
+				directory[i].name[0]=0;
+				directory[i].len=0;
+				i++;
+			}
 			/*preset pointer*/
 			dirptr=0;
 			
@@ -409,7 +429,7 @@ void ScrollDir(const unsigned char *type, unsigned char mode)
 				
 				/*search next file and check for filetype/wildcard and/or end of directory*/
 				do
-					r=FileSearch2(&file,FILESEEK_NEXT);
+					r=FileSearch(&file,FILESEEK_NEXT);
 				while((type[0]!='*')&&(strncmp(&file.name[8],type,3))&&r);
 				
 				/*update directory[] if file found*/
@@ -436,7 +456,7 @@ void ScrollDir(const unsigned char *type, unsigned char mode)
 				
 				/*search previous file and check for filetype/wildcard and/or end of directory*/
 				do
-					r=FileSearch2(&file,FILESEEK_PREV);
+					r=FileSearch(&file,FILESEEK_PREV);
 				while((type[0]!='*')&&(strncmp(&file.name[8],type,3))&&r);
 				
 				/*update directory[] if file found*/
@@ -452,6 +472,7 @@ void ScrollDir(const unsigned char *type, unsigned char mode)
 			break;
 	}
 }
+
 
 /*insert floppy image pointed to to by global <file> into <drive>*/
 void InsertFloppy(struct adfTYPE *drive)
@@ -475,7 +496,7 @@ void InsertFloppy(struct adfTYPE *drive)
 			
 		drive->cache[i]=file.cluster;
 		for(j=0;j<11;j++)
-			FileNextSector2(&file);
+			FileNextSector(&file);
 	}
 	
 	/*copy name*/
@@ -536,75 +557,151 @@ void CheckTrack(struct adfTYPE *drive)
 	DisableFpga();	
 }
 
+/********************************************************************************************************/
+/********************************************************************************************************/
+
 /*load kickstart rom*/
-void ReadRom(unsigned char track)
+void ReadRom(const unsigned char *fn)
 {
-	unsigned char c1,c2;
-	unsigned char j;
-	unsigned short n;
-	unsigned char *p;
+	unsigned char af;
+	unsigned short j,x;
 
-	/*open kickstart file*/
-	Open("KICK    ROM");
-	
-	/*do for 1024 sectors of 512 bytes each --> 512kbyte*/
-	n=0;
-	while(n<1024)
+	/*determine rom size and encryption*/
+	if(!Open(fn))
 	{
-		do
+		printf("kickstart file not found!\r\n");
+		ErrorFlash(ERR_NOROM);
+	}
+	directory[0]=file;
+	FileRead(&file);
+	printf("rom size:  %dKb\r\nencrypted: ",file.len/2);
+	if(strncmp("AMIROMTYPE1",secbuf,11))
+	{
+		printf("no\r\n");
+		af=0;
+	}
+	else
+	{
+		printf("yes\r\n");
+		af=1;
+	}
+
+	/*open keyfile and remember start of file*/
+	if(af)
+	{	
+		if(!Open("ROM     KEY"))
 		{
-			/*read command from FPGA*/
-			EnableFpga();
-			c1=SPI(0);
-			c2=SPI(0);
-			if(c1&0x04)
-			{
-				SPI(0x00);
-				SPI(0x01);
-			}
-			DisableFpga();
+			printf("key file not found!\r\n");
+			ErrorFlash(ERR_NOKEY);
 		}
-		while(!(c1&0x02));
-			
-		putchar('.');	
+		directory[1]=file;
+	}
+	
+	if(!af)/*send non-encrypted rom*/
+	{
+		/*open kickstart file and read first sector*/
+		file=directory[0];
+		FileRead(&file);
+		/*read full sectors*/
+		for(j=0;j<file.len;j++)
+		{
+			ReadRomSend(secbuf,512);
+			FileNextSector(&file);
+			FileRead(&file);
+			putchar('*');
+		}
 
-		/*read sector from mmc*/
-		SSPCON1=0x30;
-		FileRead2(&file);
-		SSPCON1=0x31;
+		/*we must sent 512kb, if rom was 256kb, sent again*/
+		if(file.len==512)
+		{
+			/*open kickstart file and read first sector*/
+			file=directory[0];
+			FileRead(&file);
+			/*read full sectors*/
+			for(j=0;j<file.len;j++)
+			{
+				ReadRomSend(secbuf,512);
+				FileNextSector(&file);
+				FileRead(&file);
+				putchar('*');
+			}
+		}
 
-		/*send sector to fpga*/
+	}
+	else/*send Amiga forever encrypted rom + key*/
+	{
+		/*open kickstart file and read first sector*/
+		file=directory[0];
+		FileRead(&file);
+
+		/*determine number of FULL sectors to read*/
+		if(file.len<1024)
+			x=512;
+		else
+			x=1024;
+
+		/*read full sectors*/
+		for(j=0;j<x;j++)
+		{
+			ReadRomSend(secbuf,512);
+			FileNextSector(&file);
+			FileRead(&file);
+			putchar('*');
+		}
+		ReadRomSend(secbuf,12);/*remaining 12 bytes*/
+		
+		/*now send key*/
+		file=directory[1];
+		FileRead(&file);
+	
+		for(j=0;j<4;j++)
+		{
+			ReadRomSend(secbuf,512);
+			FileNextSector(&file);
+			FileRead(&file);
+			putchar('*');
+		}
+		ReadRomSend(secbuf,22);/*remaining 22 bytes*/
+	}
+
+	printf("\r\n");
+}
+
+/*send <n> bytes of data pointed to by <data> to FPGA*/
+void ReadRomSend(unsigned char *data, unsigned short n)
+{
+	unsigned char c1,c2;	
+
+	/*wait until FPGA requests data*/
+	do
+	{
+		/*read command from FPGA*/
 		EnableFpga();
 		c1=SPI(0);
 		c2=SPI(0);
-		p=secbuf;
-		j=128;
-		do
+		if(c1&0x04)
 		{
-			SSPBUF=*(p++);
-			while(!BF);		
-			SSPBUF=*(p++);
-			while(!BF);		
-			SSPBUF=*(p++);
-			while(!BF);		
-			SSPBUF=*(p++);
-			while(!BF);		
+			SPI(0x00);
+			SPI(0x01);
 		}
-		while(--j);
+		if(c1&0x02)
+		{
+			SPI(*(data++));
+			SPI(*(data++));
+			n-=2;
+		}
 		DisableFpga();
-	
-		/*go to next sector*/
-		SSPCON1=0x30;
-		FileNextSector2(&file);
-		SSPCON1=0x31;
-	
-		/*increment track counter*/
-		n++;
 	}
+	while(n);
 }
 
+
+
+/********************************************************************************************************/
+/********************************************************************************************************/
+
 /*configure FPGA*/
-unsigned char ConfigureFpga(void)
+void ConfigureFpga(void)
 {
 	unsigned short t;
 	unsigned char *ptr;
@@ -617,15 +714,18 @@ unsigned char ConfigureFpga(void)
 	t=50000;
 	while(!INIT_B)
 		if(--t==0)
-			return(0);
-			
-	printf("FPGA init is high\r");
-			
+		{	
+			printf("FPGA INIT pin not high!\r\n");
+			ErrorFlash(ERR_CONFIG);
+		}
+		
 	/*open bitstream file*/
-	Open("MINIMIG1BIN");
+	if(!Open("MINIMIG1BIN"))
+	{
+		printf("MINIMIG1.BIN not found!\r\n");
+		ErrorFlash(ERR_NOBIN);
+	}
 
-	printf("FPGA bitstream file opened\r");
-	
 	/*send all bytes to FPGA in loop*/
 	t=0;	
 	do
@@ -634,8 +734,11 @@ unsigned char ConfigureFpga(void)
 		if(t%64==0)
 		{
 			putchar('*');
-			if(!FileRead2(&file))
-				return(0);				
+			if(!FileRead(&file))
+			{
+				printf(".BIN file read error\r\n");
+				ErrorFlash(ERR_NOBIN);	
+			}				
 			ptr=secbuf;
 		}
 		
@@ -653,19 +756,23 @@ unsigned char ConfigureFpga(void)
 		/*read next sector if 512 (64*8) bytes done*/
 		if(t%64==0)
 		{
-			FileNextSector2(&file);
+			FileNextSector(&file);
 		}
 	}
 	while(t<26549);
-	
-	printf("\rFPGA bitstream loaded\r");
+
+	printf("\r\n");
 	
 	/*check if DONE is high*/
-	if(DONE)
-		return(1);
-	else
-		return(0);
+	if(!DONE)
+	{
+		printf("FPGA DONE pin not high!\r\n");
+		ErrorFlash(ERR_CONFIG);
+	}
 }
+
+/********************************************************************************************************/
+/********************************************************************************************************/
 
 /*read a track from disk*/
 void ReadTrack(struct adfTYPE *drive)
@@ -704,7 +811,8 @@ void ReadTrack(struct adfTYPE *drive)
 	{
 		/*read sector*/
 		SSPCON1=0x30;
-		FileRead2(&file);
+		if(!FileRead(&file))
+			ErrorFlash(ERR_FILE);
 		SSPCON1=0x31;
 		
 		/*we are now going to access FPGA*/
@@ -734,7 +842,8 @@ void ReadTrack(struct adfTYPE *drive)
 		else
 		{			
 			SSPCON1=0x30;
-			FileNextSector2(&file);
+			if(!FileNextSector(&file))
+				ErrorFlash(ERR_FILE);
 			SSPCON1=0x31;
 		}
 		
@@ -758,15 +867,16 @@ void ReadTrack(struct adfTYPE *drive)
 
 void WriteTrack(struct adfTYPE *drive)
 {
-	printf("Write track not supported yet\r");
+	printf("Write track not supported yet\r\n");
 }
 
 
-void Open(const unsigned char *name)
+/*find and open a file*/
+unsigned char Open(const unsigned char *name)
 {
 	unsigned char i,j;
 	
-	if(FileSearch2(&file,0))
+	if(FileSearch(&file,FILESEEK_START))
 	{
 		do
 		{
@@ -775,14 +885,11 @@ void Open(const unsigned char *name)
 				if(file.name[j]==name[j])
 					i++;
 			if(i==11)
-			{
-				printf("file found\r");
-				return;	
-			}
+				return(1);	
 		}
-		while(FileSearch2(&file,1));
+		while(FileSearch(&file,FILESEEK_NEXT));
 	}
-	printf("file not found\r");
+	return(0);
 }
 
 
@@ -948,6 +1055,37 @@ void SectorToFpga(unsigned char sector,unsigned char track)
 		while(!BF);
 	}
 	while(--i);
+	
+}
+
+/********************************************************************************************************/
+/********************************************************************************************************/
+
+/*Error posting*/
+void ErrorFlash(unsigned char error)
+{
+	unsigned char x;
+	unsigned short t;
+
+	printf("Critical error #%u\r\nSystem Halted",error);
+
+	while(1)
+	{
+		/*flash led <error> times, period=400ms*/
+		for(x=0;x<error;x++)
+		{
+			DISKLED=1;
+			t=GetTimer(40);
+			while(!CheckTimer(t));
+			DISKLED=0;
+			t=GetTimer(40);
+			while(!CheckTimer(t));
+		}
+	
+		/*pause for 2000ms*/
+		t=GetTimer(200);
+		while(!CheckTimer(t));
+	}
 	
 }
 	

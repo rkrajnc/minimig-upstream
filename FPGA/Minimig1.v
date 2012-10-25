@@ -500,8 +500,12 @@ assign spidout=(!_spisel0 || !_spisel1) ? (paulaspidout|userspidout) : 1'bz;
 
 //cpu reset and clock
 assign _cpureset=~reset;
-assign cpuclk=~clk;
+//assign cpuclk=~clk;
 
+//cpu turbo clock
+reg cpuclk;
+always @(posedge vgaclk)
+	cpuclk<=~cpuclk;
 
 //--------------------------------------------------------------------------------------
 

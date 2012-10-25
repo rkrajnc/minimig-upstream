@@ -23,8 +23,8 @@ This is the Minimig OSD (on-screen-display) handler.
 */
 
 #include <pic18.h>
-#include <osd.h>
-#include <hardware.h>
+#include "osd.h"
+#include "hardware.h"
 
 /*character font*/
 const unsigned char charfont[256][5]=

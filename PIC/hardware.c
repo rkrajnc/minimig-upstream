@@ -25,7 +25,7 @@ Hardware control routines
 */
 
 #include <pic18.h>
-#include <hardware.h>
+#include "hardware.h"
 
 /*local functions*/
 void ScanKeys(void);

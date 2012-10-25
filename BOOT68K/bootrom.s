@@ -1,4 +1,4 @@
-* Copyright 2006, 2007 Dennis van Weeren
+* Copyright 2006, 2007, 2008 Dennis van Weeren
 *
 * This file is part of Minimig
 *
@@ -14,6 +14,13 @@
 *
 * You should have received a copy of the GNU General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*
+*
+* 20-01-2008	-added support for keyfile encrypted roms
+* 22-01-2008	-added simple RAM test
+* 27-01-2008	-RAM test speedup
+* 26-03-2008	-started redesign for better encrypted rom handling
+* 13-04-2008	-added WORKING support for 256Kb and 512Kb encryped roms
 
 
 *Some amiga register definitions
@@ -111,7 +118,7 @@ ADKCON	equ	$09e
 
 	org	$0
 
-	dc.W	$0007,$0100		;initial stack pointer
+	dc.W	$000f,$8000		;initial stack pointer
 	dc.W	$0000,$0100		;reset pointer
 
 	org	$100
@@ -119,29 +126,208 @@ ADKCON	equ	$09e
 Start:	lea	CUSTOM,a0		;pointer to chip registers
 	lea	CIAA,a1			;pointer to ciaa
 	lea	CIAB,a2			;pointer to ciab
-	lea	$f80000,a3		;pointer to chipram area
 
 	move.b	#$f7,CIAPRB(a2)		;select drive 0
 	move.b	#$ff,CIADDRB(a2)	;make drive control signals output
+	move.b	#$02,CIADDRA(a1)	;make led output
 	move.W	#30,SERPER(a0)		;set baud to 115200 @ 3.547 MHz
 	move.W	#$7000,INTENA(a0)	;disable all intterupts
 	move.w	#$7fff,INTREQ(a0)	;clear all intterupts
 	move.w	#$8210,DMACON(a0)	;enable only disk dma
 	move.w	#$7fff,ADKCON(a0)	;clear ADKCON
-	
-***************************************************************************
-*load kickstart from disk
-***************************************************************************
-	bsr	Trck0			;go to track 0
+	bset.b	#0,CIAPRA(a1)		;led indicates core is up
+
+	bsr	Tst			;do RAM test
+
+TstRet	bsr	Trck0			;go to track 0
 	bclr	#1,CIAPRB(a2)		;step upwards
+
+	lea	$010000,a4		;pointer to buffer
+	bsr	Rd16k			;read first 16k bytes of rom image into buffer
+	cmpi.l	#$414d4952,$010000	;check if this is an encrypted rom
+	bne	RomSkp
+
+	bsr	AfRom			;Amiga forever 256K or 512K encrypted rom
+	bra	Exit
+
+RomSkp	bsr	StdRom			;512K non-encrypted rom
+	bra	Exit
+
 	
-BootL	bsr	Rd16k			;read track into buffer
+***************************************************************************
+*Do RAM test...
+***************************************************************************
+Tst	move.l	#$aaaaaaaa,d0		;test pattern 1
+	move.l	#$55555555,d1		;test pattern 2
+
+*test bank#0 / IC7
+	lea	$100000,a3		;pointer to mirror bank of chipram
+	move.w	#$00f0,COLOR00(a0)	;background to green
+TstLP1	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	cmp.l	#$200000,a3		;all addresses done ?
+	bne	TstLP1
+
+*test first half bank#1 / IC6
+	lea	$c00000,a3		;pointer to ranger memory
+	move.w	#$0f00,COLOR00(a0)	;background to red
+TstLP2	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	cmp.l	#$c80000,a3		;all addresses done ?
+	bne	TstLP2
+
+*test second half bank#1 / IC6
+	lea	$f80000,a3		;pointer to kickstart area
+	move.w	#$000f,COLOR00(a0)	;background to blue
+TstLP3	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	move.l	d0,(a3)			;test with pattern 1
+	cmp.l	(A3),d0
+	bne	TstErr
+	move.l	d1,(a3)			;test with pattern 2
+	cmp.l	(A3)+,d1
+	bne	TstErr
+	cmp.l	#$1000000,a3		;all addresses done ?
+	bne	TstLP3
+
+	bra	TstRet			;return from this test
+
+
+TstErr	bra	TstErr
+
+***************************************************************************
+*load 512k non-encrypted rom from disk
+***************************************************************************
+StdRom	lea	$f80000,a3		;pointer to kickstart area
+	lea	$010000,a4		;pointer to buffer
+	bsr	Cpy16k			;copy buffer to kickstart area
+	
+StdRomL	lea	$010000,a4		;pointer to buffer
+	bsr	Rd16k			;read track into buffer
+	lea	$010000,a4		;pointer to buffer
 	bsr	Cpy16k			;copy buffer to kickstart area
 	cmp.l	#$1000000,a3		;all data done ?
-	beq	Exit			;yes --> exit boot code
+	beq	StdRomX			;yes --> exit 
 	bclr	#0,CIAPRB(a2)		;no  --> load next track
 	bset	#0,CIAPRB(a2)
-	bra	BootL
+	bra	StdRomL	
+StdRomX	rts
+
+***************************************************************************
+*load 256k or 512k Amiga Forever encrypted rom from disk
+***************************************************************************
+AfRom	lea	$014000,a4		;pointer to buffer
+AfromL1	bsr	Rd16k			;read 16384 bytes
+	add.l	#$4000,a4		;update pointer to buffer
+	cmp.l	#$050000,a4		;done ?
+	bne	AfromL1			;no --> loop 
+	bsr	Rd2k			;read 2082 bytes
+	add.l	#$822,a4		;update pointer to buffer	
+
+*now check if we are still getting data,
+*if we do, rom is 512kb and we need to load more data.
+*Else rom is 256kb and we can start decoding
+
+	bsr	W500			;wait 500ms for host to	update dskchange	
+	btst.b	#2,CIAPRA(a1)		;check dskchange 
+	beq	AfRom2			;low  --> decode 256K rom
+	
+AfromL2	bsr	Rd16k			;read 16384 bytes
+	add.l	#$4000,a4		;update pointer to buffer
+	cmp.l	#$090822,a4		;done ?
+	bne	AfromL2			;no --> loop 
+	bra	AfRom5			;decode 512K rom
+
+AfRom2
+*copy rom to kickstart area....
+	lea	$f80000,a3
+	lea	$01000b,a4
+	move.l	#262144,d0		;size of rom
+	bsr	CpyX
+
+*apply keyfile...
+	lea	$f80000,a4		;pointer to rom
+	lea	$05000c,a3		;pointer to key
+	move.w	#2069,d1		;length of key
+	move.l	#262144,d0		;size of rom
+	bsr	DoKey
+
+*and copy mirror of rom
+	lea	$fc0000,a3		
+	lea	$f80000,a4
+	move.l	#262144,d0		;size of rom
+	bsr	CpyX
+
+	rts				;exit
+
+AfRom5	
+*copy rom to kickstart area....
+	lea	$f80000,a3
+	lea	$01000b,a4
+	move.l	#524288,d0		;size of rom
+	bsr	CpyX
+
+*apply keyfile...
+	lea	$f80000,a4		;pointer to rom
+	lea	$09000c,a3		;pointer to key
+	move.w	#2069,d1		;length of key
+	move.l	#524288,d0		;size of rom
+	bsr	DoKey
+
+	rts				;exit
+
+***************************************************************************
+* Wait for 50ms
+***************************************************************************
+W50	move.b	#$00,CIACRA(a1)		;normal mode
+	move.b	#$8d,CIATALO(a1)	;set timer interval to 50ms
+	move.b	#$80,CIATAHI(a1)
+	move.b	#%01111111,CIAICR(a1)	;clear all 8520 interrupts
+	move.b	#$08,CIACRA(a1)		;enable one-shot mode
+	bset.b	#0,CIACRA(a1)		;start timer
+
+W50LP	btst.b	#0,CIAICR(a1)		;wait for timer to expire
+	beq	W50LP
+	rts
+
+***************************************************************************
+* Wait for 500ms 
+***************************************************************************
+W500	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	bsr	W50
+	rts
 
 ***************************************************************************
 * go to track0
@@ -155,9 +341,22 @@ Trck0L	bclr	#0,CIAPRB(a2)		;pulse _step
 	rts
 
 ***************************************************************************
-*read 16kbyte block from disk into the chipram buffer
+*read 2082 bytes from disk into the chipram buffer
 ***************************************************************************
-Rd16k	move.l	#$10000,DSKPTH(a0)	;pointer to chipram buffer
+Rd2k	move.l	a4,DSKPTH(a0)		;pointer to chipram buffer
+	move.w	#$0002,INTREQ(a0)	;clear interrupt
+	move.w	#$8411,DSKLEN(a0)	;start disk dma
+	move.w	#$8411,DSKLEN(a0)
+Rd2kL	move.w	INTREQR(a0),d0		;wait for disk dma to finish
+	and.w	#$0002,d0
+	beq	Rd2kL
+	move.w	#$4000,DSKLEN(a0)	;stop disk dma
+	rts
+
+***************************************************************************
+*read 16kbyte (16384 bytes) from disk into the chipram buffer
+***************************************************************************
+Rd16k	move.l	a4,DSKPTH(a0)		;pointer to chipram buffer
 	move.w	#$0002,INTREQ(a0)	;clear interrupt
 	move.w	#$a000,DSKLEN(a0)	;start disk dma
 	move.w	#$a000,DSKLEN(a0)
@@ -168,15 +367,50 @@ Rd16kL	move.w	INTREQR(a0),d0		;wait for disk dma to finish
 	rts
 
 ***************************************************************************
-*copy 16kbyte from the chipram buffer into the kickstart area
+*copy 16kbyte from <a4> to <a3>
 ***************************************************************************
 Cpy16k	move.w	#4095,d0		;4096 words
-	lea	$10000,a4		;pointer to chipram buffer
 Cpy16kL	move.l	(a4)+,d1		;copy one word
 	move.l	d1,(a3)+		;still copying one word
 	move.w	d1,COLOR00(a0)		;funny screen flash
 	dbra	d0,Cpy16kL
 	rts
+			
+***************************************************************************
+*copy <d0> bytes from <a4> to <a3>
+***************************************************************************
+CpyX	move.b	(a4)+,d1		;copy one word
+	move.b	d1,(a3)+		;still copying one word
+	move.w	d1,COLOR00(a0)		;funny screen flash
+	sub.l	#1,d0
+	bne	CpyX
+	rts
+
+***************************************************************************
+*apply keyfile
+***************************************************************************
+
+DoKey	move.w 	#0,d2			;reset key length counter
+	move.l	a3,a5			;reset key pointer
+
+DoKeyL	move.b	(a5)+,d3		;get a byte of the key	
+	eor.b	d3,(a4)+		;xor key to rom image
+	move.w	d3,COLOR00(a0)		;funny screen flash
+	add.w	#1,d2			;increment key length counter
+	sub.l	#1,d0			;decrement rom length counter
+
+	cmp.l	#0,d0			;end of rom?
+	beq	DoKeyX			;yes, exit
+
+	cmp.w	d1,d2			;end of keyfile?
+	beq	DoKey			;yes, reset key counter/pointer
+
+	bra	DoKeyL
+
+DoKeyX	rts
+
+
+
 			
 ***************************************************************************
 * exit boot code
