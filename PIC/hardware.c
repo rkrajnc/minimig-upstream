@@ -22,16 +22,24 @@ Hardware control routines
 29-01-2006		-done a lot of work
 31-01-2006		-added key repeat
 06-02-2006		-took out all button handling stuff
+
+-- Goran Ljubojevic --
+2009-11-13		- OsdCommand added
+2009-11-21		- small cleanup
+2009-12-20		- systimer reset on every hardware init to support propper timings on reset
+2009-12-30		- Support for new FPGA firmware added in header file
+				- GetFPGAStatus function added
+2010-01-29		- ResetFPGA() macro added to header file.
 */
 
 #include <pic18.h>
 #include "hardware.h"
 
 /*local functions*/
-void ScanKeys(void);
+//void ScanKeys(void);
 
-/*variables*/
-unsigned short systimer;	/*system timer*/
+// system timer
+unsigned short systimer;
 
 /*initialize hardware*/
 void HardwareInit(void)
@@ -68,6 +76,9 @@ void HardwareInit(void)
 	/*enable interrupt for timer 0*/
 	TMR0IE = 1;
 	GIE = 1;
+	
+	// Clear sys timer
+	systimer = 0;
 }
 
 /*interrupt service routine*/
@@ -105,24 +116,24 @@ unsigned short GetTimer(unsigned short offset)
 t may be maximum 30000 ticks in the future*/
 unsigned char CheckTimer(unsigned short t)
 {
-	/*calculate difference*/
+	// calculate difference
 	GIE = 0;
 	t -= systimer;
 	GIE = 1;
 
-	/*check if <t> has passed*/
+	// check if <t> has passed
 	if (t>30000)
-		return(1);
+	{	return(1);	}
 	else
-		return(0);
+	{	return(0);	}
 }
 
-/*put out a chacter to the serial port*/
-void putch(unsigned char ch)
+void WaitTimer(unsigned short time)
 {
-	while(TRMT == 0);
-	TXREG = ch;
+    time = GetTimer(time);
+    while (!CheckTimer(time));
 }
+
 
 /*SPI-bus*/
 unsigned char SPI(unsigned char d)
@@ -130,6 +141,18 @@ unsigned char SPI(unsigned char d)
 	SSPBUF = d;
 	while (!BF);			/*Wait untill controller is ready*/
 	return(SSPBUF);			/*Return with received value*/
+}
+
+// OSD Send Command
+unsigned char OsdCommand(unsigned char d)
+{
+	unsigned char c;
+
+	EnableOsd();
+	c = SPI(d);
+	DisableOsd();
+	
+	return c;
 }
 
 /*FPGA configuration serial interface*/
@@ -192,9 +215,28 @@ void ShiftFpga(unsigned char data)
 	CCLK = 1;
 }
 
+unsigned char GetFPGAStatus(void)
+{
+	unsigned char status;
+
+	EnableFpga();
+	status = SPI(0);
+	SPI(0);
+	SPI(0);
+	SPI(0);
+	SPI(0);
+	SPI(0);
+	DisableFpga();
+	return status;
+} 
 
 
-
+/*put out a chacter to the serial port*/
+void putch(unsigned char ch)
+{
+	while(TRMT == 0);
+	TXREG = ch;
+}
 
 
 
