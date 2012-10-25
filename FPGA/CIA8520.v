@@ -97,6 +97,7 @@ module ciaa
 	output	_lmb,
 	output	_rmb,
 	output	[5:0] _joy2,
+	output	pfire0,
 	output	freeze,				// Action Replay freeze key
 	input	disk_led			// floppy disk activity LED
 );
@@ -174,6 +175,7 @@ ps2keyboard	kbd1
 	._lmb(_lmb),
 	._rmb(_rmb),
 	._joy2(_joy2),
+	.pfire0(pfire0),
 	.freeze(freeze)
 );
 

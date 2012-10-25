@@ -128,6 +128,11 @@
 // 2010-07-28	- added vsync for the MCU
 // 2010-08-05	- added cache for the CPU
 // 2010-08-15	- added joystick emulation
+//
+// SB:
+// 2010-08-20	- changed some functions for personal look & feel
+//				- added floppy drive step simulation available via buzzer on spare-i(o pin 5+6
+// 2010-08-22	- added permanent fire function for joystick emulation on keypad "1" (done for Turrican)
 
 module Minimig1
 (
@@ -260,6 +265,7 @@ wire		[7:0] osd_ctrl;			// OSD control
 wire		kb_lmb;
 wire		kb_rmb;
 wire		[5:0] kb_joy2;
+//wire		pfire0;
 wire		freeze;					// Action Replay freeze button
 wire		_fire0;					// joystick 1 fire signal to cia A
 wire		_fire1;					// joystick 2 fire signal to cia A
@@ -359,10 +365,36 @@ BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 // power led control
 // when _led=0, pwrled=on
 // when _led=1, pwrled=powered by weak pullup
-assign pwrled = _led ? 1'bz : 1'b1;
+assign pwrled = _led ? 1'bz0: 1'b1;
+
+// drive step sound simulation
+reg	_step_del;
+always @(posedge clk)
+	_step_del <= _step; // delayed version of _step for edge detection
+
+wire	step_pulse;
+assign	step_pulse = _step & ~_step_del; // rising edge detection
+
+reg	_hsync_del;
+always @(posedge clk)
+	_hsync_del <= _hsync; // delayed version of _hsync for edge detection
+
+wire	hsync_pulse;
+assign hsync_pulse = _hsync & ~_hsync_del; // rising edge detection
+
+reg	[3:0] drv_cnt;
+always @(posedge clk)
+	if (drv_cnt != 0 && hsync_pulse || drv_cnt == 0 && step_pulse) // count only hsync pulses when counter is not zero or step pulses otherwise
+		drv_cnt <= drv_cnt + 1;
+
+reg	drvsnd;
+always @(posedge clk)
+	drvsnd <= |drv_cnt; // high when at least one bit of drv_cnt vector is not zero (| is the reduction operator)
+
+assign gpio = drvsnd ? 1'b1 : 1'b0;
 
 // unused i/o pin
-assign gpio = 1'bz;
+//assign gpio = 1'bz;
 
 // NTSC/PAL switching is controlled by OSD menu, change requires reset to take effect
 always @(posedge clk)
@@ -501,6 +533,7 @@ userio USERIO1
 	._fire1(_fire1),
 	._joy1(_joy1),
 	._joy2(_joy2 & kb_joy2),
+	.pfire0(pfire0),
 	._lmb(kb_lmb),
 	._rmb(kb_rmb),
 	.osd_ctrl(osd_ctrl),
@@ -541,6 +574,7 @@ Denise DENISE1
 	.red(red_i),
 	.green(green_i),
 	.blue(blue_i),
+	.a1k(chipset_config[2]),
 	.ecs(chipset_config[3]),
 	.hires(hires)
 );
@@ -594,6 +628,7 @@ ciaa CIAA1
 	._lmb(kb_lmb),
 	._rmb(kb_rmb),
 	._joy2(kb_joy2),
+	.pfire0(pfire0),
 	.freeze(freeze),
 	.disk_led(disk_led)
 );

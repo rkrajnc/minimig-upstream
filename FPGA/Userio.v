@@ -55,6 +55,9 @@
 // 2010-08-16	- joystick emulation
 // 2010-08-16	- autofire
 //				- lmb & rmb emulation
+//
+// SB:
+// 2010-08-22	- permanent fire function
 
 module userio
 (
@@ -74,6 +77,7 @@ module userio
 	output	_fire1,					// joystick 1 fire output (to CIA)
 	input	[5:0] _joy1,			// joystick 1 in (default mouse port)
 	input	[5:0] _joy2,			// joystick 2 in (default joystick port)
+	input	pfire0,				// permanent fire
 	input	_lmb,
 	input	_rmb,
 	input	[7:0] osd_ctrl,			// OSD control (minimig->host, [menu,select,down,up])
@@ -127,6 +131,7 @@ parameter KEY_UP    = 8'h4C;
 parameter KEY_DOWN  = 8'h4D;
 parameter KEY_LEFT  = 8'h4F;
 parameter KEY_RIGHT = 8'h4E;
+//parameter KEY_DOT = 8'h3C; //KP .
 
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
@@ -142,7 +147,7 @@ always @(posedge clk)
 			
 always @(posedge clk)
 	if (sof)
-		if (autofire_config == 0)
+		if (autofire_config == 0 || !pfire0)
 			autofire <= 1'b0;
 		else if (autofire_cnt == 1)
 			autofire <= ~autofire;
@@ -150,7 +155,7 @@ always @(posedge clk)
 // disable keyboard when OSD is displayed
 always @(key_disable)
 	keyboard_disabled <= key_disable;
-											   
+
 // input synchronization of external signals
 always @(posedge clk)
 	_sjoy1[5:0] <= _joy1[5:0];	
@@ -344,9 +349,11 @@ always @(posedge clk)
 	if (reset)
 	begin
 		chipset_config[1] <= t_chipset_config[1];
-		memory_config <= t_memory_config;
 		ide_config <= t_ide_config;
 	end
+
+always @(posedge clk)
+		memory_config <= t_memory_config;
 
 always @(t_chipset_config)
 begin

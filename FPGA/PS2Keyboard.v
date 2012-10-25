@@ -44,6 +44,9 @@
 //
 // 2009-05-24	- clean-up & renaming
 // 2010-08-18	- joystick emulation
+//
+// SB:
+// 2010-08-22	- permanent fire function
 
 module ps2keyboard
 (
@@ -61,6 +64,7 @@ module ps2keyboard
 	output	_lmb,				//emulated left mouse button
 	output	_rmb,				//emulated right mouse button
 	output	[5:0] _joy2,		//joystick emulation
+	output	pfire0,				//permanent fire0
 	output	freeze				//Action Replay freeze button
 );
 
@@ -272,6 +276,7 @@ ps2keyboardmap km1
 	._lmb(_lmb),
 	._rmb(_rmb),
 	._joy2(_joy2),
+	.pfire0(pfire0),
 	.freeze(freeze)
 );
 
@@ -326,7 +331,7 @@ begin
 	//latch status of control key
 	if (reset)
 		kbdrststatus[2] <= 1;
-	else if (valid && ctrl)
+	else if (valid && (ctrl | caps)) // ctrl or caps will work for kbdrst
 		kbdrststatus[2] <= keydat[7];
 	//latch status of left alt key
 	if (reset)
@@ -366,6 +371,7 @@ module ps2keyboardmap
 	output	reg _lmb,			//mouse button emulation
 	output	reg _rmb,			//mouse button emulation
 	output	reg [5:0] _joy2,	//joystick emulation
+	output	reg pfire0,		//permanent fire0
 	output	reg freeze			//int7 freeze button
 );
 //local parameters
@@ -374,7 +380,10 @@ localparam JOY2KEY_DOWN  = 7'h2E;
 localparam JOY2KEY_LEFT  = 7'h2D;
 localparam JOY2KEY_RIGHT = 7'h2F;
 localparam JOY2KEY_FIRE0 = 7'h0F;
+//localparam JOY2KEY_PFIRE0 = 7'h3C; //KP .
+localparam JOY2KEY_PFIRE0 = 7'h1D; //KP 1
 localparam JOY2KEY_FIRE1 = 7'h43;
+
 localparam JOY1KEY_FIRE0 = 7'h5C;
 localparam JOY1KEY_FIRE1 = 7'h5D;
 
@@ -479,8 +488,16 @@ always @(posedge clk)
 begin
 	if (reset || !numlock)
 		_joy2[4] <= 1'b1;
-	else if (enable2 && keyrom[15] && keyrom[7:0]==JOY2KEY_FIRE0)
+	else if (enable2 && keyrom[15] && (keyrom[7:0]==JOY2KEY_FIRE0 || keyrom[7:0]==JOY2KEY_PFIRE0))
 		_joy2[4] <= upstroke;
+end
+
+always @(posedge clk)
+begin
+	if (reset || !numlock || enable2 && keyrom[15] && keyrom[7:0]==JOY2KEY_PFIRE0 && !upstroke)
+		pfire0 <= 0;
+	else if (enable2 && keyrom[15] && keyrom[7:0]==JOY2KEY_PFIRE0)
+		pfire0 <= upstroke;
 end
 
 always @(posedge clk)
