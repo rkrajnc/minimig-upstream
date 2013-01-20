@@ -71,6 +71,10 @@
 // TobiFlex(TF):
 // 2012-02-12 - change sigma/delta module
 
+// AMR:
+// 2012-10-27 - new audio module, a hybrid PWM / SD DAC.
+//              Silences audio channel when replen is 1 - fix for Gods jump noise.
+
 module audio
 (
 	input 	clk,		    		//bus clock
@@ -212,7 +216,7 @@ audiochannel ach3
 //instantiate volume control and sigma/delta modulator
 sigmadelta dac0 
 (
-	.clk({clk}),
+	.clk({clk28m}),
 	.sample0(sample0),
 	.sample1(sample1),
 	.sample2(sample2),
@@ -229,6 +233,69 @@ sigmadelta dac0
 //--------------------------------------------------------------------------------------
 
 endmodule
+
+// Hybrid PWM / Sigma Delta converter
+//
+// Uses 5-bit PWM, wrapped within a 10-bit Sigma Delta, with the intention of
+// increasing the pulse width, since narrower pulses seem to equate to more
+// noise on the Minimig
+
+module hybrid_pwm_sd
+(
+	input clk,
+	input n_reset,
+	input dump,
+	input [15:0] din,
+	output dout
+);
+
+reg [4:0] pwmcounter;
+reg [4:0] pwmthreshold;
+reg [33:0] scaledin;
+reg [15:0] sigma;
+reg [24:0] lfsr_reg=1234;
+reg out;
+
+assign dout=out;
+
+always @(posedge clk, negedge n_reset) // FIXME reset logic;
+begin
+	if(!n_reset)
+	begin
+		sigma<=16'b00000100_00000000;
+		pwmthreshold<=5'b10000;
+	end
+	else
+	begin
+		pwmcounter<=pwmcounter+1;
+
+		if(pwmcounter==pwmthreshold)
+			out<=1'b0;
+
+		if(pwmcounter==5'b11111) // Update threshold when pwmcounter reaches zero
+		begin
+			// Pick a new PWM threshold using a Sigma Delta
+//			scaledin<={1'b0,din}*64511; // 63<<(16-6)-1;
+			scaledin<=33'd134217728 // (1<<(16-5))<<16, offset to keep centre aligned.
+				+({1'b0,din}*61440); // 30<<(16-5)-1;
+			sigma<=scaledin[31:16]+{5'b000000,sigma[10:0]};	// Will use previous iteration's scaledin value
+			pwmthreshold<=sigma[15:11]; // Will lag 2 cycles behind, but shouldn't matter.
+			out<=1'b1;
+		end
+
+		if(dump)
+		begin
+			sigma[10:0]<=10'b10_0000_0000; // Clear the accumulator to avoid standing tones.
+//			sigma[10:0]<={(lfsr_reg[8] ? 4'b10_0 : 4'b011),lfsr_reg[7:0]}; // fill the accumulator with a random value to avoid standing tones.
+
+			// x^25 + x^22 + 1
+//			lfsr_reg<={lfsr_reg[23:0],lfsr_reg[24] ^ lfsr_reg[21]};
+		end
+	end
+end
+
+endmodule
+
 
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
@@ -324,18 +391,52 @@ svmul sv1
 	.out(rdata)
 	);
 
+reg [9:0] dumpcounter;
+reg dump;
+reg dump_d;
+
+always @(posedge clk)
+begin
+	if(dump_d==1'b0 && strhor==1'b1)
+		dump<=1'b1;
+	else
+		dump<=1'b0;
+	dump_d<=strhor;
+//	dumpcounter<=dumpcounter+1;
+//	dump<=dumpcounter==0 ? 1'b1 : 1'b0;
+end
+
+hybrid_pwm_sd leftdac
+(
+	.clk(clk),
+	.n_reset(1'b1),
+	.dump(dump),
+	.din({~ldatasum[14],ldatasum[13:0],1'b0}),
+	.dout(left)
+);
+
+hybrid_pwm_sd rightdac
+(
+	.clk(clk),
+	.n_reset(1'b1),
+	.dump(dump),
+	.din({~rdatasum[14],rdatasum[13:0],1'b0}),
+	.dout(right)
+);
+
+
 //--------------------------------------------------------------------------------------
 //left sigma/delta modulator
-always @(posedge clk)
-		acculeft[12:1] <= (acculeft[12:1] + {acculeft[12],acculeft[12],~ldatasum[14],ldatasum[13:5]});
-
-assign left = acculeft[12];
-
-//right sigma/delta modulator
-always @(posedge clk)
-		accuright[12:1] <= (accuright[12:1] + {accuright[12],accuright[12],~rdatasum[14],rdatasum[13:5]});
-
-assign right = accuright[12];
+//always @(posedge clk)
+//	acculeft[12:1] <= (acculeft[12:1] + {acculeft[12],acculeft[12],~ldatasum[14],ldatasum[13:5]});
+//
+//assign left = acculeft[12];
+//
+////right sigma/delta modulator
+//always @(posedge clk)
+//	accuright[12:1] <= (accuright[12:1] + {accuright[12],accuright[12],~rdatasum[14],rdatasum[13:5]});
+//
+//assign right = accuright[12];
 
 endmodule
 
@@ -431,6 +532,9 @@ reg		intreq2;				//buffered interrupt request
 reg		dmasen;					//pointer register reloading request
 reg		penhi;					//enable high byte of sample buffer
 
+reg	silence;	// AMR: disable audio if repeat length is 1
+reg	silence_d;	// AMR: disable audio if repeat length is 1
+reg	dmaena_d;
 
 //--------------------------------------------------------------------------------------
  
@@ -492,10 +596,31 @@ assign perfin = (percnt[15:0]==1 && cck) ? 1 : 0;
 
 //length counter
 always @(posedge clk)
-	if (lencntrld && cck)//load length counter from audio length register
-		lencnt[15:0] <= (audlen[15:0]);
-	else if (lencount && cck)//length counter count down
-		lencnt[15:0] <= (lencnt[15:0] - 1);
+	begin
+		if (lencntrld && cck)//load length counter from audio length register
+		begin
+			lencnt[15:0] <= (audlen[15:0]);
+			silence<=1'b0;
+			if(audlen==1 || audlen==0)
+				silence<=1'b1;
+		end
+		else if (lencount && cck)//length counter count down
+			lencnt[15:0] <= (lencnt[15:0] - 1);
+
+		// Silence fix
+		dmaena_d<=dmaena;
+		if(dmaena_d==1'b1 && dmaena==1'b0)
+		begin
+			silence_d<=1'b1; // Prevent next write from unsilencing the channel.
+			silence<=1'b1;
+		end
+		if(AUDxDAT && cck)	// Unsilence the channel if the CPU writes to AUDxDAT
+			if(silence_d)
+				silence_d<=1'b0;
+			else
+				silence<=1'b0;
+			
+	end
 
 assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
 
@@ -508,7 +633,8 @@ always @(posedge clk)
 	else if (pbufld1 && cck)
 		datbuf[15:0] <= (auddat[15:0]);
 
-assign sample[7:0] = (penhi) ? (datbuf[15:8]) : datbuf[7:0];
+//assign sample[7:0] = (penhi) ? (datbuf[15:8]) : datbuf[7:0];
+assign sample[7:0] = silence ? 8'b0 : ((penhi) ? (datbuf[15:8]) : datbuf[7:0]);
 
 //volume output
 assign volume[6:0] = (audvol[6:0]);

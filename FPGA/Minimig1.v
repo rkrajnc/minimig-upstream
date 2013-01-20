@@ -132,11 +132,11 @@
 // SB:
 // 2010-12-22	- better drive step sound at 31KHz mode
 // 2011-03-06	- changed autofire function to handless mode
-// 2011-03-08	- added dip and fat agnus DIWSTRT handling (fix RoboCop2)
+// 2011-03-08	- added dip and fat Agnus DIWSTRT handling (fix RoboCop2)
 // 2011-04-02	- added functional ciaa port b (parallel) register to let Unreal game work and some trainer store data
 // 2011-04-04	- added pwm controlled power-led at "off" state and active Turbo mode (thanks Herzi for the idea)
 // 2011-04-10	- added readable VPOSW and VHPOSW register (fix for RSI slideshow)
-// 11-04-2011	- autofire function toggle able via capslock / led status
+// 2011-04-11	- autofire function toggle able via capslock / led status
 // 2011-04-24	- fixed CIA TOD read
 // 2011-07-21	- changed '#' key scan code, thanks Chris
 //
@@ -145,6 +145,7 @@
 //
 // SB:
 // 2012-03-23	- fixed sprite enable signal (coppermaster demo)
+// 2013-01-17	- added POTGO write register handling
 
 module Minimig1
 (
@@ -374,11 +375,9 @@ wire buf_sck;
 BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 
 // power led control
+/*
 reg	[3:0] led_cnt;
 reg	led_dim;
-
-assign pwrled = (_led & (led_dim | ~turbo)) ? 1'b0 : 1'b1; // led dim at off-state and active turbo mode
-//assign pwrled = _led ? 1'b0 : 1'b1;
 
 // power led pwm 
 always @(posedge clk)
@@ -388,6 +387,10 @@ always @(posedge clk)
 always @(posedge clk)
 	if	(!_hsync)
 		led_dim <= |led_cnt;
+
+//assign pwrled = (_led & (led_dim | ~turbo)) ? 1'b0 : 1'b1; // led dim at off-state and active turbo mode
+*/
+assign pwrled = _led ? 1'b0 : 1'b1;
 
 // drive step sound emulation
 reg	_step_del;
@@ -522,7 +525,7 @@ Paula PAULA1
 	// ide stuff
 	.direct_scs(~_scs[2]),
 	.direct_sdi(sdo),
-	.hdd_cmd_req(hdd_cmd_req),	
+	.hdd_cmd_req(hdd_cmd_req),
 	.hdd_dat_req(hdd_dat_req),
 	.hdd_addr(hdd_addr),
 	.hdd_data_out(hdd_data_out),
@@ -535,7 +538,7 @@ Paula PAULA1
 
 // instantiate user IO
 userio USERIO1 
-(	
+(
 	.clk(clk),
 	.reset(reset),
 	.clk28m(clk28m),
@@ -574,12 +577,11 @@ userio USERIO1
 	.bootrst(bootrst)
 );
 
-assign cpu_speed = (chipset_config[0] & ~int7 & ~freeze & ~ovr);
-//assign cpu_speed = (chipset_config[0]);
+assign cpu_speed = (chipset_config[0] & ~int7 & ~freeze & ~ovr) ? 1'b1 : 1'b0;
 
 // instantiate Denise
 Denise DENISE1
-(		
+(
 	.clk28m(clk28m),
 	.clk(clk),
 	.c1(c1),
@@ -601,7 +603,7 @@ Denise DENISE1
 
 // instantiate Amber
 Amber AMBER1
-(		
+(
 	.clk28m(clk28m),
 	.dblscan(_15khz),
 	.lr_filter(lr_filter),
@@ -714,7 +716,7 @@ bank_mapper BMAP1
 	.chip0((~ovr|~cpu_rd|dbr) & sel_chip[0]),
 	.chip1(sel_chip[1]),
 	.chip2(sel_chip[2]),
-	.chip3(sel_chip[3]),	
+	.chip3(sel_chip[3]),
 	.slow0(sel_slow[0]),
 	.slow1(sel_slow[1]),
 	.slow2(sel_slow[2]),
@@ -797,7 +799,7 @@ gary GARY1
 	.dbs(dbs),
 	.xbs(xbs),
 	.memory_config(memory_config),
-	.hdc_ena(ide_config[0]), // Gayle decoding enable	
+	.hdc_ena(ide_config[0]), // Gayle decoding enable
 	.ram_rd(ram_rd),
 	.ram_hwr(ram_hwr),
 	.ram_lwr(ram_lwr),
@@ -843,18 +845,18 @@ gayle GAYLE1
 );
 
 // instantiate boot rom
-bootrom BOOTROM1 
-(	
+bootrom BOOTROM1
+(
 	.clk(clk),
 	.aen(sel_boot),
 	.rd(cpu_rd),
 	.address_in(cpu_address_out[10:1]),
-	.data_out(boot_data_out)	
+	.data_out(boot_data_out)
 );
 
 // instantiate system control
 syscontrol CONTROL1 
-(	
+(
 	.clk(clk),
 	.cnt(sof),
 	.mrst(kbdrst | usrrst),
@@ -866,7 +868,7 @@ syscontrol CONTROL1
 
 // instantiate clock generator
 clock_generator CLOCK1
-(	
+(
 	.mclk(mclk),
 	.clk28m(clk28m),	// 28.37516 MHz clock output
 	.c1(c1),			// clock enable signal
@@ -912,7 +914,7 @@ assign _cpu_reset = ~reset_out;
 always @(posedge clk)
 //	if (~rst_sel)
 		reset <= ~_cpu_reset;
-	
+
 //--------------------------------------------------------------------------------------
 
 endmodule
@@ -1003,8 +1005,7 @@ module bank_mapper
 	output	reg [7:0] bank		// bank select
 );
 
-		
-always @(aron or memory_config or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or kick or cart or ecs)
+always @(aron or memory_config or chip0 or chip1 or chip2 or chip3 or slow0 or slow1 or slow2 or kick or cart)
 begin
 	case ({aron,memory_config})
 		5'b0_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  1'b0,  1'b0, chip0 | chip1 | chip2 | chip3 }; // 0.5M CHIP
@@ -1023,7 +1024,7 @@ begin
 		5'b0_1101 : bank = {  1'b0,  1'b0, slow1, slow2,     kick, slow0, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP + 1.5MB SLOW
 		5'b0_1110 : bank = {  1'b0, slow2, slow1, slow0,     kick, chip2, chip1, chip0 }; // 1.5M CHIP + 1.5MB SLOW
 		5'b0_1111 : bank = { slow1, slow2, chip3, slow0,     kick, chip2, chip1, chip0 }; // 2.0M CHIP + 1.5MB SLOW
-		
+
 		5'b1_0000 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart,  1'b0, chip0 | chip1 | chip2 | chip3 }; // 0.5M CHIP
 		5'b1_0001 : bank = {  1'b0,  1'b0,  1'b0,  1'b0,     kick,  cart, chip1 | chip3, chip0 | chip2 }; // 1.0M CHIP
 		5'b1_0010 : bank = {  1'b0,  1'b0,  1'b0, chip2,     kick,  cart, chip1, chip0 }; // 1.5M CHIP
@@ -1077,7 +1078,7 @@ module sram_bridge
 	output	reg [3:0] _ce = 4'b1111,	// sram chip enable
 	output	reg [19:1] address,			// sram address bus
 	inout	[15:0] data		  			// sram data das
-);	 
+);
 
 /* basic timing diagram
 
@@ -1138,7 +1139,7 @@ always @(posedge clk28m)
 		_bhe <= 1'b0;
 	else if (c1 && c3 && enable && hwr) // assert upper byte enable in Q2 during write cycle
 		_bhe <= 1'b0;
-		
+
 // generate ram lower byte enable _ble
 always @(posedge clk28m)
 	if (!c1 && !c3) // deassert lower byte enable in Q0
@@ -1147,7 +1148,7 @@ always @(posedge clk28m)
 		_ble <= 1'b0;	
 	else if (c1 && c3 && enable && lwr) // assert lower byte enable in Q2 during write cycle
 		_ble <= 1'b0;
-			
+
 // generate data buffer output enable
 always @(posedge clk28m)
 	if (!c1 && !c3)  // deassert output enable in Q0
@@ -1166,7 +1167,7 @@ always @(posedge clk28m)
 always @(posedge clk28m)
 	if (c1 && !c3 && enable)	// set address in Q1		
 		address <= ({bank[7]|bank[5]|bank[3]|bank[1],address_in[18:1]});
-			
+
 // data_out multiplexer
 assign data_out[15:0] = (enable && rd) ? data[15:0] : 16'b0000000000000000;
 
@@ -1180,14 +1181,14 @@ endmodule
 //--------------------------------------------------------------------------------------
 
 // This module interfaces Minimig's synchronous bus to the 68SEC000 CPU
-// 
+//
 // cycle exact CIA interface:
 // ECLK low for 6 cycles and high for 4
 // data latched with falling edge of ECLK
 // VPA sampled 3 CLKs before rising edge of ECLK
 // VMA asserted one clock later if VPA recognized
 // DTACK sampled one clock before ECLK falling edge
-// 
+//
 //             ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___
 // CLK     ___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___
 //         ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___     ___
@@ -1196,16 +1197,16 @@ endmodule
 //         ___X___0___X___1___X___2___X___3___X___4___X___5___X___6___X___7___X___8___X___9___X___0___
 //         ___                                                 _______________________________
 // ECLK       \_______________________________________________/                               \_______
-//                                    |       |_VMA_asserted                          
+//                                    |       |_VMA_asserted
 //                                    |_VPA_sampled                   _______________           ______
 //                                                                            \\\\\\\\_________/       DTACK asserted (7MHz)
 //                                                                                    |__DTACK_sampled (7MHz) 
 //                                                                    _____________________     ______
 //                                                                                         \___/       DTACK asserted (28MHz)
 //                                                                                          |__DTACK_sampled (28MHz)
-// 
+//
 // NOTE: in 28MHz mode this timing model is not (yet?) supported, CPU talks to CIAs with no waitstates
-// 
+//
 
 module m68k_bridge
 (
@@ -1253,20 +1254,20 @@ localparam GND = 1'b0;
            ___     ___     ___     ___     ___     ___     ___     ___     ___
 CLK    ___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___/   \___
           .....   .   .   .   .   .   .   .....   .   .   .   .   .   .   .....
-       _____________________________________________                         _____		  
-R/W                 \_ _ _ _ _ _ _ _ _ _ _ _/       \_______________________/     
+       _____________________________________________                         _____
+R/W                 \_ _ _ _ _ _ _ _ _ _ _ _/       \_______________________/
           .....   .   .   .   .   .   .   .....   .   .   .   .   .   .   .....
-       _________ _______________________________ _______________________________ _		  
+       _________ _______________________________ _______________________________ _
 ADDR   _________X_______________________________X_______________________________X_
           .....   .   .   .   .   .   .   .....   .   .   .   .   .   .   .....
        _____________                     ___________                     _________
-/AS                 \___________________/           \___________________/         
+/AS                 \___________________/           \___________________/
           .....   .   .   .       .   .   .....   .   .   .   .       .   .....
        _____________        READ         ___________________    WRITE    _________
-/DS                 \___________________/                   \___________/         
+/DS                 \___________________/                   \___________/
           .....   .   .   .   .   .   .   .....   .   .   .   .   .   .   .....
        _____________________     ___________________________     _________________
-/DTACK                      \___/                           \___/                 
+/DTACK                      \___/                           \___/
           .....   .   .   .   .   .   .   .....   .   .   .   .   .   .   .....
                                      ___
 DIN    -----------------------------<___>-----------------------------------------
@@ -1284,7 +1285,7 @@ reg		l_uds,l_lds;
 
 reg		l_as28m;				// latched address strobe in turbo mode
 
-reg		lvpa;					// latched valid peripheral address (CIAs)
+reg		l_vpa;					// latched valid peripheral address (CIAs)
 reg		vma;					// valid memory address (synchronised VPA with ECLK)
 reg		_ta;					// transfer acknowledge
 
@@ -1295,13 +1296,13 @@ always @(posedge clk)
 
 // latched valid peripheral address
 always @(posedge clk)
-	lvpa <= vpa;
+	l_vpa <= vpa;
 
 // vma output
 always @(posedge clk)
 	if (eclk[9])
 		vma <= 0;
-	else if (eclk[3] && lvpa)
+	else if (eclk[3] && l_vpa)
 		vma <= 1;
 
 // latched CPU bus control signals
@@ -1326,7 +1327,7 @@ always @(posedge cpu_clk)
 reg t_dtack; // sampled _dtack for capturing bus data
 always @(negedge cpu_clk)
 	t_dtack <= (_dtack | t_as | ~t_dtack);
-	
+
 // cached memory ranges
 wire [3:0] cache_bank;
 assign cache_bank[0] = (address[23:19] == 5'b1100_0) ? VCC : GND;	// SLOW RAM $C00000-$C7FFFF
@@ -1340,8 +1341,8 @@ assign bank_enable[0] = |memory_config[3:2];
 assign bank_enable[1] =  memory_config[3];
 assign bank_enable[2] = &memory_config[3:2];
 assign bank_enable[3] = VCC;
-				
-wire cacheable; // indicates if the selected address is cacheable	
+
+wire cacheable; // indicates if the selected address is cacheable
 assign cacheable = |(cache_bank & bank_enable);
 
 // cache tag ram
@@ -1352,10 +1353,10 @@ always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable) // write address tag during any access to cacheable memory
 			cache_tag[address[11:1]] <= (address[20:12]);
-	  
+
 always @(negedge cpu_clk) // ram read
 	cache_tag_out <= (cache_tag[address[11:1]]);
-	
+
 // tag addres comparator
 wire tag_match; // tag address matches the current one (possible cache hit)
 assign tag_match = (cache_tag_out[8:0] == address[20:12]) ? VCC : GND;
@@ -1371,7 +1372,7 @@ always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable && (!_uds || !tag_match))
 			cache_data_hi[address[11:1]] <= ({~_uds, data[15:8]}); // msb as byte valid flag
-	  
+
 always @(negedge cpu_clk) // ram read
 	cache_data_hi_out <= (cache_data_hi[address[11:1]]);
 
@@ -1386,7 +1387,7 @@ always @(negedge cpu_clk) // ram write
 	if (!t_dtack)
 		if (cacheable && (!_lds || !tag_match))
 			cache_data_lo[address[11:1]] <= ({~_lds, data[7:0]}); // msb as byte valid flag
-	  
+
 always @(negedge cpu_clk) // ram read
 	cache_data_lo_out <= (cache_data_lo[address[11:1]]);
 
@@ -1407,14 +1408,14 @@ assign cache_hit = (!blk & turbo & ~_as & cacheable & tag_match & size_match & r
 // latched _as line (active low) used in turbo mode (active only if cache missed access)
 always @(posedge clk)
 	l_as28m <= (_as | cache_hit);
-	
+
 // data transfer acknowledge in normal mode
 reg _ta_n;
 always @(posedge clk28m or posedge _as)
 	if (_as)
 		_ta_n <= VCC;
 	else if (!l_as && cck && ((!vpa && !(dbr && dbs)) || (vpa && vma && eclk[8])) && !nrdy && c1 && c3 && !turbo)
-		_ta_n <= GND;	
+		_ta_n <= GND;
 
 /*
                 ___     ___     ___     ___     ___     ___     ___|    ___     ___   
@@ -1453,7 +1454,7 @@ always @(posedge cpu_clk or posedge _as)
 		_ta_t <= VCC;
 	else if (!_ta_t2)
 		_ta_t <= GND;
-		
+
 // actual _dtack generation (from 7MHz synchronous bus access and cache hit access)
 assign _dtack = (_ta_n & _ta_t & ~cache_hit);
 
@@ -1474,7 +1475,7 @@ assign doe = (r_w & ~_as);
 // data_out multiplexer and latch
 always @(data)
 	data_out <= data;
-	
+
 always @(clk or data_in)
 	if (!clk)
 		ldata_in <= data_in;

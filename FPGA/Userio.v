@@ -54,11 +54,12 @@
 // 2009-12-18	- clean-up
 // 2010-08-16	- joystick emulation
 // 2010-08-16	- autofire
-//					- lmb & rmb emulation
+//		- lmb & rmb emulation
 //
 // SB:
-//	06-03-2011	- added autofire without key press & permanent fire at KP0
-// 11-04-2011	- autofire toggle able via capslock / led status
+// 2011-03-06	- added autofire without key press & permanent fire at KP0
+// 2011-04-11	- autofire toggle able via capslock / led status
+// 2013-01-17	- added POTGO write register handling (required by Asterix game)
 
 module userio
 (
@@ -104,6 +105,7 @@ module userio
 reg		[5:0] _sjoy1;				// synchronized joystick 1 signals
 reg		[5:0] _xjoy2;				// synchronized joystick 2 signals
 wire	[5:0] _sjoy2;				// synchronized joystick 2 signals
+reg	[15:0] potreg;			// POTGO write
 wire	[15:0] mouse0dat;			// mouse counters
 wire	_mleft;						// left mouse button
 wire	_mthird;					// middle mouse button
@@ -120,9 +122,10 @@ reg		[1:0] autofire_cnt;
 reg		autofire;
 reg		sel_autofire;			// select autofire and permanent fire
 
-// register names and adresses		
+// register names and adresses
 parameter JOY0DAT = 9'h00a;
 parameter JOY1DAT = 9'h00c;
+parameter POTGO   = 9'h034;
 parameter POTINP  = 9'h016;
 parameter JOYTEST = 9'h036;
 
@@ -162,10 +165,10 @@ always @(posedge clk)
 // disable keyboard when OSD is displayed
 always @(key_disable)
 	keyboard_disabled <= key_disable;
-											   
+
 // input synchronization of external signals
 always @(posedge clk)
-	_sjoy1[5:0] <= _joy1[5:0];	
+	_sjoy1[5:0] <= _joy1[5:0];
 
 always @(posedge clk)
 	if (sof)
@@ -178,7 +181,7 @@ always @(posedge clk)
 	else if (_xjoy2[5:0] == 6'b11_1111)
 		joy2enable <= 1;
 
-//	autofire is permanent active if enabled, can be overwritten any time by normal fire button
+// autofire is permanent active if enabled, can be overwritten any time by normal fire button
 assign _sjoy2[5:0] = joy2enable ? {_xjoy2[5], sel_autofire ^ _xjoy2[4], _xjoy2[3:0]} : 6'b11_1111;
 
 always @(joy2enable or _xjoy2 or osd_ctrl)
@@ -217,6 +220,13 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 
+// POTGO register
+always @(posedge clk)
+	if (reset)
+		potreg <= 16'hFF_FF;
+	else if (reg_address_in[8:1]==POTGO[8:1])
+		potreg <= data_in;
+
 // data output multiplexer
 always @(reg_address_in or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mright or _mthird or _rmb)
 	if ((reg_address_in[8:1]==JOY0DAT[8:1]) && joy1enable)// read port 1 joystick
@@ -226,7 +236,7 @@ always @(reg_address_in or joy1enable or _sjoy1 or mouse0dat or _sjoy2 or _mrigh
 	else if (reg_address_in[8:1]==JOY1DAT[8:1])// read port 2 joystick
 		data_out[15:0] = {6'b000000,~_sjoy2[1],_sjoy2[3]^_sjoy2[1],6'b000000,~_sjoy2[0],_sjoy2[2]^_sjoy2[0]};
 	else if (reg_address_in[8:1]==POTINP[8:1])// read mouse and joysticks extra buttons
-		data_out[15:0] = {1'b0,_sjoy2[5],3'b010,_mright&_sjoy1[5]&_rmb,1'b0,_mthird,8'b00000000};
+		data_out[15:0] = {1'b0,_sjoy2[5]&potreg[14],1'b0,potreg[12]&1'b1,1'b0,potreg[10]&_mright&_sjoy1[5]&_rmb,1'b0,potreg[8]&_mthird,8'b00000000};
 	else
 		data_out[15:0] = 16'h00_00;
 
@@ -370,7 +380,7 @@ begin
 	chipset_config[3:2] <= t_chipset_config[3:2];
 	chipset_config[0] <= t_chipset_config[0];
 end
-		
+
 //--------------------------------------------------------------------------------------
 // OSD video generator
 //--------------------------------------------------------------------------------------
@@ -388,7 +398,7 @@ always @(posedge clk)
 		verbeam <= 0;
 	else if (sol)
 		verbeam <= verbeam + 1;
-		
+
 always @(posedge clk)
 	if (sol)
 		vpos[5:0] <= verbeam[5:0];
@@ -410,7 +420,7 @@ always @(posedge clk)
 		vframe <= 1;
 	else if (verbeam[0])
 		vframe <= 0;
-		
+
 always @(posedge clk)
 	if (sol)
 		vena <= vframe;
@@ -420,7 +430,7 @@ reg osd_enabled;
 always @(posedge clk)
 	if (sof)
 		osd_enabled <= osd_enable;
-		
+
 assign osdframe = vframe & hframe & osd_enabled;
 
 always @(posedge clk)
@@ -493,22 +503,22 @@ always @(posedge clk)
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1010)
 		scanline <= wrdat[1:0];
-		
+
 // hdd config
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1011)
 		t_ide_config <= wrdat[2:0];
-		
+
 // floppy speed select
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1100)
 		floppy_config[3:0] <= wrdat[3:0];
-		
+
 // chipset features select
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1101)
 		t_chipset_config[3:0] <= wrdat[3:0];
-		
+
 // video filter configuration
 always @(posedge clk)
 	if (rx && cmd && wrdat[7:4]==4'b1110)
@@ -536,7 +546,7 @@ always @(posedge clk)
 		highlight <= 4'b1000;
 	else if (rx && cmd && wrdat[7:4]==4'b0011)
 		highlight <= wrdat[3:0];
-		
+
 // disable/enable osd display
 // memory configuration
 always @(posedge clk)
@@ -545,7 +555,7 @@ always @(posedge clk)
 
 assign wren = rx && ~cmd && wrcmd ? 1'b1 : 1'b0;
 
-// user reset request (from osd menu)		
+// user reset request (from osd menu)
 assign usrrst = rx && cmd && wrdat[7:1]==7'b1000_000 ? 1'b1 : 1'b0;
 
 // reset to bootloader
@@ -633,7 +643,7 @@ always @(posedge sck or posedge _scs)
 always @(posedge sck)
 	if (bit_cnt==7)
 		cmd <= first_byte;		// active only when first byte received
-	
+
 //------ serial data output register ------//
 always @(negedge sck)	// output change on falling SPI clock
 	if (bit_cnt==0)
@@ -672,9 +682,9 @@ module ps2mouse
 //local signals
 reg		mclkout; 				// mouse clk out
 wire	mdatout;				// mouse data out
-reg		mdatb,mclkb,mclkc;		// input synchronization	
+reg		mdatb,mclkb,mclkc;		// input synchronization
 
-reg		[10:0] mreceive;		// mouse receive register	
+reg		[10:0] mreceive;		// mouse receive register
 reg		[11:0] msend;			// mouse send register
 reg		[15:0] mtimer;			// mouse timer
 reg		[2:0] mstate;			// mouse current state
@@ -686,7 +696,7 @@ wire	mrready;				// mouse receive ready;
 reg		msreset;				// mosue send reset
 wire	msready;				// mouse send ready;
 reg		mtreset;				// mouse timer reset
-wire	mtready;				// mouse timer ready	 
+wire	mtready;				// mouse timer ready
 wire	mthalf;					// mouse timer somewhere halfway timeout
 reg		[1:0] mpacket;			// mouse packet byte valid number
 
@@ -700,7 +710,7 @@ begin
 	mdatb <= ps2mdat;
 	mclkb <= ps2mclk;
 	mclkc <= mclkb;
-end						
+end
 
 // detect mouse clock negative edge
 assign mclkneg = mclkc & (~mclkb);
@@ -737,7 +747,7 @@ begin
 	if (reset) // reset
 	begin
 		{_mthird,_mright,_mleft} <= 3'b111;
-		xcount[7:0] <= 8'h00;	
+		xcount[7:0] <= 8'h00;
 		ycount[7:0] <= 8'h00;
 	end
 	else if (test_load) // test value preload
@@ -757,7 +767,7 @@ end
 always @(posedge clk)
 	if (reset || mtready) // master reset OR timeout
 		mstate<=0;
-	else 
+	else
 		mstate<=mnext;
 always @(mstate or mthalf or msready or mrready or mreceive)
 begin
@@ -808,9 +818,9 @@ begin
 					mpacket=1;
 					mrreset=1;
 					mnext=4;
- 				end
-				else // we are still waiting				
- 				begin
+				end
+				else // we are still waiting
+				begin
 					mpacket=0;
 					mrreset=0;
 					mnext=3;
@@ -829,8 +839,8 @@ begin
 					mnext=5;
 
 				end
-				else // we are still waiting				
- 				begin
+				else // we are still waiting
+				begin
 					mpacket=0;
 					mrreset=0;
 					mnext=4;
@@ -849,7 +859,7 @@ begin
 					mnext=3;
 
 				end
-				else // we are still waiting				
+				else // we are still waiting
  				begin
 					mpacket=0;
 					mrreset=0;

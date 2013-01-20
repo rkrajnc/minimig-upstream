@@ -103,7 +103,7 @@ begin
 	pdatb <= ps2kdat;
 	pclkb <= ps2kclk;
 	pclkc <= pclkb;
-end						
+end
 
 //detect ps2 clock negative edge
 assign pclkneg = pclkc & ~pclkb;
@@ -116,7 +116,7 @@ always @(posedge clk)
 		preceive[11:0] <= 12'b111111111111;
 	else if (pclkneg)
 		preceive[11:0] <= {1'b0,pdatb,preceive[10:1]};
-		
+
 assign prready = ~preceive[0];
 assign prbusy = ~preceive[11];
 
@@ -126,7 +126,7 @@ always @(posedge clk)
 		ptimer[19:0] <= 0;
 	else if (!pto2)
 		ptimer[19:0] <= ptimer[19:0] + 1;
-		
+
 assign pto1 = ptimer[15];//4.6ms @ 7.09Mhz
 assign pto2 = ptimer[19];//74ms @ 7.09Mhz
 
@@ -138,7 +138,7 @@ always @(posedge clk)
 		psend[11:0] <= {2'b11,~(capslock^numlock^ledb),5'b00000,capslock,numlock,ledb,1'b0};//led status
 	else if (!psready && pclkneg)
 		psend[11:0] <= {1'b0,psend[11:1]};
-		
+
 assign psready = (psend[11:0]==12'b000000000001) ? 1 : 0;
 assign pdatout = psend[0];
 
@@ -146,9 +146,9 @@ assign pdatout = psend[0];
 always @(posedge clk)
 	if (reset)//master reset
 		kstate <= 0;
-	else 
+	else
 		kstate <= knext;
-		
+
 always @(kstate or pto1 or pto2 or psready or prready or prbusy or keystrobe or keyack)
 begin
 	case(kstate)
@@ -159,7 +159,7 @@ begin
 				pclkout = 0;
 				psled1 = 0;
 				psled2 = 0;
-				
+
 				knext = 1;
 			end
 		1://"request-to-send" for led1 code  
@@ -169,7 +169,7 @@ begin
 				pclkout = 0;
 				psled1 = 1;
 				psled2 = 0;
-				
+
 				if (pto1)
 					knext = 2;
 				else
@@ -182,7 +182,7 @@ begin
 				pclkout = 1;
 				psled1 = 0;
 				psled2 = 0;
-				
+
 				if (prready)
 					knext = 3;
 				else
@@ -195,7 +195,7 @@ begin
 				pclkout = 0;
 				psled1 = 0;
 				psled2 = 1;
-				
+
 				if (pto1)
 					knext = 4;
 				else
@@ -208,7 +208,7 @@ begin
 				pclkout = 1;
 				psled1 = 0;
 				psled2 = 0;
-				
+
 				if (prready)
 					knext = 5;
 				else
@@ -383,7 +383,6 @@ localparam JOY2KEY_LEFT  = 7'h2D;
 localparam JOY2KEY_RIGHT = 7'h2F;
 localparam JOY2KEY_FIRE0 = 7'h0F;
 localparam JOY2KEY_FIRE1 = 7'h43;
-//localparam JOY2KEY_FIRE2 = 7'h3C; // KP .
 localparam JOY1KEY_FIRE0 = 7'h5C;
 localparam JOY1KEY_FIRE1 = 7'h5D;
 
@@ -391,7 +390,7 @@ localparam JOY1KEY_FIRE1 = 7'h5D;
 reg		[15:0] keyrom;			//rom output
 reg		enable2;				//enable signal delayed by one clock
 reg		upstroke;				//upstroke key status
-reg		extended;				//extended key status			
+reg		extended;				//extended key status
 
 //generate delayed enable signal (needed because of blockram pipelining)
 always @(posedge clk)

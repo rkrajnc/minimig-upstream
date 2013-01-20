@@ -35,7 +35,7 @@
 
 module sprites
 (
-	input 	clk,					// bus clock	
+	input 	clk,					// bus clock
 	input 	reset,		    		// reset
 	input	[8:1] reg_address_in,	// register address input
 	input	[8:0] hpos,				// horizontal beam counter
@@ -45,7 +45,7 @@ module sprites
 	output	reg [3:0] sprdata		// sprite data out
 );
 
-//register names and adresses		
+//register names and adresses
 parameter	SPRPOSCTLBASE = 9'h140;	//sprite data, position and control register base address
 
 //local signals
@@ -257,7 +257,7 @@ begin
 	else // all sprites transparant
 	begin
 		sprdata[3:0] = 4'b0000;	
-	end	
+	end
 end
 
 //--------------------------------------------------------------------------------------
@@ -275,7 +275,7 @@ endmodule
 // aligns with the bitplane/playfield start position
 module sprshift
 (
-	input 	clk,					// bus clock	
+	input 	clk,					// bus clock
 	input 	reset,		    		// reset
 	input	aen,					// address enable
 	input	[1:0] address,		   	// register address input
@@ -285,11 +285,11 @@ module sprshift
 	output	reg attach				// sprite is attached
 );
 
-// register names and adresses		
-parameter POS  = 2'b00;  		
-parameter CTL  = 2'b01;  		
-parameter DATA = 2'b10;  		
-parameter DATB = 2'b11;  		
+// register names and adresses
+parameter POS  = 2'b00;
+parameter CTL  = 2'b01;
+parameter DATA = 2'b10;
+parameter DATB = 2'b11;
 
 // local signals
 reg		[15:0] datla;		// data register A
