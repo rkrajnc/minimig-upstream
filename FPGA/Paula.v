@@ -52,6 +52,9 @@
 // 2009-05-24	- clean-up & renaming
 // 2009-07-10	- implementation of intreq[14] (Unreal needs it)
 // 2009-11-14	- added 28 MHz clock input for sigma-delta modulator
+//
+// AMR:
+// 2013-03-12	- added 9th bit in serial data transfer used by a few games
 
 module Paula
 (
@@ -118,9 +121,9 @@ module Paula
 //--------------------------------------------------------------------------------------
 
 //register names and addresses
-parameter DMACON  = 9'h096;	
+parameter DMACON  = 9'h096;
 parameter ADKCON  = 9'h09e;
-parameter ADKCONR = 9'h010;	
+parameter ADKCONR = 9'h010;
 
 //local signals
 reg		[4:0] dmacon;			//dmacon paula bits 
@@ -156,7 +159,7 @@ always @(posedge clk)
 	if (reset)
 	begin
 		dmaen <= 0;
-		dmacon <= 16'h0000;
+//		dmacon <= 16'h0000;
 	end
 	else if (reg_address_in[8:1]==DMACON[8:1])
 	begin
@@ -198,7 +201,7 @@ uart pu1
 	.clk(clk),
 	.reset(reset),
 	.reg_address_in(reg_address_in),
-	.data_in(data_in[14:0]),
+	.data_in(data_in[15:0]),
 	.data_out(uartdata_out),
 	.rbfmirror(rbfmirror),
 	.rxint(rxint),
@@ -221,7 +224,7 @@ intcontroller pi1
 	.int2(int2),
 	.int3(int3),
 	.int6(int6),
-	.strhor(strhor),
+//	.strhor(strhor),
 	.blckint(blckint),
 	.syncint(syncint),
 	.audint(audint),
@@ -321,7 +324,7 @@ module intcontroller
 	input	blckint,				// disk block finished interrupt
 	input	syncint,				// disk syncword match interrupt
 	input	[3:0] audint,			// audio channels 0,1,2,3 interrupts
-	input	strhor,					// start of video line
+//	input	strhor,					// start of video line
 	output	[3:0] audpen,			// mirror of audio interrupts for audio controller
 	output	rbfmirror,				// mirror of serial receive interrupt for uart SERDATR register
 	output	reg [2:0] _ipl			// m68k interrupt request
@@ -363,16 +366,16 @@ always @(posedge clk)
 //intenar register
 always @(reg_address_in or intena)
 	if (reg_address_in[8:1]==INTENAR[8:1])
-		intenar[15:0] = ({1'b0,intena[14:0]});
+		intenar[15:0] <= ({1'b0,intena[14:0]});
 	else
-		intenar = 16'h0000;
+		intenar <= 16'h0000;
 
 //intreqr register
 always @(reg_address_in or intreq)
 	if (reg_address_in[8:1]==INTREQR[8:1])
-		intreqr[15:0] = ({1'b0,intreq[14:0]});
+		intreqr[15:0] <= ({1'b0,intreq[14:0]});
 	else
-		intreqr = 16'h0000;
+		intreqr <= 16'h0000;
 
 // control all interrupts, intterupts are registered at the rising edge of clk
 reg [14:0]tmp;
@@ -383,12 +386,12 @@ always @(reg_address_in or data_in or intreq)
 	if (reg_address_in[8:1]==INTREQ[8:1])
 	begin
 		if (data_in[15])
-			tmp[14:0] = (intreq[14:0] | (data_in[14:0]));
+			tmp[14:0] <= (intreq[14:0] | (data_in[14:0]));
 		else
-			tmp[14:0] = (intreq[14:0] & (~data_in[14:0]));
+			tmp[14:0] <= (intreq[14:0] & (~data_in[14:0]));
  	end
 	else
-		tmp[14:0] = intreq[14:0];
+		tmp[14:0] <= intreq[14:0];
 		
 always @(posedge clk)
 begin
@@ -436,9 +439,9 @@ always @(intena or intreq)
 begin
 	//and int enable and request signals together
 	if (intena[14])
-		intreqena[14:0] = (intreq[14:0] & intena[14:0]);
+		intreqena[14:0] <= (intreq[14:0] & intena[14:0]);
 	else
-		intreqena[14:0] = 15'b000_0000_0000_0000;	
+		intreqena[14:0] <= 15'b000_0000_0000_0000;	
 end
 
 //interrupt priority encoder
@@ -473,7 +476,7 @@ endmodule
 
 //Simplified uart
 //NOTES:
-//not supported are 9 databits mode and overrun detection for the receiver
+//not supported is overrun detection for the receiver
 //also the behaviour of tsre is not completely according to the amiga hardware
 //reference manual, it should work though
 module uart
@@ -481,7 +484,7 @@ module uart
 	input 	clk,		    	//bus clock
 	input 	reset,			   	//reset 
 	input 	[8:1] reg_address_in,	//register address inputs
-	input	[14:0] data_in,		//bus data in
+	input	[15:0] data_in,		//bus data in
 	output	reg [15:0] data_out,	//bus data out
 	input	rbfmirror,			//rbf mirror from interrupt controller
 	output 	reg txint,			//transmitter intterrupt
@@ -509,19 +512,23 @@ reg		tbe;					//transmit buffer empty
 
 //local signals for rx
 reg		[15:0] rxdiv;			//receiver baud rate divider
-reg		[9:0] rxshift;			//receiver shift register
-reg		[7:0] rxdat;			//received data buffer
+reg		[10:0] rxshift;			//receiver shift register
+reg		[9:0] rxdat;			//received data buffer
 reg		[1:0] rxstate;			//receiver state
 reg		[1:0] rxnextstate;		//next receiver state
 wire	rxbaud;					//receiver baud clock
 reg		rxpreset;				//preset receiver baud clock	
 reg		lrxd1;					//latched rxd signal
 reg		lrxd2;					//latched rxd signal
+reg		ninebit;				// 9th data bit used by a few games
 
 //serper register
 always @(posedge clk)
 	if (reg_address_in[8:1]== SERPER[8:1])
+	begin
 		serper[14:0] <= (data_in[14:0]);
+		ninebit <= data_in[15];
+	end
 
 //tx baudrate generator
 always @(posedge clk)
@@ -546,9 +553,9 @@ assign txd = txshift[0];
 //generate tsre signal
 always @(txshift[11:0])
 	if (txshift[11:0]==12'b0000_0000_0001)
-		tsre = 1;
+		tsre <= 1;
 	else
-		tsre = 0;
+		tsre <= 0;
 
 //serdat register
 always @(posedge clk)
@@ -567,40 +574,40 @@ begin
 	case (txstate)
 		2'b00://wait for new data and go to next state if serdat is loaded
 			begin
-				txint = 0;
-				txload = 0;
-				tbe = 1; 
+				txint <= 0;
+				txload <= 0;
+				tbe <= 1; 
 				if (reg_address_in[8:1]==SERDAT[8:1])
-					txnextstate = 2'b01;
+					txnextstate <= 2'b01;
 				else
-					txnextstate = 2'b00;
+					txnextstate <= 2'b00;
 			end
 		2'b01://wait for shift register to become empty (tsre goes high)
 			begin
-				txint = 0;
-				txload = 0;
-				tbe = 0;
+				txint <= 0;
+				txload <= 0;
+				tbe <= 0;
 				if (tsre)
-					txnextstate = 2'b10;
+					txnextstate <= 2'b10;
 				else
-					txnextstate = 2'b01;
+					txnextstate <= 2'b01;
 			end
 		2'b10://wait for shift register to read serdat (tsre goes low)
 			begin
-				txint = 0;
-				txload = 1;
-				tbe = 0;
+				txint <= 0;
+				txload <= 1;
+				tbe <= 0;
 				if (!tsre)
-					txnextstate = 2'b11;
+					txnextstate <= 2'b11;
 				else
-					txnextstate = 2'b10;
+					txnextstate <= 2'b10;
 			end
 		2'b11://serdat is now empty again, generate interupt
 			begin
-				txint = 1;
-				txload = 0;
-				tbe = 0;
-				txnextstate = 2'b00;
+				txint <= 1;
+				txload <= 0;
+				tbe <= 0;
+				txnextstate <= 2'b00;
 			end
 	endcase
 end
@@ -626,14 +633,19 @@ end
 //receiver shift register
 always @(posedge clk)
 	if (rxpreset)
-		rxshift[9:0] <= 10'b11_1111_1111;
+		rxshift[10:0] <= 10'b111_1111_1111;
 	else if (rxbaud)
-		rxshift[9:0] <= ({lrxd2,rxshift[9:1]});
+		rxshift[10:0] <= ({lrxd2,rxshift[9:1]});
 
 //receiver buffer
 always @(posedge clk)
 	if (rxint)
-		rxdat[7:0] <= (rxshift[8:1]);
+	begin
+	    if (ninebit)
+		rxdat[9:0] <= (rxshift[10:1]);
+	    else
+		rxdat[9:0] <= ({1'b0, rxshift[10:2]});
+	end
 
 //receiver state machine
 always @(posedge clk)
@@ -647,27 +659,27 @@ begin
 	case (rxstate)
 		2'b00://wait for startbit
 			begin
-			rxint = 0;
-			rxpreset = 1;
+			rxint <= 0;
+			rxpreset <= 1;
 			if (!lrxd2)
-				rxnextstate = 2'b01;
+				rxnextstate <= 2'b01;
 			else
-				rxnextstate = 2'b00;
+				rxnextstate <= 2'b00;
 			end
 		2'b01://shift in 10 bits (start, 8 data, stop)
 			begin
-			rxint = 0;
-			rxpreset = 0;
-			if (!rxshift[0])
-				rxnextstate = 2'b10;
+			rxint <= 0;
+			rxpreset <= 0;
+			if ((!rxshift[0] && ninebit) || (!rxshift[1]))
+				rxnextstate <= 2'b10;
 			else
-				rxnextstate = 2'b01;
+				rxnextstate <= 2'b01;
 			end
 		2'b10,2'b11://new byte has been received, latch byte and request interrupt
 			begin
-			rxint = 1;
-			rxpreset = 0;
-			rxnextstate = 2'b00;
+			rxint <= 1;
+			rxpreset <= 0;
+			rxnextstate <= 2'b00;
 			end
 	endcase
 end
@@ -675,8 +687,8 @@ end
 //serdatr register
 always @(reg_address_in or rbfmirror or tbe or tsre or lrxd2 or rxdat)
 	if (reg_address_in[8:1]==SERDATR[8:1])
-		data_out[15:0] = ({1'b0,rbfmirror,tbe,tsre,lrxd2,3'b001,rxdat[7:0]});
+		data_out[15:0] <= ({1'b0,rbfmirror,tbe,tsre,lrxd2,1'b0,rxdat[9:0]});
 	else
-		data_out[15:0] = 0;
+		data_out[15:0] <= 0;
 
 endmodule

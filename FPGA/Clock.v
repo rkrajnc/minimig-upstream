@@ -113,8 +113,8 @@ module clock_generator
 	DCM #
 	(
 		.CLKDV_DIVIDE(2.0), // Divide by: 1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5,6.0,6.5,7.0,7.5,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0 or 16.0
-		.CLKFX_DIVIDE(4),   // Can be any integer from 1 to 32
-		.CLKFX_MULTIPLY(28), // Can be any integer from 2 to 32
+		.CLKFX_DIVIDE(2),   // Can be any integer from 1 to 32
+		.CLKFX_MULTIPLY(14), // Can be any integer from 2 to 32 ** 12 = 42MHz - 14 = 49MHz - 15 = 52MHz **
 		.CLKIN_DIVIDE_BY_2("FALSE"), // TRUE/FALSE to enable CLKIN divide by two feature
 		.CLKIN_PERIOD(140.0),  // Specify period of input clock
 		.CLKOUT_PHASE_SHIFT("NONE"), // Specify phase shift of NONE, FIXED or VARIABLE

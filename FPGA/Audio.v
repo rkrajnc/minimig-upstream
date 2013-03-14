@@ -243,7 +243,6 @@ endmodule
 module hybrid_pwm_sd
 (
 	input clk,
-	input n_reset,
 	input dump,
 	input [15:0] din,
 	output dout
@@ -258,41 +257,28 @@ reg out;
 
 assign dout=out;
 
-always @(posedge clk, negedge n_reset) // FIXME reset logic;
-begin
-	if(!n_reset)
+always @(posedge clk)
 	begin
-		sigma<=16'b00000100_00000000;
-		pwmthreshold<=5'b10000;
-	end
-	else
-	begin
-		pwmcounter<=pwmcounter+1;
+		pwmcounter <= pwmcounter + 1;
 
-		if(pwmcounter==pwmthreshold)
-			out<=1'b0;
+		if (pwmcounter == pwmthreshold)
+			out <= 1'b0;
 
-		if(pwmcounter==5'b11111) // Update threshold when pwmcounter reaches zero
+		if (pwmcounter == 5'b11111) // Update threshold when pwmcounter reaches zero
 		begin
 			// Pick a new PWM threshold using a Sigma Delta
-//			scaledin<={1'b0,din}*64511; // 63<<(16-6)-1;
-			scaledin<=33'd134217728 // (1<<(16-5))<<16, offset to keep centre aligned.
-				+({1'b0,din}*61440); // 30<<(16-5)-1;
-			sigma<=scaledin[31:16]+{5'b000000,sigma[10:0]};	// Will use previous iteration's scaledin value
-			pwmthreshold<=sigma[15:11]; // Will lag 2 cycles behind, but shouldn't matter.
-			out<=1'b1;
+			scaledin <= 33'd134217728 // (1<<(16-5))<<16, offset to keep centre aligned.
+				+ ({1'b0,din} * 61440); // 30<<(16-5)-1;
+			sigma <= scaledin[31:16] + {5'b000000, sigma[10:0]};	// Will use previous iteration's scaledin value
+			pwmthreshold <= sigma[15:11]; // Will lag 2 cycles behind, but shouldn't matter.
+			out <= 1'b1;
 		end
 
-		if(dump)
+		if (dump)
 		begin
-			sigma[10:0]<=10'b10_0000_0000; // Clear the accumulator to avoid standing tones.
-//			sigma[10:0]<={(lfsr_reg[8] ? 4'b10_0 : 4'b011),lfsr_reg[7:0]}; // fill the accumulator with a random value to avoid standing tones.
-
-			// x^25 + x^22 + 1
-//			lfsr_reg<={lfsr_reg[23:0],lfsr_reg[24] ^ lfsr_reg[21]};
+			sigma[10:0] <= 10'b10_0000_0000; // Clear the accumulator to avoid standing tones.
 		end
 	end
-end
 
 endmodule
 
@@ -402,14 +388,11 @@ begin
 	else
 		dump<=1'b0;
 	dump_d<=strhor;
-//	dumpcounter<=dumpcounter+1;
-//	dump<=dumpcounter==0 ? 1'b1 : 1'b0;
 end
 
 hybrid_pwm_sd leftdac
 (
 	.clk(clk),
-	.n_reset(1'b1),
 	.dump(dump),
 	.din({~ldatasum[14],ldatasum[13:0],1'b0}),
 	.dout(left)
@@ -418,25 +401,10 @@ hybrid_pwm_sd leftdac
 hybrid_pwm_sd rightdac
 (
 	.clk(clk),
-	.n_reset(1'b1),
 	.dump(dump),
 	.din({~rdatasum[14],rdatasum[13:0],1'b0}),
 	.dout(right)
 );
-
-
-//--------------------------------------------------------------------------------------
-//left sigma/delta modulator
-//always @(posedge clk)
-//	acculeft[12:1] <= (acculeft[12:1] + {acculeft[12],acculeft[12],~ldatasum[14],ldatasum[13:5]});
-//
-//assign left = acculeft[12];
-//
-////right sigma/delta modulator
-//always @(posedge clk)
-//	accuright[12:1] <= (accuright[12:1] + {accuright[12],accuright[12],~rdatasum[14],rdatasum[13:5]});
-//
-//assign right = accuright[12];
 
 endmodule
 

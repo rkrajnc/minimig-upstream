@@ -71,7 +71,7 @@
 // 2010-08-15	- added joystick emulation
 // 
 // SB:
-// 2011-04-02	- added ciaa port b (parallel) register to let Unreal game work and some trainer store data
+// 2011-04-02	- added working CIA A port B (parallel) register to let Unreal game work and some trainer store data
 // 2011-04-24	- fixed TOD read
 //----------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------
@@ -100,7 +100,7 @@ module ciaa
 	output	_lmb,
 	output	_rmb,
 	output	[5:0] _joy2,
-	output	aflock,				// auto fire lock
+	output	aflock,				// auto lock
 	output	freeze,				// Action Replay freeze key
 	input	disk_led			// floppy disk activity LED
 );
@@ -994,3 +994,4 @@ always @(posedge clk)
 assign irq = (tod[23:0]==alarm[23:0] && count_del) ? 1'b1 : 1'b0;
 
 endmodule
+
