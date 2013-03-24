@@ -146,6 +146,13 @@
 // SB:
 // 2012-03-23	- fixed sprite enable signal (coppermaster demo)
 // 2013-01-17	- added POTGO write register handling
+// 2013-03-11	- removed POTGO handling due to problems with several other games, thanks Jakub for the confirmation! Asterix game will not detect RMB !
+//
+// AMR:
+// 2013-03-12   - added 9th bit in serial data transfer used by a few games
+//
+// SB:
+// 2013-03-16	- added a few stabiliuty function for AR3 at Turbo mode
 
 module Minimig1
 (
@@ -577,7 +584,7 @@ userio USERIO1
 	.bootrst(bootrst)
 );
 
-assign cpu_speed = (chipset_config[0] & ~int7 & ~freeze & ~ovr) ? 1'b1 : 1'b0;
+assign cpu_speed = (chipset_config[0] & ~int7 & ~ovr & ~usrrst & ~bootrst) ? 1'b1 : 1'b0;
 
 // instantiate Denise
 Denise DENISE1
@@ -1478,7 +1485,7 @@ always @(data)
 
 always @(clk or data_in)
 	if (!clk)
-		ldata_in <= data_in;
+		ldata_in = data_in;
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------- //
 

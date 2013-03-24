@@ -100,7 +100,7 @@ assign ram_data_in = (dbr) ? custom_data_out : cpu_data_out;
 
 assign custom_data_in = (dbr) ? ram_data_out : cpu_rd ? 16'hFFFF : cpu_data_out;
 
-assign cpu_data_in = (dbr) ? 16'h00_00 : (custom_data_out | ram_data_out | {16{sel_bank_1}});
+assign cpu_data_in = dbr ? 16'h00_00 : (custom_data_out | ram_data_out | {16{sel_bank_1}});
 
 //read write control signals
 assign ram_rd  = (dbr) ? ~dbwe : cpu_rd;

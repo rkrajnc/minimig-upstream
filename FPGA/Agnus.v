@@ -184,7 +184,7 @@ module Agnus
 	input	bls,						// blitter slowdown
 	input	ntsc,						// chip is NTSC
 	input	a1k,						// enable A1000 OCS features
-	input	ecs,						// enable ECS features
+	input	ecs,						// enabl ECS features
 	input	floppy_speed,				// allocates refresh slots for disk DMA
 	input	turbo						// alows blitter to take extra DMA slots 
 );
@@ -283,83 +283,83 @@ always @(*)
 begin
 	if (dma_dsk)//busses allocated to disk dma engine
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= address_dsk;
-		reg_address <= reg_address_dsk;
-		dbwe <= wr_dsk;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = address_dsk;
+		reg_address = reg_address_dsk;
+		dbwe = wr_dsk;
 	end
 	else if (dma_ref) //bus allocated to refresh dma engine
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= 0;
-		reg_address <= 8'hFF;
-		dbwe <= 0;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = 0;
+		reg_address = 8'hFF;
+		dbwe = 0;
 	end
 	else if (dma_aud)//busses allocated to audio dma engine
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= address_aud;
-		reg_address <= reg_address_aud;
-		dbwe <= 0;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = address_aud;
+		reg_address = reg_address_aud;
+		dbwe = 0;
 	end
 	else if (dma_bpl)//busses allocated to bitplane dma engine
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= address_bpl;
-		reg_address <= reg_address_bpl;
-		dbwe <= 0;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = address_bpl;
+		reg_address = reg_address_bpl;
+		dbwe = 0;
 	end
 	else if (dma_spr)//busses allocated to sprite dma engine
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 1;
-		address_out <= address_spr;
-		reg_address <= reg_address_spr;
-		dbwe <= 0;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 1;
+		address_out = address_spr;
+		reg_address = reg_address_spr;
+		dbwe = 0;
 	end
 	else if (dma_cop)//busses allocated to copper
 	begin
-		dbr <= 1;
-		ack_cop <= 1;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= address_cop;
-		reg_address <= reg_address_cop;
-		dbwe <= 0;
+		dbr = 1;
+		ack_cop = 1;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = address_cop;
+		reg_address = reg_address_cop;
+		dbwe = 0;
 	end
 	else if (dma_blt && bls_cnt!=BLS_CNT_MAX)//busses allocated to blitter
 	begin
-		dbr <= 1;
-		ack_cop <= 0;
-		ack_blt <= 1;
-		ack_spr <= 0;
-		address_out <= address_blt;
-		reg_address <= reg_address_blt;
-		dbwe <= we_blt;
+		dbr = 1;
+		ack_cop = 0;
+		ack_blt = 1;
+		ack_spr = 0;
+		address_out = address_blt;
+		reg_address = reg_address_blt;
+		dbwe = we_blt;
 	end
 	else//busses not allocated by agnus
 	begin
-		dbr <= 0;
-		ack_cop <= 0;
-		ack_blt <= 0;
-		ack_spr <= 0;
-		address_out <= 0;
-		reg_address <= reg_address_cpu;//pass register addresses from cpu address bus
-		dbwe <= 0;
+		dbr = 0;
+		ack_cop = 0;
+		ack_blt = 0;
+		ack_spr = 0;
+		address_out = 0;
+		reg_address = reg_address_cpu;//pass register addresses from cpu address bus
+		dbwe = 0;
 	end
 end
 
@@ -565,7 +565,7 @@ beamcounter	bc1
 //in real Amiga Denise's hpos counter seems to be advanced by 4 CCKs in regards to Agnus' one
 //Minimig isn't cycle exact and compensation for different data delay in implemented Denise's video pipeline is required 
 assign strhor_denise = hpos==12-1 && (vpos > 8 || ecs) ? 1 : 0;
-assign strhor_paula = hpos==(12+1) ? 1 : 0; //hack
+assign strhor_paula = hpos==(6*2+1) ? 1 : 0; //hack
 
 //--------------------------------------------------------------------------------------
 
@@ -722,10 +722,12 @@ always @(posedge clk)
 //--------------------------------------------------------------------------------------
 
 wire	[2:0] bplptr_sel;	// bitplane pointer select
+
 assign bplptr_sel = dma ? plane : reg_address_in[4:2];
 
 // high word pointer register bank (implemented using distributed ram)
 wire [20:16] bplpth_in;
+
 assign bplpth_in = dma ? newpt[20:16] : data_in[4:0];
 
 always @(posedge clk)
@@ -736,6 +738,7 @@ assign address_out[20:16] = bplpth[plane];
 
 // low word pointer register bank (implemented using distributed ram)
 wire [15:1] bplptl_in;
+
 assign bplptl_in = dma ? newpt[15:1] : data_in[15:1];
 
 always @(posedge clk)
@@ -747,6 +750,7 @@ assign address_out[15:1] = bplptl[plane];
 //--------------------------------------------------------------------------------------
 
 wire ddfstrt_sel;
+
 assign ddfstrt_sel = reg_address_in[8:1]==DDFSTRT[8:1] ? VCC : GND;
 
 // write ddfstrt and ddfstop registers
@@ -908,11 +912,11 @@ assign mod = shres ? ddfend & ddfseq[2] & ddfseq[1] : hires ? ddfend & ddfseq[2]
 // plane number encoder
 always @(shres or hires or ddfseq)
 	if (shres) // super high resolution (35ns pixel clock)
-		plane <= {2'b00,~ddfseq[0]};
+		plane = {2'b00,~ddfseq[0]};
 	else if (hires) // high resolution (70ns pixel clock)
-		plane <= {1'b0,~ddfseq[0],~ddfseq[1]};
+		plane = {1'b0,~ddfseq[0],~ddfseq[1]};
 	else // low resolution (140ns pixel clock)
-		plane <= {~ddfseq[0],~ddfseq[1],~ddfseq[2]};
+		plane = {~ddfseq[0],~ddfseq[1],~ddfseq[2]};
 
 // corrected number of selected planes
 assign planes = bpu[2:0]==3'b111 ? 3'b100 : bpu[2:0];
@@ -928,12 +932,12 @@ always @(address_out or bpl1mod or bpl2mod or plane[0] or mod)
 	if (mod)
 	begin
 		if (plane[0]) // even plane modulo
-			newpt[20:1] <= address_out[20:1] + {{5{bpl2mod[15]}},bpl2mod[15:1]} + 1;
+			newpt[20:1] = address_out[20:1] + {{5{bpl2mod[15]}},bpl2mod[15:1]} + 1;
 		else // odd plane modulo
-			newpt[20:1] <= address_out[20:1] + {{5{bpl1mod[15]}},bpl1mod[15:1]} + 1;
+			newpt[20:1] = address_out[20:1] + {{5{bpl1mod[15]}},bpl1mod[15:1]} + 1;
 	end
 	else
-		newpt[20:1] <= address_out[20:1] + 1;
+		newpt[20:1] = address_out[20:1] + 1;
 
 // Denise bitplane shift registers address lookup table
 always @(plane)
@@ -997,7 +1001,7 @@ The first possible line to display a sprite is line $1A (PAL).
 During vbl SPRxPOS/SPRxCTL are not automatically modified, values written before vbl are still present when vbl ends.
 
 algo:
-	if vbl or VSTOP: disable data dma
+	if vbl or VSTOP : disable data dma
 	else if VSTART: start data dma
 	
 	if vblend or (VSTOP and not vbl): dma transfer to sprxpos/sprxctl
@@ -1007,7 +1011,7 @@ It doesn't seem to be complicated :)
 
 Sprite which has been triggered by write to SPRxDATA is not disabled by vbl.
 It seems that vstop and vstart conditions are checked every cycle. 
-DMA doesn't fetch new pos/ctl if vstop is not equal to the current line number.
+Dma doesn't fetch new pos/ctl if vstop is not equal to the current line number.
 
 Feature:
 If new vstart is specified to be the same as the line during which it's fetched, display starts in the next line
@@ -1090,7 +1094,6 @@ assign address_out[20:16] = sprpth[sprite];
 //sprite pointer low word register bank (implemented using distributed ram)
 wire [15:1]sprptl_in;
 assign sprptl_in = ackdma ? newptr[15:1] : data_in[15:1];
-
 always @(posedge clk)
 	if (ackdma || ((reg_address_in[8:5]==SPRPTBASE[8:5]) && reg_address_in[1]))//if dma cycle or bus write
 		sprptl[ptsel] <= sprptl_in;
@@ -1126,11 +1129,11 @@ assign dmastate = dmastate_mem[sprsel];
 //evaluating sprite image dma data state
 always @(vbl or vpos or vstop or vstart or dmastate or ecs) 
 	if (vbl || ({ecs&vstop[9],vstop[8:0]}==vpos[9:0]))
-		dmastate_in <= 0;
+		dmastate_in = 0;
 	else if ({ecs&vstart[9],vstart[8:0]}==vpos[9:0])
-		dmastate_in <= 1;
+		dmastate_in = 1;
 	else
-		dmastate_in <= dmastate;
+		dmastate_in = dmastate;
 
 always @(posedge clk28m)
 	if (sprite==sprsel && hpos[2:1]==2'b01)
@@ -1165,30 +1168,30 @@ always @(vpos or vbl or vblend or hpos or enable or sprite or sprvstop or sprdma
 	begin
 		if (vblend || (sprvstop && ~vbl))
 		begin
-			reqdma <= 1;
+			reqdma = 1;
 			if (hpos[2])
-				reg_address_out[8:1] <= {SPRPOSCTLBASE[8:6],sprite,2'b00};	//SPRxPOS
+				reg_address_out[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b00};	//SPRxPOS
 			else
-				reg_address_out[8:1] <= {SPRPOSCTLBASE[8:6],sprite,2'b01};	//SPRxCTL
+				reg_address_out[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b01};	//SPRxCTL
 		end
 		else if (sprdmastate)
 		begin
-			reqdma <= 1;
+			reqdma = 1;
 			if (hpos[2])
-				reg_address_out[8:1] <= {SPRPOSCTLBASE[8:6],sprite,2'b10};	//SPRxDATA
+				reg_address_out[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b10};	//SPRxDATA
 			else
-				reg_address_out[8:1] <= {SPRPOSCTLBASE[8:6],sprite,2'b11};	//SPRxDATB
+				reg_address_out[8:1] = {SPRPOSCTLBASE[8:6],sprite,2'b11};	//SPRxDATB
 		end
 		else
 		begin
-			reqdma <= 0;
-			reg_address_out[8:1] <= 8'hFF;
+			reqdma = 0;
+			reg_address_out[8:1] = 8'hFF;
 		end
 	end
 	else
 	begin
-		reqdma <= 0;
-		reg_address_out[8:1] <= 8'hFF;
+		reqdma = 0;
+		reg_address_out[8:1] = 8'hFF;
 	end
 
 //--------------------------------------------------------------------------------------

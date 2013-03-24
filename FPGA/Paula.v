@@ -54,7 +54,10 @@
 // 2009-11-14	- added 28 MHz clock input for sigma-delta modulator
 //
 // AMR:
-// 2013-03-12	- added 9th bit in serial data transfer used by a few games
+// 2013-03-12   - added 9th bit in serial data transfer used by a few games
+//
+// SB:
+// 2013-03-16	- added a few stabiliuty function for AR3 at Turbo mode
 
 module Paula
 (
@@ -121,9 +124,9 @@ module Paula
 //--------------------------------------------------------------------------------------
 
 //register names and addresses
-parameter DMACON  = 9'h096;
+parameter DMACON  = 9'h096;	
 parameter ADKCON  = 9'h09e;
-parameter ADKCONR = 9'h010;
+parameter ADKCONR = 9'h010;	
 
 //local signals
 reg		[4:0] dmacon;			//dmacon paula bits 
@@ -148,7 +151,7 @@ wire	dsken; 					//disk dma enable
 //--------------------------------------------------------------------------------------
 
 //data_out multiplexer
-assign data_out = (uartdata_out | intdata_out | diskdata_out | adkconr);
+assign data_out = uartdata_out | intdata_out | diskdata_out | adkconr;
 
 //--------------------------------------------------------------------------------------
 
@@ -157,16 +160,13 @@ assign data_out = (uartdata_out | intdata_out | diskdata_out | adkconr);
 //there DMACONR (read) is implemented
 always @(posedge clk)
 	if (reset)
-	begin
-		dmaen <= 0;
-//		dmacon <= 16'h0000;
-	end
+		dmacon <= 0;
 	else if (reg_address_in[8:1]==DMACON[8:1])
 	begin
 		if (data_in[15])
-			{dmaen,dmacon[4:0]} <= (({dmaen,dmacon[4:0]}) | ({data_in[9],data_in[4:0]}));
+			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} | {data_in[9],data_in[4:0]};
 		else
-			{dmaen,dmacon[4:0]} <= (({dmaen,dmacon[4:0]}) & (~{data_in[9],data_in[4:0]}));
+			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} & (~{data_in[9],data_in[4:0]});	
 	end
 
 //assign disk and audio dma enable bits
@@ -181,17 +181,17 @@ assign	auden[0] = dmacon[0] & dmaen;
 //ADKCON register write
 always @(posedge clk)
 	if (reset)
-		adkcon <= 16'h0000;
+		adkcon <= 0;
 	else if (reg_address_in[8:1]==ADKCON[8:1])
 	begin
 		if (data_in[15])
-			adkcon[14:0] <= (adkcon[14:0] | (data_in[14:0]));
+			adkcon[14:0] <= adkcon[14:0] | data_in[14:0];
 		else
-			adkcon[14:0] <= (adkcon[14:0] & (~data_in[14:0]));
+			adkcon[14:0] <= adkcon[14:0] & (~data_in[14:0]);	
 	end
 
-//ADKCONR register
-assign adkconr[15:0] = (reg_address_in[8:1]==ADKCONR[8:1]) ? ({1'b0,adkcon[14:0]}) : 16'h0000;
+//ADKCONR register 
+assign adkconr[15:0] = (reg_address_in[8:1]==ADKCONR[8:1]) ? {1'b0,adkcon[14:0]} : 16'h0000;
 
 //--------------------------------------------------------------------------------------
 
@@ -224,7 +224,6 @@ intcontroller pi1
 	.int2(int2),
 	.int3(int3),
 	.int6(int6),
-//	.strhor(strhor),
 	.blckint(blckint),
 	.syncint(syncint),
 	.audint(audint),
@@ -324,7 +323,6 @@ module intcontroller
 	input	blckint,				// disk block finished interrupt
 	input	syncint,				// disk syncword match interrupt
 	input	[3:0] audint,			// audio channels 0,1,2,3 interrupts
-//	input	strhor,					// start of video line
 	output	[3:0] audpen,			// mirror of audio interrupts for audio controller
 	output	rbfmirror,				// mirror of serial receive interrupt for uart SERDATR register
 	output	reg [2:0] _ipl			// m68k interrupt request
@@ -338,18 +336,18 @@ parameter INTREQ  = 9'h09c;
 
 //local signals
 reg		[14:0] intena;			//int enable write register
-reg 		[15:0] intenar;			//int enable read register
+reg		[15:0] intenar;			//int enable read register
 reg		[14:0] intreq;			//int request register
 reg		[15:0] intreqr;			//int request readback
 
 //rbf mirror out
-assign rbfmirror = (intreq[11]);
+assign rbfmirror = intreq[11];
 
 //audio mirror out
-assign audpen[3:0] = (intreq[10:7]);
+assign audpen[3:0] = intreq[10:7];
 
 //data_out	multiplexer
-assign data_out = (intenar | intreqr);
+assign data_out = intenar | intreqr;
 
 //intena register
 always @(posedge clk)
@@ -358,24 +356,24 @@ always @(posedge clk)
 	else if (reg_address_in[8:1]==INTENA[8:1])
 	begin
 		if (data_in[15])
-			intena[14:0] <= (intena[14:0] | (data_in[14:0]));
+			intena[14:0] <= intena[14:0] | data_in[14:0];
 		else
-			intena[14:0] <= (intena[14:0] & (~data_in[14:0]));
+			intena[14:0] <= intena[14:0] & (~data_in[14:0]);	
 	end
 
 //intenar register
 always @(reg_address_in or intena)
 	if (reg_address_in[8:1]==INTENAR[8:1])
-		intenar[15:0] <= ({1'b0,intena[14:0]});
+		intenar[15:0] = {1'b0,intena[14:0]};
 	else
-		intenar <= 16'h0000;
+		intenar = 0;
 
 //intreqr register
 always @(reg_address_in or intreq)
 	if (reg_address_in[8:1]==INTREQR[8:1])
-		intreqr[15:0] <= ({1'b0,intreq[14:0]});
+		intreqr[15:0] = {1'b0,intreq[14:0]};
 	else
-		intreqr <= 16'h0000;
+		intreqr = 0;
 
 // control all interrupts, intterupts are registered at the rising edge of clk
 reg [14:0]tmp;
@@ -386,9 +384,9 @@ always @(reg_address_in or data_in or intreq)
 	if (reg_address_in[8:1]==INTREQ[8:1])
 	begin
 		if (data_in[15])
-			tmp[14:0] <= (intreq[14:0] | (data_in[14:0]));
+			tmp[14:0] <= intreq[14:0] | data_in[14:0];
 		else
-			tmp[14:0] <= (intreq[14:0] & (~data_in[14:0]));
+			tmp[14:0] <= intreq[14:0] & (~data_in[14:0]);	
  	end
 	else
 		tmp[14:0] <= intreq[14:0];
@@ -400,35 +398,35 @@ begin
 	else 
 	begin
 		//transmit buffer empty interrupt
-		intreq[0] <= (tmp[0] | txint);
+		intreq[0] <= tmp[0] | txint;
 		//diskblock finished
-		intreq[1] <= (tmp[1] | blckint);
+		intreq[1] <= tmp[1] | blckint;
 		//software interrupt
-		intreq[2] <= (tmp[2]);
+		intreq[2] <= tmp[2];
 		//I/O ports and timers
-		intreq[3] <= (tmp[3] | int2);
+		intreq[3] <= tmp[3] | int2;
 		//Copper
-		intreq[4] <= (tmp[4]);
+		intreq[4] <= tmp[4];
 		//start of vertical blank
-		intreq[5] <= (tmp[5] | vblint);
+		intreq[5] <= tmp[5] | vblint;
 		//blitter finished
-		intreq[6] <= (tmp[6] | int3);
+		intreq[6] <= tmp[6] | int3;
 		//audio channel 0
-		intreq[7] <= (tmp[7] | audint[0]);
+		intreq[7] <= tmp[7] | audint[0];
 		//audio channel 1
-		intreq[8] <= (tmp[8] | audint[1]);
+		intreq[8] <= tmp[8] | audint[1];
 		//audio channel 2
-		intreq[9] <= (tmp[9] | audint[2]);
+		intreq[9] <= tmp[9] | audint[2];
 		//audio channel 3
-		intreq[10] <= (tmp[10] | audint[3]);
+		intreq[10] <= tmp[10] | audint[3];
 		//serial port receive interrupt
-		intreq[11] <= (tmp[11] | rxint);
+		intreq[11] <= tmp[11] | rxint;
 		//disk sync register matches disk data
-		intreq[12] <= (tmp[12] | syncint);
+		intreq[12] <= tmp[12] | syncint;
 		//external interrupt
-		intreq[13] <= (tmp[13] | int6);
+		intreq[13] <= tmp[13] | int6;
 		//undocumented interrupt
-		intreq[14] <= (tmp[14]);
+		intreq[14] <= tmp[14];
 	end
 end
 
@@ -439,7 +437,7 @@ always @(intena or intreq)
 begin
 	//and int enable and request signals together
 	if (intena[14])
-		intreqena[14:0] <= (intreq[14:0] & intena[14:0]);
+		intreqena[14:0] <= intreq[14:0] & intena[14:0];
 	else
 		intreqena[14:0] <= 15'b000_0000_0000_0000;	
 end
@@ -494,7 +492,7 @@ module uart
 );
 
 //register names and addresses
-parameter SERDAT  = 9'h030;
+parameter SERDAT  = 9'h030;		
 parameter SERDATR = 9'h018;
 parameter SERPER  = 9'h032;
 
@@ -520,108 +518,108 @@ wire	rxbaud;					//receiver baud clock
 reg		rxpreset;				//preset receiver baud clock	
 reg		lrxd1;					//latched rxd signal
 reg		lrxd2;					//latched rxd signal
-reg		ninebit;				// 9th data bit used by a few games
+reg		ninebit;						// Expect to receive a 9-bit value
 
 //serper register
 always @(posedge clk)
 	if (reg_address_in[8:1]== SERPER[8:1])
 	begin
-		serper[14:0] <= (data_in[14:0]);
+		serper[14:0] <= data_in[14:0];		
 		ninebit <= data_in[15];
 	end
 
 //tx baudrate generator
 always @(posedge clk)
 	if (txbaud)
-		txdiv[15:0] <= ({serper[14:0],1'b1});//serper shifted right because of 7.09MHz clock
+		txdiv[15:0] <= {serper[14:0],1'b1};//serper shifted right because of 7.09MHz clock
 	else
-		txdiv <= (txdiv - 1);
-
+		txdiv <= txdiv - 1;
+		
 assign txbaud = (txdiv==0) ? 1 : 0;
 
 //txd shifter
 always @(posedge clk)
 	if (reset)
-		txshift[11:0] <= (12'b0000_0000_0001);
+		txshift[11:0] <= 12'b0000_0000_0001;	
 	else if (txload && txbaud)
-		txshift[11:0] <= ({serdat[10:0],1'b0});
+		txshift[11:0] <= {serdat[10:0],1'b0};
 	else if (!tsre && txbaud)
-		txshift[11:0] <= ({1'b0,txshift[11:1]});
-
+		txshift[11:0] <= {1'b0,txshift[11:1]};
+		
 assign txd = txshift[0];
 
 //generate tsre signal
 always @(txshift[11:0])
 	if (txshift[11:0]==12'b0000_0000_0001)
-		tsre <= 1;
+		tsre = 1;
 	else
-		tsre <= 0;
+		tsre = 0;
 
 //serdat register
 always @(posedge clk)
 	if (reg_address_in[8:1]==SERDAT[8:1])
-		serdat[10:0] <= (data_in[10:0]);
+		serdat[10:0] <= data_in[10:0];
 
 //transmitter state machine
 always @(posedge clk)
 	if (reset)
 		txstate <= 2'b00;
 	else
-		txstate <= (txnextstate);
-
+		txstate <= txnextstate;
+		
 always @(txstate or tsre or reg_address_in)
 begin
 	case (txstate)
 		2'b00://wait for new data and go to next state if serdat is loaded
 			begin
-				txint <= 0;
-				txload <= 0;
-				tbe <= 1; 
+				txint = 0;
+				txload = 0;
+				tbe = 1; 
 				if (reg_address_in[8:1]==SERDAT[8:1])
-					txnextstate <= 2'b01;
+					txnextstate = 2'b01;
 				else
-					txnextstate <= 2'b00;
+					txnextstate = 2'b00;
 			end
 		2'b01://wait for shift register to become empty (tsre goes high)
 			begin
-				txint <= 0;
-				txload <= 0;
-				tbe <= 0;
+				txint = 0;
+				txload = 0;
+				tbe = 0;
 				if (tsre)
-					txnextstate <= 2'b10;
+					txnextstate = 2'b10;
 				else
-					txnextstate <= 2'b01;
+					txnextstate = 2'b01;
 			end
 		2'b10://wait for shift register to read serdat (tsre goes low)
 			begin
-				txint <= 0;
-				txload <= 1;
-				tbe <= 0;
+				txint = 0;
+				txload = 1;
+				tbe = 0;
 				if (!tsre)
-					txnextstate <= 2'b11;
+					txnextstate = 2'b11;
 				else
-					txnextstate <= 2'b10;
+					txnextstate = 2'b10;
 			end
 		2'b11://serdat is now empty again, generate interupt
 			begin
-				txint <= 1;
-				txload <= 0;
-				tbe <= 0;
-				txnextstate <= 2'b00;
+				txint = 1;
+				txload = 0;
+				tbe = 0;
+				txnextstate = 2'b00;
 			end
-	endcase
+	endcase			
 end
 
 //rx baud rate generator
 always @(posedge clk)
 	if (rxpreset)
-		rxdiv[15:0] <= ({1'b0,serper[14:0]});
+		rxdiv[15:0] <= {1'b0,serper[14:0]};
 	else if (rxbaud)
-		rxdiv[15:0] <= ({serper[14:0],1'b1});//serper shifted left because of 7.09 MHz clock
+		rxdiv[15:0] <= {serper[14:0],1'b1};//serper shifted left because of 7.09 MHz clock
 	else
-		rxdiv <= (rxdiv - 1);
-
-assign rxbaud = (rxdiv==0) ? 1 : 0;
+		rxdiv <= rxdiv - 1;
+		
+assign rxbaud = rxdiv==0 ? 1 : 0;
 
 //rxd input synchronizer latch
 always @(posedge clk)
@@ -633,18 +631,18 @@ end
 //receiver shift register
 always @(posedge clk)
 	if (rxpreset)
-		rxshift[10:0] <= 10'b111_1111_1111;
+		rxshift[10:0] <= 11'b111_1111_1111;
 	else if (rxbaud)
-		rxshift[10:0] <= ({lrxd2,rxshift[9:1]});
+		rxshift[10:0] <= {lrxd2,rxshift[10:1]};
 
 //receiver buffer
 always @(posedge clk)
 	if (rxint)
 	begin
-	    if (ninebit)
-		rxdat[9:0] <= (rxshift[10:1]);
-	    else
-		rxdat[9:0] <= ({1'b0, rxshift[10:2]});
+		if(ninebit)
+			rxdat[9:0] <= rxshift[10:1];
+		else
+			rxdat[9:0] <= {1'b0,rxshift[10:2]};
 	end
 
 //receiver state machine
@@ -652,43 +650,43 @@ always @(posedge clk)
 	if (reset)
 		rxstate <= 2'b00;
 	else
-		rxstate <= (rxnextstate);
-
+		rxstate <= rxnextstate;
+		
 always @(rxstate or lrxd2 or rxshift[0])
 begin
 	case (rxstate)
 		2'b00://wait for startbit
 			begin
-			rxint <= 0;
-			rxpreset <= 1;
+			rxint = 0;
+			rxpreset = 1;
 			if (!lrxd2)
-				rxnextstate <= 2'b01;
+				rxnextstate = 2'b01;
 			else
-				rxnextstate <= 2'b00;
+				rxnextstate = 2'b00;
 			end
 		2'b01://shift in 10 bits (start, 8 data, stop)
 			begin
-			rxint <= 0;
-			rxpreset <= 0;
-			if ((!rxshift[0] && ninebit) || (!rxshift[1]))
-				rxnextstate <= 2'b10;
+			rxint = 0;
+			rxpreset = 0;
+			if ((!rxshift[0] && ninebit) || (!rxshift[1] && !ninebit))
+				rxnextstate = 2'b10;
 			else
-				rxnextstate <= 2'b01;
+				rxnextstate = 2'b01;
 			end
 		2'b10,2'b11://new byte has been received, latch byte and request interrupt
 			begin
-			rxint <= 1;
-			rxpreset <= 0;
-			rxnextstate <= 2'b00;
+			rxint = 1;
+			rxpreset = 0;
+			rxnextstate = 2'b00;
 			end
 	endcase
-end
+end	
 
 //serdatr register
 always @(reg_address_in or rbfmirror or tbe or tsre or lrxd2 or rxdat)
 	if (reg_address_in[8:1]==SERDATR[8:1])
-		data_out[15:0] <= ({1'b0,rbfmirror,tbe,tsre,lrxd2,1'b0,rxdat[9:0]});
+		data_out[15:0] = {1'b0,rbfmirror,tbe,tsre,lrxd2,1'b0,rxdat[9:0]};
 	else
-		data_out[15:0] <= 0;
+		data_out[15:0] = 0;
 
 endmodule
