@@ -56,7 +56,7 @@ module gary
 	output	[15:0] custom_data_in,
 	input	[15:0] ram_data_out,
 	output	[15:0] ram_data_in,
-	input	a1k,
+//	input	a1k,
 	input	cpu_rd,					//cpu read
 	input	cpu_hwr,				//cpu high write
 	input	cpu_lwr,				//cpu low write
@@ -153,15 +153,15 @@ assign sel_xram = ((t_sel_slow[0] & (memory_config[2] | memory_config[3]))
 				| (t_sel_slow[2] & memory_config[2] & memory_config[3]));
 
 
-assign sel_rtc = (cpu_address_in[23:16]==8'b1101_1100) ? 1'b1 : 1'b0;		//RTC registers at $DC0000 - $DCFFFF	
-
-assign sel_ide = (hdc_ena && cpu_address_in[23:16]==8'b1101_1010) ? 1'b1 : 1'b0;		//IDE registers at $DA0000 - $DAFFFF	
+assign sel_ide = (hdc_ena && cpu_address_in[23:16]==8'b1101_1010) ? 1'b1 : 1'b0;		//IDE registers at $DA0000 - $DAFFFF
 
 assign sel_gayle = (hdc_ena && cpu_address_in[23:12]==12'b1101_1110_0001) ? 1'b1 : 1'b0;		//GAYLE registers at $DE1000 - $DE1FFF
 
+assign sel_rtc = (cpu_address_in[23:16]==8'b1101_1100) ? 1'b1 : 1'b0;		//RTC registers at $DC0000 - $DCFFFF
+
 assign sel_reg = (cpu_address_in[23:21]==3'b110) ? (~(sel_xram | sel_rtc | sel_ide | sel_gayle)) : 1'b0;		//chip registers at $DF0000 - $DFFFFF
 
-assign sel_cia = (cpu_address_in[23:21]==3'b101) ? 1'b1 : 1'b0;
+assign sel_cia = cpu_address_in[23:16]==8'b1011_1111 ? 1'b1 : 1'b0;
 
 //cia a address decode
 assign sel_cia_a = (sel_cia & ~cpu_address_in[12]);
@@ -174,7 +174,6 @@ assign sel_boot = (cpu_address_in[23:12]==0 && boot) ? 1'b1 : 1'b0;
 assign sel_bank_1 = (cpu_address_in[23:21]==3'b001) ? 1'b1 : 1'b0;
 
 //data bus slow down
-
 assign dbs = (cpu_address_in[23:21]==3'b000 || cpu_address_in[23:20]==4'b1100 || cpu_address_in[23:19]==5'b1101_0 || cpu_address_in[23:16]==8'b1101_1111) ? 1'b1 : 1'b0;
 
 assign xbs = (~(sel_cia | sel_gayle | sel_ide));

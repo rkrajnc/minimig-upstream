@@ -75,8 +75,8 @@ begin
 		0003:	romdata[15:0] = 16'h0010;
 		0004:	romdata[15:0] = 16'h5342; // fpga version - $5342 = SB
 		0005:	romdata[15:0] = 16'h3133;
-		0006:	romdata[15:0] = 16'h3033;
-		0007:	romdata[15:0] = 16'h3231;
+		0006:	romdata[15:0] = 16'h3130;
+		0007:	romdata[15:0] = 16'h3230;
 		0008:	romdata[15:0] = 16'h4DF9;
 		0009:	romdata[15:0] = 16'h00DF;
 		0010:	romdata[15:0] = 16'hF000;

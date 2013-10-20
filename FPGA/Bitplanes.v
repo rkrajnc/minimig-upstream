@@ -387,4 +387,5 @@ always @(hires or shres or scroll or c1 or c3)
 		select[3:0] = scroll[3:0]; // scroll in 1 pixel steps
 	end
 			
-endmodule		
+endmodule
+

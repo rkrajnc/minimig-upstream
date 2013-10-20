@@ -371,3 +371,4 @@ assign full = inptr[12:8]!=outptr[12:8] ? 1'b1 : 1'b0;
 assign last = outptr[7:0] == 8'hFF ? 1'b1 : 1'b0;	
 
 endmodule
+

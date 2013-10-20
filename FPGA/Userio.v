@@ -60,7 +60,7 @@
 // 2011-03-06	- added autofire without key press & permanent fire at KP0
 // 2011-04-11	- autofire toggle able via capslock / led status
 // 2013-01-17	- added POTGO write register handling (required by Asterix game)
-// 2013-03-11	- removed POTGO handling due to problems with several other games, thanks Jakub for the confirmation! Asterix game will not detect RMB !
+// 2013-03-11	- removed POTGO handling due to problems with several other games, thanks Jakub for the confirmation! Asterix game will not detect RMB!
 
 module userio
 (
@@ -597,7 +597,7 @@ reg first_byte;			// first byte is going to be received
 
 //------ input shift register ------//
 always @(posedge sck)
-		sdi_reg <= {sdi_reg[6:0],sdi};
+	sdi_reg <= {sdi_reg[6:0],sdi};
 
 assign out = sdi_reg;
 
@@ -763,7 +763,7 @@ always @(posedge clk)
 		mstate<=mnext;
 always @(mstate or mthalf or msready or mrready or mreceive)
 begin
-	case(mstate)
+	case (mstate)
 		0: // initialize mouse phase 0, start timer
 			begin
 				mclkout=1;
@@ -868,7 +868,6 @@ begin
 				mpacket=2'bxx;
 				mnext=0;
 			end
-
 	endcase
 end
 

@@ -272,14 +272,13 @@ assign dma_blt = req_blt & blten;
 //chip address, register address and control signal multiplexer
 //AND dma priority handler
 //first item in this if else if list has highest priority
-always @(*)
-/*dma_dsk or dma_ref or address_dsk or reg_address_dsk or wr_dsk or
+always @(dma_dsk or dma_ref or address_dsk or reg_address_dsk or wr_dsk or
 		dma_aud or address_aud or reg_address_aud or
 		dma_bpl or address_bpl or reg_address_bpl or dma_cop or
 		copen or address_cop or reg_address_cop or reg_address_blt or reg_address_cpu
 		or spren or dma_spr or address_spr or reg_address_spr
 		or blten or dma_blt or address_blt or we_blt or bls_cnt)
-*/
+
 begin
 	if (dma_dsk)//busses allocated to disk dma engine
 	begin
@@ -564,7 +563,7 @@ beamcounter	bc1
 //horizontal strobe for Denise
 //in real Amiga Denise's hpos counter seems to be advanced by 4 CCKs in regards to Agnus' one
 //Minimig isn't cycle exact and compensation for different data delay in implemented Denise's video pipeline is required 
-assign strhor_denise = hpos==12-1 && (vpos > 8 || ecs) ? 1 : 0;
+assign strhor_denise = hpos==6*2-1 && (vpos > 8 || ecs) ? 1 : 0;
 assign strhor_paula = hpos==(6*2+1) ? 1 : 0; //hack
 
 //--------------------------------------------------------------------------------------
@@ -668,8 +667,8 @@ reg		vdiwena;					// vertical display window enable
 // vstop forced by vbl
 // last visible line is displayed in colour 0
 // vdiwstop = N (M>N)
-// wait vpos N-1 hpos $d7, move vdiwstop M : efffective 
-// wait vpos N-1 hpos $d9, move vdiwstop M : non efffective 
+// wait vpos N-1 hpos $d7, move vdiwstop M : effective 
+// wait vpos N-1 hpos $d9, move vdiwstop M : non effective 
 
 // display not active:
 // wait vpos N hpos $dd, move vdiwstrt N : display starts
@@ -714,7 +713,7 @@ always @(posedge clk)
 
 // vertical display window enable
 always @(posedge clk)
-	if (sof && ~a1k || vpos[10:0]==0 && a1k || vpos[10:0]==vdiwstop[10:0]) // DIP Agnus can't start display DMA at scanline 0
+	if (sof && !a1k || vpos[10:0]==0 && a1k || vpos[10:0]==vdiwstop[10:0]) // DIP Agnus can't start display DMA at scanline 0
 		vdiwena <= GND;
 	else if (vpos[10:0]==vdiwstrt[10:0])
 		vdiwena <= VCC;
@@ -1243,11 +1242,11 @@ always @(hpos or speed)
 		8'h04:		dmaslot = speed;
 		8'h06:		dmaslot = speed;
 		8'h08:		dmaslot = speed;
-		8'h0A:	dmaslot = speed;
-		8'h0C:	dmaslot = 1;
+		8'h0A:		dmaslot = speed;
+		8'h0C:		dmaslot = 1;
 		8'h0E:		dmaslot = 1;
 		8'h10:		dmaslot = 1;
-		default: dmaslot = 0;
+		default: 	dmaslot = 0;
 	endcase
 
 //dma request

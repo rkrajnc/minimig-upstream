@@ -73,7 +73,7 @@ module copper
 	output 	reg [20:1] address_out 		// chip address output
 );
 
-// register names and adresses		
+// register names and adresses
 parameter COP1LCH = 9'h080;
 parameter COP1LCL = 9'h082;
 parameter COP2LCH = 9'h084;
@@ -139,7 +139,7 @@ always @(posedge clk)
 		cop1lch[20:16] <= 0;
 	else if (reg_address_in[8:1]==COP1LCH[8:1])
 		cop1lch[20:16] <= (data_in[4:0]);
-		
+
 always @(posedge clk)
 	if (reset)
 		cop1lcl[15:1] <= 0;
@@ -214,37 +214,37 @@ always @(ir2 or cdang or ecs)
 //--------------------------------------------------------------------------------------
 
 reg copjmp1, copjmp2;
-	
+
 always @(posedge clk)
 	if (reg_address_in[8:1]==COPJMP1[8:1] || sof)
 		copjmp1 = 1;
 	else if (clk_ena)
 		copjmp1 = 0;
-		
+
 always @(posedge clk)
 	if (reg_address_in[8:1]==COPJMP2[8:1])
 		copjmp2 = 1;
 	else if (clk_ena)
 		copjmp2 = 0;
-		
+
 //strobe1 (also triggered by sof, start of frame)
 always @(posedge clk)
 	if (copjmp1 && clk_ena)
 		strobe1 = 1;
 	else if (copper_state==RESET && dma_ack)
 		strobe1 = 0;
-		
+
 //strobe2
 always @(posedge clk)
 	if (copjmp2 && clk_ena)
 		strobe2 = 1;
 	else if (copper_state==RESET && dma_ack)
 		strobe2 = 0;
-		
+
 always @(posedge clk)
 	if (clk_ena)
 		strobe = (copjmp1 | copjmp2);
-		
+
 //--------------------------------------------------------------------------------------
 
 //beam compare circuitry
@@ -266,8 +266,8 @@ assign horcmp[7] = (ir2[6]) ? ir1[6] : hpos[7];
 assign horcmp[8] = (ir2[7]) ? ir1[7] : hpos[8];
 
 //construct compare value for vertical beam counter (1 line resolution)
-assign vercmp[0] =  (ir2[8]) ?  ir1[8] : vpos[0];
-assign vercmp[1] =  (ir2[9]) ?  ir1[9] : vpos[1];
+assign vercmp[0] = (ir2[8])  ?  ir1[8] : vpos[0];
+assign vercmp[1] = (ir2[9])  ?  ir1[9] : vpos[1];
 assign vercmp[2] = (ir2[10]) ? ir1[10] : vpos[2];
 assign vercmp[3] = (ir2[11]) ? ir1[11] : vpos[3];
 assign vercmp[4] = (ir2[12]) ? ir1[12] : vpos[4];
@@ -322,7 +322,7 @@ always @(posedge clk)
 			bus_ena <= 1; //cycle $E2 is usable
 		else
 			bus_ena <= (~bus_ena);
-						
+
 assign enable = (~bus_blk & bus_ena & clk_ena);
 
 assign reqdma = (dma_req & bus_ena & clk_ena); //dma is request also during $E1 but output register address is idle
@@ -343,14 +343,14 @@ always @(posedge clk)
 	if (enable)
 		skip_flag <= (skip);
 	
-always @*//(copper_state or ir2 or beam_match_wait or beam_match_skip or illegalreg or skip_flag or dma_ack or dma_ena)
+always @(copper_state or ir2 or beam_match_wait or beam_match_skip or illegalreg or skip_flag or dma_ack or dma_ena)
 begin
 	case (copper_state)
 	
 		//when COPJMPx is written there is 2 cycle delay before data from new location is read to COPINS
 		//usually first cycle is a read of the next instruction to COPINS or bitplane DMA,
 		//the second is dma free cycle (it's a dummy cycle requested by copper but not used to transfer data)
-		
+
 		//after reset or strobe write an allocated DMA cycle is required to reload instruction pointer from location registers
 		RESET:
 		begin
@@ -363,7 +363,7 @@ begin
 			else
 				copper_next = RESET;
 		end
-		
+
 		//fetch first instruction word
 		FETCH1:
 		begin
@@ -427,7 +427,7 @@ begin
 					copper_next = FETCH2;				
 			end
 		end
-		
+
 		//both SKIP and WAIT have the same timing when WAIT is immediatelly complete
 		//both these instructions complete in 4 cycles and these cycles must be allocated dma cycles
 		//first cycle seems to be dummy
@@ -443,7 +443,7 @@ begin
 			else
 				copper_next = WAITSKIP1;
 		end
-		
+
 		//second cycle of WAIT or SKIP (allocated dma)
 		//WAIT or SKIP instruction
 		WAITSKIP2:
@@ -477,7 +477,7 @@ begin
 					skip = 1;
 					selins = 0;
 					selreg = 0;
-					dma_req = 0;			
+					dma_req = 0;
 					if (dma_ena)
 						copper_next = FETCH1;
 					else
@@ -488,7 +488,7 @@ begin
 					skip = 0;
 					selins = 0;
 					selreg = 0;
-					dma_req = 0;						
+					dma_req = 0;
 					if (dma_ena)
 						copper_next = FETCH1;
 					else
@@ -496,19 +496,19 @@ begin
 				end
 			end
 		end
-	
+
 		//default, go back to reset state
 		default:
 		begin
 			skip = 0;
 			selins = 0;
 			selreg = 0;
-			dma_req = 0;			
+			dma_req = 0;
 			copper_next = FETCH1;
 		end
-		
+
 	endcase
-end	
+end
 
 //--------------------------------------------------------------------------------------
 

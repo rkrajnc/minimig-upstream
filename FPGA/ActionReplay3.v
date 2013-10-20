@@ -116,8 +116,7 @@ assign sel_ovl = ram_ovl & (cpu_address_in[23:19]==5'b0000_0) & cpu_rd;
 assign selmem = (sel_rom & boot) | ((sel_rom & cpu_rd) | sel_ram | sel_ovl);
 
 // Action Replay is activated by writing to its ROM area during bootloading
-//always @(posedge clk)
-always @(negedge clk)
+always @(posedge clk)
 	if (!reset && boot && cpu_address_in[23:18]==6'b0100_00 && cpu_lwr)
 		aron <= 1'b1;	// rom will miss first write but since 2 first words of rom are not readable it doesn't matter
 

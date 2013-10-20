@@ -153,6 +153,7 @@
 //
 // SB:
 // 2013-03-16	- added a few stabiliuty function for AR3 at Turbo mode
+// 2013-10-19	- fixed self-made sprite collision bug. Now YQ100818 code is working again!
 
 module Minimig1
 (
@@ -382,21 +383,6 @@ wire buf_sck;
 BUFG sckbuf1 ( .I(sck), .O(buf_sck) );
 
 // power led control
-/*
-reg	[3:0] led_cnt;
-reg	led_dim;
-
-// power led pwm 
-always @(posedge clk)
-	if (_hsync)
-		led_cnt <= led_cnt + 1;
-
-always @(posedge clk)
-	if	(!_hsync)
-		led_dim <= |led_cnt;
-
-//assign pwrled = (_led & (led_dim | ~turbo)) ? 1'b0 : 1'b1; // led dim at off-state and active turbo mode
-*/
 assign pwrled = _led ? 1'b0 : 1'b1;
 
 // drive step sound emulation
@@ -811,7 +797,7 @@ gary GARY1
 	.ram_hwr(ram_hwr),
 	.ram_lwr(ram_lwr),
 	.ecs(chipset_config[3]),
-	.a1k(chipset_config[2]),
+//	.a1k(chipset_config[2]),
 	.sel_chip(sel_chip),
 	.sel_slow(sel_slow),
 	.sel_kick(sel_kick),
@@ -909,18 +895,12 @@ assign sdo = (!_scs[0] || !_scs[1]) ? (paula_sdo | user_sdo) : 1'bz;
 
 //--------------------------------------------------------------------------------------
 
-//reg	rst_sel = 1'b0;
-//always @(posedge clk)
-//	rst_sel <= ~rst_sel;
-
 // cpu reset output
-//assign _cpu_reset = rst_sel ? ~reset_out : 1'bz;
 assign _cpu_reset = ~reset_out;
 
 // input reset from the CPU control bus
 always @(posedge clk)
-//	if (~rst_sel)
-		reset <= ~_cpu_reset;
+	reset <= ~_cpu_reset;
 
 //--------------------------------------------------------------------------------------
 
@@ -1096,7 +1076,7 @@ clk			___/           \___________/           \___________/           \_____ (7.0
 
                :     :     :     :     :     :     :     :     :     :     :
 			    __    __    __    __    __    __    __    __    __    __    __
-clk28m		___/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__ (28.36 MHz - dedicated clock)
+clk28m			___/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__/  \__ (28.36 MHz - dedicated clock)
                :     :     :     :     :     :     :     :     :     :     :
 			    ___________             ___________             ___________
 c1			___/           \___________/           \___________/           \_____ (7.09 MHz)
@@ -1152,7 +1132,7 @@ always @(posedge clk28m)
 	if (!c1 && !c3) // deassert lower byte enable in Q0
 		_ble <= 1'b1;
 	else if (c1 && !c3 && enable && rd) // assert lower byte enable in Q1 during read cycle
-		_ble <= 1'b0;	
+		_ble <= 1'b0;
 	else if (c1 && c3 && enable && lwr) // assert lower byte enable in Q2 during write cycle
 		_ble <= 1'b0;
 
@@ -1172,7 +1152,7 @@ always @(posedge clk28m)
 
 // ram address bus
 always @(posedge clk28m)
-	if (c1 && !c3 && enable)	// set address in Q1		
+	if (c1 && !c3 && enable)	// set address in Q1
 		address <= ({bank[7]|bank[5]|bank[3]|bank[1],address_in[18:1]});
 
 // data_out multiplexer
@@ -1239,7 +1219,7 @@ module m68k_bridge
 	input	_uds,					// m68k upper data strobe d8-d15
 	input	r_w,					// m68k read / write
 	output	_dtack,					// m68k data acknowledge to cpu
-	output	rd,						// bus read 
+	output	rd,						// bus read
 	output	hwr,					// bus high write
 	output	lwr,					// bus low write
 	input	[23:1] address,			// external cpu address bus
@@ -1406,7 +1386,7 @@ assign cache_out = ({cache_data_hi_out[7:0], cache_data_lo_out[7:0]});
 wire size_match;
 assign size_match = ((cache_data_hi_out[8] | _uds) & (cache_data_lo_out[8] | _lds));
 
-// indicates that requested data is in cache	
+// indicates that requested data is in cache
 wire cache_hit;
 assign cache_hit = (!blk & turbo & ~_as & cacheable & tag_match & size_match & r_w);
 
@@ -1468,9 +1448,11 @@ assign _dtack = (_ta_n & _ta_t & ~cache_hit);
 // synchronous control signals
 assign enable = ((~l_as & ~l_dtack & ~cck & ~turbo) | (~l_as28m & l_dtack & ~(dbr & xbs) & ~nrdy & turbo));
 assign rd = (enable & lr_w);
+
 // in turbo mode l_uds and l_lds may be delayed by 35 ns
 assign hwr = (enable & ~lr_w & ~l_uds);
 assign lwr = (enable & ~lr_w & ~l_lds);
+
 // blitter slow down signalling, asserted whenever CPU is missing bus access to chip ram, slow ram and custom registers 
 assign bls = (dbs & ~l_as & l_dtack);
 

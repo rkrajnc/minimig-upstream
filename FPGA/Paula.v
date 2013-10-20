@@ -187,10 +187,10 @@ always @(posedge clk)
 		if (data_in[15])
 			adkcon[14:0] <= adkcon[14:0] | data_in[14:0];
 		else
-			adkcon[14:0] <= adkcon[14:0] & (~data_in[14:0]);	
+			adkcon[14:0] <= adkcon[14:0] & (~data_in[14:0]);
 	end
 
-//ADKCONR register 
+//ADKCONR register
 assign adkconr[15:0] = (reg_address_in[8:1]==ADKCONR[8:1]) ? {1'b0,adkcon[14:0]} : 16'h0000;
 
 //--------------------------------------------------------------------------------------
@@ -262,7 +262,7 @@ floppy pf1
 	.sdi(sdi),
 	.sdo(sdo),
 	.sck(sck),
-	
+
 	.disk_led(disk_led),
 	.floppy_drives(floppy_drives),
 
@@ -295,7 +295,7 @@ audio ad1
 	.dmal(audio_dmal),
 	.dmas(audio_dmas),
 	.left(left),
-	.right(right)	
+	.right(right)
 );
 
 //--------------------------------------------------------------------------------------
@@ -328,7 +328,7 @@ module intcontroller
 	output	reg [2:0] _ipl			// m68k interrupt request
 );
 
-//register names and addresses		
+//register names and addresses
 parameter INTENAR = 9'h01c;
 parameter INTREQR = 9'h01e;
 parameter INTENA  = 9'h09a;
@@ -386,11 +386,11 @@ always @(reg_address_in or data_in or intreq)
 		if (data_in[15])
 			tmp[14:0] <= intreq[14:0] | data_in[14:0];
 		else
-			tmp[14:0] <= intreq[14:0] & (~data_in[14:0]);	
- 	end
+			tmp[14:0] <= intreq[14:0] & (~data_in[14:0]);
+	end
 	else
 		tmp[14:0] <= intreq[14:0];
-		
+
 always @(posedge clk)
 begin
 	if (reset)//synchronous reset
@@ -439,7 +439,7 @@ begin
 	if (intena[14])
 		intreqena[14:0] <= intreq[14:0] & intena[14:0];
 	else
-		intreqena[14:0] <= 15'b000_0000_0000_0000;	
+		intreqena[14:0] <= 15'b000_0000_0000_0000;
 end
 
 //interrupt priority encoder
@@ -492,7 +492,7 @@ module uart
 );
 
 //register names and addresses
-parameter SERDAT  = 9'h030;		
+parameter SERDAT  = 9'h030;
 parameter SERDATR = 9'h018;
 parameter SERPER  = 9'h032;
 
@@ -524,7 +524,7 @@ reg		ninebit;						// Expect to receive a 9-bit value
 always @(posedge clk)
 	if (reg_address_in[8:1]== SERPER[8:1])
 	begin
-		serper[14:0] <= data_in[14:0];		
+		serper[14:0] <= data_in[14:0];
 		ninebit <= data_in[15];
 	end
 
@@ -534,7 +534,7 @@ always @(posedge clk)
 		txdiv[15:0] <= {serper[14:0],1'b1};//serper shifted right because of 7.09MHz clock
 	else
 		txdiv <= txdiv - 1;
-		
+
 assign txbaud = (txdiv==0) ? 1 : 0;
 
 //txd shifter
@@ -545,7 +545,7 @@ always @(posedge clk)
 		txshift[11:0] <= {serdat[10:0],1'b0};
 	else if (!tsre && txbaud)
 		txshift[11:0] <= {1'b0,txshift[11:1]};
-		
+
 assign txd = txshift[0];
 
 //generate tsre signal
@@ -566,7 +566,7 @@ always @(posedge clk)
 		txstate <= 2'b00;
 	else
 		txstate <= txnextstate;
-		
+
 always @(txstate or tsre or reg_address_in)
 begin
 	case (txstate)
@@ -607,7 +607,7 @@ begin
 				tbe = 0;
 				txnextstate = 2'b00;
 			end
-	endcase			
+	endcase
 end
 
 //rx baud rate generator
@@ -618,7 +618,7 @@ always @(posedge clk)
 		rxdiv[15:0] <= {serper[14:0],1'b1};//serper shifted left because of 7.09 MHz clock
 	else
 		rxdiv <= rxdiv - 1;
-		
+
 assign rxbaud = rxdiv==0 ? 1 : 0;
 
 //rxd input synchronizer latch
@@ -651,7 +651,7 @@ always @(posedge clk)
 		rxstate <= 2'b00;
 	else
 		rxstate <= rxnextstate;
-		
+
 always @(rxstate or lrxd2 or rxshift[0])
 begin
 	case (rxstate)
@@ -680,7 +680,7 @@ begin
 			rxnextstate = 2'b00;
 			end
 	endcase
-end	
+end
 
 //serdatr register
 always @(reg_address_in or rbfmirror or tbe or tsre or lrxd2 or rxdat)

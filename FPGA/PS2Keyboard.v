@@ -162,7 +162,7 @@ begin
 
 				knext = 1;
 			end
-		1://"request-to-send" for led1 code  
+		1://"request-to-send" for led1 code
 			begin
 				prreset = 1;
 				ptreset = 0;
@@ -215,7 +215,6 @@ begin
 					knext = 4;
 			end
 
-
 		5://wait for valid amiga key code
 			begin
 				prreset = 0;
@@ -253,8 +252,7 @@ begin
 				psled2 = 0;//ps2 send led code 2
 
 				knext = 0;//go to reset state
- 			end
-
+			end
 	endcase
 end
 
@@ -295,6 +293,7 @@ wire	keyequal;
 reg	[7:0]keydat2;
 
 assign keyequal = keydat2[6:0]==keydat[6:0] ? 1 : 0;//detect if latched key equals new key
+
 //latch last key downstroke event
 always @(posedge clk)
 	if (reset)
@@ -313,7 +312,7 @@ always @(posedge clk)
 
 assign aflock = capslock;
 
-//generate keystrobe to indicate valid keycode				
+//generate keystrobe to indicate valid keycode
 always @(capslock or caps or keyequal or keydat or keydat2 or valid)
 	if (capslock && caps)//filter out capslock downstroke && capslock upstroke events if capslock is set
 		keystrobe = 0;
@@ -622,7 +621,7 @@ begin
 			9'h04f:		keyrom[15:0] <= 16'h0000;
 			9'h050:		keyrom[15:0] <= 16'h0000;
 			9'h051:		keyrom[15:0] <= 16'h0000;
-			9'h052:		keyrom[15:0] <= 16'h802a;//"
+			9'h052:		keyrom[15:0] <= 16'h802a;//" "
 			9'h053:		keyrom[15:0] <= 16'h0000;
 			9'h054:		keyrom[15:0] <= 16'h801a;//[
 			9'h055:		keyrom[15:0] <= 16'h800c;//= 
@@ -1055,4 +1054,5 @@ begin
 	 	endcase
 	end
 end
+
 endmodule
