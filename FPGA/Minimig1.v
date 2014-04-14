@@ -99,7 +99,7 @@
 // Loriano for impressive enclosure 
 // Darrin and Oscar for their ideas, support and help
 // Toni for his indispensable help and logic analyzer (and WinUAE :-)
-// 
+//
 // 2008-09-22 	- code clean-up
 // 2008-09-23	- added c1 and c3 clock anable signals
 // 				- adapted sram bridge to use only clk28m clock
@@ -138,10 +138,14 @@
 // 2011-04-10	- added readable VPOSW and VHPOSW register (fix for RSI slideshow)
 // 2011-04-11	- autofire function toggle able via capslock / led status
 // 2011-04-24	- fixed CIA TOD read
-// 2011-07-21	- changed '#' key scan code, thanks Chris
+// 2011-07-21	- changed '#' key scan code (thanks Scrat)
 //
 // TobiFlex(TF):
-// 2012-02-12  - change sigma/delta module
+// 2012-02-12	 - change sigma/delta module
+//
+// AMR:
+// 2012-10-27	- new audio module, a hybrid PWM / SD DAC.
+//              Silences audio channel when replen is 1 - fix for Gods jump noise.
 //
 // SB:
 // 2012-03-23	- fixed sprite enable signal (coppermaster demo)
@@ -149,11 +153,12 @@
 // 2013-03-11	- removed POTGO handling due to problems with several other games, thanks Jakub for the confirmation! Asterix game will not detect RMB !
 //
 // AMR:
-// 2013-03-12   - added 9th bit in serial data transfer used by a few games
+// 2013-03-12	- added 9th bit in serial data transfer used by a few games
 //
 // SB:
 // 2013-03-16	- added a few stabiliuty function for AR3 at Turbo mode
 // 2013-10-19	- fixed self-made sprite collision bug. Now YQ100818 code is working again!
+// 2014-04-12	- implemented sprite collision detection fix, developed by Yaqube. thanks a lot!
 
 module Minimig1
 (
@@ -422,7 +427,7 @@ reg	vsync_t = 1'b0;		// toggled vsync output
 
 always @(posedge clk)
 	vsync_del <= (_vsync_i);
-	
+
 always @(posedge clk)
 	if (~_vsync_i && vsync_del)
 		vsync_t <= (~vsync_t);
@@ -726,7 +731,7 @@ sram_bridge RAM1
 (
 	.clk28m(clk28m),
 	.c1(c1),
-	.c3(c3),	
+	.c3(c3),
 	.bank(bank),
 	.address_in(ram_address_out),
 	.data_in(ram_data_in),
@@ -797,7 +802,6 @@ gary GARY1
 	.ram_hwr(ram_hwr),
 	.ram_lwr(ram_lwr),
 	.ecs(chipset_config[3]),
-//	.a1k(chipset_config[2]),
 	.sel_chip(sel_chip),
 	.sel_slow(sel_slow),
 	.sel_kick(sel_kick),
@@ -1141,7 +1145,7 @@ always @(posedge clk28m)
 	if (!c1 && !c3)  // deassert output enable in Q0
 		doe <= 1'b0;
 	else if (c1 && !c3 && enable && !rd) // assert output enable in Q1 during write cycle
-		doe <= 1'b1;	
+		doe <= 1'b1;
 
 // generate sram chip selects (every sram chip is 512K x 16bits)
 always @(posedge clk28m)

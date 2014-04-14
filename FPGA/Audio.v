@@ -60,20 +60,20 @@
 // $0F - audio channel #3 location pointer reload request (active with data request) 
 // $10 - audio channle #3 dma data request (data transfered in slot $14)
 // minimum sampling period for audio channels in CCKs (no length reload)
-// #0 : 121 (120) 
+// #0 : 121 (120)
 // #1 : 122 (121)
 // #2 : 123 (122)
 // #3 : 124 (123)
 
 // SB:
-// 2011-01-18 - fixed sound output, no more high pitch noise at game Gods
+// 2011-01-18	- fixed sound output, no more high pitch noise at game Gods
 
 // TobiFlex(TF):
-// 2012-02-12 - change sigma/delta module
+// 2012-02-12	- change sigma/delta module
 
 // AMR:
-// 2012-10-27 - new audio module, a hybrid PWM / SD DAC.
-//              Silences audio channel when replen is 1 - fix for Gods jump noise.
+// 2012-10-27	- new audio module, a hybrid PWM / SD DAC.
+//			Silences audio channel when replen is 1 - fix for Gods jump noise.
 
 module audio
 (
