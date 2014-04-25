@@ -65,7 +65,7 @@
 //
 // SB:
 // 2014-04-12	- implemented sprite collision detection fix, developed by Yaqube. thanks a lot!
-//		- games Archon1 and Rotor finally works normal
+//		- games Archon1, Rotor and Spaceport finally works normal
 
 
 module Denise
