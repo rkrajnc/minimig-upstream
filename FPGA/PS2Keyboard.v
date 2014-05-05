@@ -66,7 +66,9 @@ module ps2keyboard
 	output	_lmb,				//emulated left mouse button
 	output	_rmb,				//emulated right mouse button
 	output	[5:0] _joy2,		//joystick emulation
-	output	freeze				//Action Replay freeze button
+	output	freeze,				//Action Replay freeze button
+  output [5:0] mou_emu,
+  output [5:0] joy_emu
 );
 
 //local signals
@@ -275,7 +277,9 @@ ps2keyboardmap km1
 	._lmb(_lmb),
 	._rmb(_rmb),
 	._joy2(_joy2),
-	.freeze(freeze)
+	.freeze(freeze),
+  .mou_emu(mou_emu),
+  .joy_emu(joy_emu)
 );
 
 //Duplicate key filter and caps lock handling.
@@ -373,13 +377,25 @@ module ps2keyboardmap
 	output	reg _lmb,			//mouse button emulation
 	output	reg _rmb,			//mouse button emulation
 	output	reg [5:0] _joy2,	//joystick emulation
-	output	reg freeze			//int7 freeze button
+	output	reg freeze,			//int7 freeze button
+  output [5:0] mou_emu,
+  output reg [5:0] joy_emu
 );
+
 //local parameters
-localparam JOY2KEY_UP    = 7'h3E;
-localparam JOY2KEY_DOWN  = 7'h2E;
-localparam JOY2KEY_LEFT  = 7'h2D;
-localparam JOY2KEY_RIGHT = 7'h2F;
+//localparam JOY2KEY_UP    = 7'h3E;
+//localparam JOY2KEY_DOWN  = 7'h2E;
+//localparam JOY2KEY_LEFT  = 7'h2D;
+//localparam JOY2KEY_RIGHT = 7'h2F;
+//localparam JOY2KEY_FIRE0 = 7'h0F;
+//localparam JOY2KEY_FIRE1 = 7'h43;
+//localparam JOY1KEY_FIRE0 = 7'h5C;
+//localparam JOY1KEY_FIRE1 = 7'h5D;
+
+localparam JOY2KEY_UP    = 7'h4c;
+localparam JOY2KEY_DOWN  = 7'h4d;
+localparam JOY2KEY_LEFT  = 7'h4f;
+localparam JOY2KEY_RIGHT = 7'h4e;
 localparam JOY2KEY_FIRE0 = 7'h0F;
 localparam JOY2KEY_FIRE1 = 7'h43;
 localparam JOY1KEY_FIRE0 = 7'h5C;
@@ -390,6 +406,7 @@ reg		[15:0] keyrom;			//rom output
 reg		enable2;				//enable signal delayed by one clock
 reg		upstroke;				//upstroke key status
 reg		extended;				//extended key status
+wire  disable_amiga_key;
 
 //generate delayed enable signal (needed because of blockram pipelining)
 always @(posedge clk)
@@ -416,7 +433,8 @@ always @(posedge clk)
 
 //assign all output signals
 //keyrom[6:0] = amiga keycode
-assign valid = keyrom[15] & (~keyrom[9] | ~numlock) & enable2;
+assign disable_amiga_key = numlock && ((keyrom[7:0]==JOY2KEY_LEFT) | (keyrom[7:0]==JOY2KEY_RIGHT) | (keyrom[7:0]==JOY2KEY_UP) | (keyrom[7:0]==JOY2KEY_DOWN) | keyrom[14] | keyrom[13]);
+assign valid = keyrom[15] & (~keyrom[9] | ~numlock) & enable2 && !disable_amiga_key;
 assign ctrl = keyrom[14];
 assign aleft = keyrom[13];
 assign aright = keyrom[12];
@@ -484,19 +502,20 @@ end
 
 always @(posedge clk)
 begin
-	if (reset || !numlock)
-		_joy2[4] <= 1'b1;
-	else if (enable2 && keyrom[15] && keyrom[7:0]==JOY2KEY_FIRE0)
-		_joy2[4] <= upstroke;
+  if (reset || !numlock)
+    _joy2[4] <= 1'b1;
+  else if (enable2 && keyrom[14]/*ctrl*//*keyrom[15] && keyrom[7:0]==JOY2KEY_FIRE0*/)
+    _joy2[4] <= upstroke;
 end
 
 always @(posedge clk)
 begin
-	if (reset || !numlock)
-		_joy2[5] <= 1'b1;
-	else if (enable2 && keyrom[15] && keyrom[7:0]==JOY2KEY_FIRE1)
-		_joy2[5] <= upstroke;
+  if (reset || !numlock)
+    _joy2[5] <= 1'b1;
+  else if (enable2 && keyrom[13]/*aleft*/ /*keyrom[15] && keyrom[7:0]==JOY2KEY_FIRE1*/)
+    _joy2[5] <= upstroke;
 end
+
 
 // mouse button emulation
 always @(posedge clk)
@@ -513,6 +532,49 @@ begin
 		_rmb <= 1'b1;
 	else if (enable2 && keyrom[15] && keyrom[7:0]==JOY1KEY_FIRE1)
 		_rmb <= upstroke;
+end
+
+// mouseemu
+reg mouse_emu_up, mouse_emu_down, mouse_emu_left, mouse_emu_right;
+assign mou_emu[5:0] = {2'b11, mouse_emu_up, mouse_emu_down, mouse_emu_left, mouse_emu_right};
+
+localparam MOUSE_EMU_KEY_9 = 8'h3f;//KP 9
+localparam MOUSE_EMU_KEY_8 = 8'h3e;//KP 8
+localparam MOUSE_EMU_KEY_7 = 8'h3d;//KP 7
+localparam MOUSE_EMU_KEY_6 = 8'h2f;//KP 6
+localparam MOUSE_EMU_KEY_4 = 8'h2d;//KP 4
+localparam MOUSE_EMU_KEY_3 = 8'h1f;//KP 3
+localparam MOUSE_EMU_KEY_2 = 8'h1e;//KP 2
+localparam MOUSE_EMU_KEY_1 = 8'h1d;//KP 1
+
+always @ (posedge clk) begin
+  if (reset || !numlock) begin
+    mouse_emu_up    <= #1 1'b0;
+    mouse_emu_down  <= #1 1'b0;
+    mouse_emu_left  <= #1 1'b0;
+    mouse_emu_right <= #1 1'b0;
+  end else if (enable2 && keyrom[15]) begin
+    mouse_emu_up    <= #1 1'b0;
+    mouse_emu_down  <= #1 1'b0;
+    mouse_emu_left  <= #1 1'b0;
+    mouse_emu_right <= #1 1'b0;
+    case (keyrom[7:0])
+      MOUSE_EMU_KEY_9,
+      MOUSE_EMU_KEY_8,
+      MOUSE_EMU_KEY_7: mouse_emu_up <= #1 !upstroke;
+      MOUSE_EMU_KEY_3,
+      MOUSE_EMU_KEY_2,
+      MOUSE_EMU_KEY_1: mouse_emu_down <= #1 !upstroke;
+    endcase
+    case (keyrom[7:0])
+      MOUSE_EMU_KEY_9,
+      MOUSE_EMU_KEY_6,
+      MOUSE_EMU_KEY_3: mouse_emu_right <= #1!upstroke;
+      MOUSE_EMU_KEY_7,
+      MOUSE_EMU_KEY_4,
+      MOUSE_EMU_KEY_1: mouse_emu_left <= #1 !upstroke;
+    endcase
+  end
 end
 
 //-------------------------------------------------------------------------------------------------
