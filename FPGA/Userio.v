@@ -138,6 +138,7 @@ reg   sel_autofire;     // select autofire and permanent fire
 //register names and adresses		
 parameter JOY0DAT = 9'h00a;
 parameter JOY1DAT = 9'h00c;
+parameter SCRDAT  = 9'h1f0;
 parameter POTINP  = 9'h016;
 parameter POTGO   = 9'h034;
 parameter JOYTEST = 9'h036;
@@ -910,7 +911,7 @@ end
 always @ (posedge clk) begin
   if (reset)
     intellimouse <= #1 1'b0;
-  else if ((mpacket==5) && (mreceive[2:1] == 2'b11))
+  else if ((mpacket==3'd5) && (mreceive[2:1] == 2'b11))
     intellimouse <= #1 1'b1;
 end
 
@@ -1036,7 +1037,7 @@ always @ (*) begin
       mrreset=1'bx;
       mtreset=1'bx;
       msreset=1'bx;
-      mpacket=2'bxx;
+      mpacket=3'bxxx;
       mnext=0;
     end
 
