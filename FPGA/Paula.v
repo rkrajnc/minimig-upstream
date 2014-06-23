@@ -652,7 +652,7 @@ always @(posedge clk)
 	else
 		rxstate <= rxnextstate;
 
-always @(rxstate or lrxd2 or rxshift[0])
+always @(*)
 begin
 	case (rxstate)
 		2'b00://wait for startbit

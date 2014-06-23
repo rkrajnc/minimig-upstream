@@ -354,7 +354,7 @@ always @(spi_tx_cnt or spi_tx_data_0 or spi_tx_data_1 or spi_tx_data_2 or spi_tx
 always @(sel or drives or hdd_dat_req or hdd_cmd_req or trackwr or trackrd or track or fifo_cnt)
 	spi_tx_data_0 = {sel[1:0],drives[1:0],hdd_dat_req,hdd_cmd_req,trackwr,trackrd&~fifo_cnt[10],track[7:0]};
 
-always @(dsksync)
+always @(*)
 	if (reset)
 		spi_tx_data_1 = 0;
 	else
