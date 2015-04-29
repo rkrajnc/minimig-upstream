@@ -907,9 +907,9 @@ always @(posedge clk)
 		latch_ena <= 1;
 	else if (!wr)
 	begin
-		if (thi) // if MSB read, hold data for subsequent reads
+		if (thi && !crb7) // if MSB read, hold data for subsequent reads
 			latch_ena <= 0;
-		else if (!thi) // if LSB read, update data every clock
+		else if (tlo) // if LSB read, update data every clock
 			latch_ena <= 1;
 	end
 
@@ -941,7 +941,7 @@ always @(posedge clk)
 		count_ena <= 1;
 	else if (wr && !crb7) // crb7==0 enables writing to TOD counter
 	begin
-		if (thi || tme) // stop counting
+		if (thi /*|| tme*/) // stop counting
 			count_ena <= 0;
 		else if (tlo) // write to LSB starts counting again
 			count_ena <= 1;			
