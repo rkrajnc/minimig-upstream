@@ -61,7 +61,7 @@
 //				 this completes the blitter (but some bugs may still remain...)
 // 17-10-2005	-fixed typo in sensitivity list of always block
 // 22-01-2006	-fixed bug in special line draw mode
-// 25-01-2006	-added bblck signal	
+// 25-01-2006	-added bblck signal
 // 14-02-2006	-improved bblck table
 // 07-07-2006	-added some comments
 // ----------
@@ -96,7 +96,7 @@ module blitter
 	output 	reg [8:1] reg_address_out	// register address outputs
 );
 
-//register names and adresses		
+//register names and adresses
 parameter BLTCON0  = 9'h040;
 parameter BLTCON0L = 9'h05A;
 parameter BLTCON1  = 9'h042;
@@ -239,9 +239,9 @@ always @(posedge clk)
 	if (init)
 		enad <= 1'b1;
 	else if (reg_address_in[8:1]==BLTCON0[8:1] && busy)
-		enad <= 1'b0;	
-		
-assign {usea, useb, usec, used} = {bltcon0[11:9], bltcon0[8] & enad}; // DMA channels enable		
+		enad <= 1'b0;
+
+assign {usea, useb, usec, used} = {bltcon0[11:9], bltcon0[8] & enad}; // DMA channels enable
 
 //bltcon0: LF part
 always @(posedge clk)
@@ -249,7 +249,7 @@ always @(posedge clk)
 		bltcon0[7:0] <= 0;
 	else if (reg_address_in[8:1]==BLTCON0[8:1] || reg_address_in[8:1]==BLTCON0L[8:1] && ecs)
 		bltcon0[7:0] <= data_in[7:0];
-		
+
 //bltcon1: BSH part
 always @(posedge clk)
 	if (reset)
@@ -269,7 +269,7 @@ always @(posedge clk)
 		bltcon1[11:0] <= data_in[11:0];
 
 assign line = bltcon1[0]; // line mode
-assign desc = ~line & bltcon1[1]; // descending blit mode		
+assign desc = ~line & bltcon1[1]; // descending blit mode
 assign efe = ~line & bltcon1[4]; // exclusive fill mode
 assign ife = ~line & bltcon1[3]; // inclusive fill mode
 
@@ -299,7 +299,7 @@ always @(bltafwm or bltalwm or first_word or last_word)
 		bltamask[15:0] = bltafwm[15:0];
 	else
 		bltamask[15:0] = 16'hFF_FF;
-		
+
 //bltadat register
 always @(posedge clk)
 	if (reset)
@@ -338,7 +338,7 @@ always @(posedge clk)
 		bltbdat[15:0] <= 0;
 	else if (reg_address_in[8:1]==BLTBDAT[8:1])
 		bltbdat[15:0] <= data_in[15:0];
-		
+
 reg bltbold_init;
 always @(posedge clk)
 	if (reset || done)
@@ -353,8 +353,8 @@ always @(posedge clk)
 			bltbold[15:0] <= 0;
 		else
 			bltbold[15:0] <= bltbdat[15:0];
-			
-reg bltbdat_wrtn;		
+
+reg bltbdat_wrtn;
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTBDAT[8:1])
 		bltbdat_wrtn <= 1'b1;
@@ -377,14 +377,14 @@ always @(posedge clk)
 		bltbhold[15:0] <= {16{shiftbout[0]}}; // in line mode only one selected bit of BLTBDAT register (LSB) is used for texturing
 	else if (bltbdat_wrtn)
 		bltbhold[15:0] <= shiftbout[15:0];
-	
+
 //--------------------------------------------------------------------------------------
 
 //bltcdat register
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTCDAT[8:1])
 		bltcdat[15:0] <= data_in[15:0];
-		
+
 //--------------------------------------------------------------------------------------
 
  
@@ -492,7 +492,7 @@ always @(posedge clk)
 		height[14:0] <= 0;
 	else if (reg_address_in[8:1]==BLTSIZV[8:1]) // ECS BLTSIZV register
 		height[14:0] <= data_in[14:0];
-		
+
 // blit height counter
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTSIZE[8:1]) // OCS
@@ -501,7 +501,7 @@ always @(posedge clk)
 		height_cnt[14:0] <= height[14:0];
 	else if (enable && next_word && last_word) // decrement height counter
 		height_cnt[14:0] <= height_cnt[14:0] - 1;
-		
+
 // pipeline is full (first set of sources has been fetched)
 always @(posedge clk)
 	if (enable)
@@ -509,7 +509,7 @@ always @(posedge clk)
 			pipeline_full <= 0;
 		else if (next_word)
 			pipeline_full <= 1;
-			
+
 //--------------------------------------------------------------------------------------
 
 // instantiate address generation unit
@@ -533,10 +533,10 @@ address_generator address_generator_1
 // custom register address output
 always @(chsel)
 	case (chsel)
-		CHA : reg_address_out = BLTADAT[8:1]; 
-		CHB : reg_address_out = BLTBDAT[8:1]; 
-		CHC : reg_address_out = BLTCDAT[8:1]; 
-		CHD : reg_address_out = BLTDDAT[8:1]; 
+		CHA : reg_address_out = BLTADAT[8:1];
+		CHB : reg_address_out = BLTBDAT[8:1];
+		CHC : reg_address_out = BLTCDAT[8:1];
+		CHD : reg_address_out = BLTDDAT[8:1];
 	endcase
 
 //--------------------------------------------------------------------------------------
@@ -554,7 +554,7 @@ always @(posedge clk)
 
 always @*
 	case (blt_state)
-	
+
 		BLT_IDLE:
 		begin
 			chsel = 2'bXX;
@@ -575,7 +575,7 @@ always @*
 			else
 				blt_next = BLT_IDLE;
 		end
-				
+
 		BLT_INIT:
 		begin
 			chsel = 2'bXX;
@@ -587,7 +587,7 @@ always @*
 			addmod = 1'bX;
 			submod = 1'bX;
 			dma_req = 1'b0;
-			
+
 			if (enable)
 				if (line)
 					blt_next = BLT_L1; // go to first line draw cycle
@@ -596,7 +596,7 @@ always @*
 			else
 				blt_next = BLT_INIT;
 		end
-		
+
 		BLT_A: // first blit cycle (channel A source data fetch or empty cycle)
 		begin
 			chsel = CHA;
@@ -609,7 +609,7 @@ always @*
 			submod = desc & last_word;
 			dma_req = usea; // empty cycle if channel A is not enabled
 
-			if (enable)			
+			if (enable)
 				if (useb)
 					blt_next = BLT_B;
 				else if (usec || ife || efe) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
@@ -619,7 +619,7 @@ always @*
 			else
 				blt_next = BLT_A;
 		end
-		
+
 		BLT_B: // second blit cycle (always channel B fetch - if channel B is not enabled this cycle is skipped)
 		begin
 			chsel = CHB;
@@ -632,7 +632,7 @@ always @*
 			submod = desc & last_word;
 			dma_req = 1'b1; // we can only reach this state if channel B is enabled (USEB is set)
 
-			if (enable)			
+			if (enable)
 				if (usec || ife || efe) // in fill modes channel C cycle is always used (might be empty if channel C is not enabled)
 					blt_next = BLT_C;
 				else
@@ -640,7 +640,7 @@ always @*
 			else
 				blt_next = BLT_B;
 		end
-		
+
 		BLT_C:
 		begin
 			chsel = CHC;
@@ -659,11 +659,11 @@ always @*
 				else if (last_word && last_line)
 					blt_next = BLT_IDLE;
 				else
-					blt_next = BLT_A;			
+					blt_next = BLT_A;
 			else
 				blt_next = BLT_C;
 		end
-		
+
 		BLT_D:
 		begin
 			chsel = CHD;
@@ -675,7 +675,7 @@ always @*
 			addmod = ~desc & last_word_del;
 			submod = desc & last_word_del;
 			dma_req = used & pipeline_full; // request DMA cycle if channel D holding register is full
-			
+
 			if (enable)
 				if (last_word && last_line) 
 					if (used)
@@ -699,7 +699,7 @@ always @*
 			addmod = 1'bX;
 			submod = 1'bX;
 			dma_req = 1'b0;
-			
+
 			if (clkena)
 				blt_next = BLT_F; // go to the last D hold register store cycle
 			else
@@ -717,13 +717,13 @@ always @*
 			addmod = ~desc & last_word_del;
 			submod = desc & last_word_del;
 			dma_req = 1'b1; // request DMA cycle (D holding register is full)
-			
+
 			if (enable)
 				blt_next = BLT_IDLE; // it's the last cycle so go to IDLE state
 			else
 				blt_next = BLT_F;
 		end
-		
+
 		BLT_L1: // update error accumulator
 		begin
 			chsel = CHA;
@@ -741,7 +741,7 @@ always @*
 			else
 				blt_next = BLT_L1;
 		end
-		
+
 		BLT_L2: // fetch source data from channel C
 		begin
 			chsel = CHC;
@@ -753,13 +753,13 @@ always @*
 			addmod = 0;
 			submod = 0;
 			dma_req = usec;
-			
+
 			if (enable)
 				blt_next = BLT_L3;
 			else
 				blt_next = BLT_L2;
 		end
-		
+
 		BLT_L3: // free cycle (data propagates from source holding registers to channel D hold register - no pipelining)
 		begin
 			chsel = CHA;
@@ -777,7 +777,7 @@ always @*
 			else
 				blt_next = BLT_L3;
 		end
-		
+
 		BLT_L4: // store cycle - initial write @ D ptr, all succesive @ C ptr, always modulo C used
 		begin
 
@@ -791,7 +791,7 @@ always @*
 			submod = !bltcon1[4] &&  bltcon1[2] ||  bltcon1[4] &&  bltcon1[3] && !sign_del ? 1'b1 : 1'b0;
 			// in 'one dot' mode this might be a free bus cycle
 			dma_req = usec & (~bltcon1[1] | ~bltcon1[4] | first_pixel); // request DMA cycle
-			
+
 			if (enable)
 				if (last_line) // if last data store go to idle state
 					blt_next = BLT_IDLE;
@@ -800,7 +800,7 @@ always @*
 			else
 				blt_next = BLT_L4;
 		end
-				
+
 		default:
 		begin
 			chsel = CHA;
@@ -821,7 +821,7 @@ always @*
 // init blitter pipeline (reload height counter)
 assign init = blt_state==BLT_INIT ? 1'b1 : 1'b0;
 
-// indicates last cycle of a single sequence	
+// indicates last cycle of a single sequence
 assign next_word = blt_state==BLT_C && !used || blt_state==BLT_D || blt_state==BLT_L2 || blt_state==BLT_L4 ? 1'b1 : 1'b0;
 
 // stores a new value to D hold register
@@ -851,7 +851,7 @@ always @(posedge clk)
 always @(posedge clk)
 	if (enable && blt_state==BLT_L1)
 		sign_del <= sign;
-		
+
 assign incash = enable && blt_state==BLT_L4 && (bltcon1[4] && !bltcon1[2] || !bltcon1[4] && !bltcon1[3] && !sign_del) ? 1'b1 : 1'b0;
 assign decash = enable && blt_state==BLT_L4 && (bltcon1[4] &&  bltcon1[2] || !bltcon1[4] &&  bltcon1[3] && !sign_del) ? 1'b1 : 1'b0;
 assign decbsh = enable && blt_state==BLT_L4 ? 1'b1 : 1'b0;
@@ -914,8 +914,8 @@ always @(desc or shift)
 		5'h1D : shift_onehot = 18'h02000;
 		5'h1E : shift_onehot = 18'h04000;
 		5'h1F : shift_onehot = 18'h08000;
- 	endcase
-	
+	endcase
+
 MULT18X18 multiplier_1 
 (
 	.A({2'b00,new[15:0]}),  // 18-bit multiplier input
@@ -981,7 +981,7 @@ always @(ain or bin or cin or lf)
 //minterms together.
 assign out = mt0 | mt1 | mt2 | mt3 | mt4 | mt5 | mt6 | mt7;
 
-endmodule		
+endmodule
 
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
@@ -989,7 +989,7 @@ endmodule
 //Blitter fill logic
 //The fill logic module has 2 modes,inclusive fill and exclusive fill.
 //Both share the same xor operation but in inclusive fill mode,
-//the output of the xor-filler is or-ed with the input data.	
+//the output of the xor-filler is or-ed with the input data.
 module bltfill
 (
 	input	ife,					//inclusive fill enable
@@ -1006,7 +1006,7 @@ reg		[15:0]carry;
 //generate all fill carry's
 integer j;
 always @(fci or in[0])//least significant bit
-	carry[0] = fci ^ in[0];		
+	carry[0] = fci ^ in[0];
 always @(in or carry)//rest of bits
 	for (j=1;j<=15;j=j+1)
 		carry[j] = carry[j-1] ^ in[j];
@@ -1096,18 +1096,18 @@ always @(posedge clk)
 	if (enaptr || reg_address_in[8:1]==BLTAPTH[8:1] || reg_address_in[8:1]==BLTBPTH[8:1] || reg_address_in[8:1]==BLTCPTH[8:1] || reg_address_in[8:1]==BLTDPTH[8:1])
 		bltpth[bltptr_sel] <= bltptr_in[20:16];
 
-assign bltpth_out = bltpth[bltptr_sel];		
-		
+assign bltpth_out = bltpth[bltptr_sel];
+
 always @(posedge clk)
 	if (enaptr || reg_address_in[8:1]==BLTAPTL[8:1] || reg_address_in[8:1]==BLTBPTL[8:1] || reg_address_in[8:1]==BLTCPTL[8:1] || reg_address_in[8:1]==BLTDPTL[8:1])
 		bltptl[bltptr_sel] <= bltptr_in[15:1];
 
 assign bltptl_out = bltptl[bltptr_sel];
 
-assign bltptr_out = {bltpth_out, bltptl_out};	
-	
+assign bltptr_out = {bltpth_out, bltptl_out};
+
 assign address_out = bltptr_out;
-    
+
 //--------------------------------------------------------------------------------------
 
 //modulo register bank
@@ -1117,7 +1117,7 @@ assign bltmod_sel = enaptr ? modsel : reg_address_in[2:1];
 always @(posedge clk)
 	if (reg_address_in[8:3]==BLTAMOD[8:3])
 		bltmod[bltmod_sel] <= data_in[15:1];
-		
+
 assign bltmod_out = bltmod[modsel];
 
 //--------------------------------------------------------------------------------------
@@ -1145,4 +1145,4 @@ always @(addmod or submod or bltmod_out or t_newptr)
 //sign output
 assign sign_out = newptr[15]; // used in line mode as the sign of Bresenham's error accumulator (channel A pointer acts as an accumulator)
 
-endmodule	
+endmodule

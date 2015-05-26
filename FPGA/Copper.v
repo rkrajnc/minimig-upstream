@@ -342,11 +342,11 @@ always @(posedge clk)
 always @(posedge clk)
 	if (enable)
 		skip_flag <= (skip);
-	
+
 always @(copper_state or ir2 or beam_match_wait or beam_match_skip or illegalreg or skip_flag or dma_ack or dma_ena)
 begin
 	case (copper_state)
-	
+
 		//when COPJMPx is written there is 2 cycle delay before data from new location is read to COPINS
 		//usually first cycle is a read of the next instruction to COPINS or bitplane DMA,
 		//the second is dma free cycle (it's a dummy cycle requested by copper but not used to transfer data)
@@ -378,7 +378,7 @@ begin
 		end
 
 		//fetch second instruction word, skip or do MOVE instruction or halt copper
-		FETCH2:			
+		FETCH2:
 		begin
 			if (!ir2[0] && illegalreg) // illegal MOVE instruction, halt copper
 			begin
@@ -424,7 +424,7 @@ begin
 				if (dma_ack)
 					copper_next = WAITSKIP1;
 				else
-					copper_next = FETCH2;				
+					copper_next = FETCH2;
 			end
 		end
 

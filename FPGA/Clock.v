@@ -55,9 +55,9 @@ module clock_generator
 	wire	dll_c28m;
 	wire	dll_c7m;
 	wire	pll_cpuclk;
-   
-	IBUFG mclk_buf ( .I(mclk), .O(pll_mclk) );	
-	
+
+	IBUFG mclk_buf ( .I(mclk), .O(pll_mclk) );
+
 	DCM #
 	(
 		.CLKDV_DIVIDE(2.0), // Divide by: 1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5,6.0,6.5,7.0,7.5,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0 or 16.0
@@ -105,7 +105,7 @@ module clock_generator
 		.CLKDV(dll_c7m),	// Divided DCM CLK out (CLKDV_DIVIDE)
 		.CLKFB(clk28m)		// DCM clock feedback
 	);
-	
+
 	//global clock buffers
 	BUFG clk28m_buf ( .I(dll_c28m), .O(clk28m) );
 	BUFG clk_buf ( .I(dll_c7m), .O(clk) );
@@ -132,8 +132,8 @@ module clock_generator
 		.CLKFX(pll_cpuclk),   // DCM CLK synthesis out (M/D)
 		.CLKIN(dll_c7m)   // Clock input (from IBUFG, BUFG or DCM)
 	);
-	
-	BUFGMUX cpu_clk_buf 
+
+	BUFGMUX cpu_clk_buf
 	(
 		.O(cpu_clk),	// Clock MUX output
 		.I0({~clk}),		// Clock0 input
@@ -152,7 +152,7 @@ always @(posedge clk)
 
 // CCK clock output
 assign cck = (!e_cnt[0]);
-		
+
 assign eclk[0] = (~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]); // e_cnt == 0
 assign eclk[1] = (~e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 1
 assign eclk[2] = (~e_cnt[3] & ~e_cnt[2] &  e_cnt[1] & ~e_cnt[0]); // e_cnt == 2
@@ -163,7 +163,7 @@ assign eclk[6] = (~e_cnt[3] &  e_cnt[2] &  e_cnt[1] & ~e_cnt[0]); // e_cnt == 6
 assign eclk[7] = (~e_cnt[3] &  e_cnt[2] &  e_cnt[1] &  e_cnt[0]); // e_cnt == 7
 assign eclk[8] = ( e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] & ~e_cnt[0]); // e_cnt == 8
 assign eclk[9] = ( e_cnt[3] & ~e_cnt[2] & ~e_cnt[1] &  e_cnt[0]); // e_cnt == 9
-		
+
 always @(posedge clk28m)
 	c3 <= (clk);
 

@@ -230,7 +230,7 @@ always @(posedge sck or negedge scs)
 		spi_bit_cnt <= 0; //reset if chip select is not active
 	else
 		spi_bit_cnt <= spi_bit_cnt + 1;
-		
+
 assign spi_bit_15 = spi_bit_cnt==15 ? 1 : 0;
 assign spi_bit_0 = spi_bit_cnt==0 ? 1 : 0;
 
@@ -474,7 +474,7 @@ assign  _track0 = &(_selx | _dsktrack0);
 
 //track control
 assign track = {dsktrack[sel],~side};
-	
+
 always @(posedge clk)
 	if (!_selx && _step && !_step_del && step_ena) // track increment (direc=0) or decrement (direc=1) at rising edge of _step
 		if (!dsktrack79 && !direc)
@@ -705,7 +705,7 @@ endmodule
 module fifo
 (
 	input 	clk,		    	// bus clock
-	input 	reset,			   	// reset 
+	input 	reset,			   	// reset
 	input	[15:0] in,			// data in
 	output	reg [15:0] out,		// data out
 	input	rd,					// read from fifo

@@ -134,7 +134,7 @@ always @(posedge clk)
 		dmal <= (dmareq);
 		dmas <= (dmaspc);
 	end
-		
+
 //--------------------------------------------------------------------------------------
 
 //instantiate audio channel 0
@@ -214,7 +214,7 @@ audiochannel ach3
 );
 
 //instantiate volume control and sigma/delta modulator
-sigmadelta dac0 
+sigmadelta dac0
 (
 	.clk({clk28m}),
 	.sample0(sample0),
@@ -253,46 +253,40 @@ reg [4:0] pwmcounter;
 reg [4:0] pwmthreshold;
 reg [33:0] scaledin;
 reg [15:0] sigma;
-reg [24:0] lfsr_reg=1234;
+reg [24:0] lfsr_reg = 1234;
 reg out;
 
-assign dout=out;
+assign dout = out;
 
 always @(posedge clk, negedge n_reset) // FIXME reset logic;
-begin
-	if(!n_reset)
 	begin
-		sigma<=16'b00000100_00000000;
-		pwmthreshold<=5'b10000;
-	end
-	else
-	begin
-		pwmcounter<=pwmcounter+1;
-
-		if(pwmcounter==pwmthreshold)
-			out<=1'b0;
-
-		if(pwmcounter==5'b11111) // Update threshold when pwmcounter reaches zero
+		if (!n_reset)
 		begin
-			// Pick a new PWM threshold using a Sigma Delta
-//			scaledin<={1'b0,din}*64511; // 63<<(16-6)-1;
-			scaledin<=33'd134217728 // (1<<(16-5))<<16, offset to keep centre aligned.
-				+({1'b0,din}*61440); // 30<<(16-5)-1;
-			sigma<=scaledin[31:16]+{5'b000000,sigma[10:0]};	// Will use previous iteration's scaledin value
-			pwmthreshold<=sigma[15:11]; // Will lag 2 cycles behind, but shouldn't matter.
-			out<=1'b1;
+			sigma <= 16'b00000100_00000000;
+			pwmthreshold <= 5'b10000;
 		end
-
-		if(dump)
+		else
 		begin
-			sigma[10:0]<=10'b10_0000_0000; // Clear the accumulator to avoid standing tones.
-//			sigma[10:0]<={(lfsr_reg[8] ? 4'b10_0 : 4'b011),lfsr_reg[7:0]}; // fill the accumulator with a random value to avoid standing tones.
+			pwmcounter <= pwmcounter + 1;
 
-			// x^25 + x^22 + 1
-//			lfsr_reg<={lfsr_reg[23:0],lfsr_reg[24] ^ lfsr_reg[21]};
+			if (pwmcounter==pwmthreshold)
+				out <= 1'b0;
+
+			if (pwmcounter==5'b11111) // Update threshold when pwmcounter reaches zero
+			begin
+				// Pick a new PWM threshold using a Sigma Delta
+				scaledin <= 33'd134217728 + ({1'b0,din} * 61440); // 30<<(16-5)-1;
+				sigma <= scaledin[31:16] + {5'b000000,sigma[10:0]};	// Will use previous iteration's scaledin value
+				pwmthreshold <= sigma[15:11]; // Will lag 2 cycles behind, but shouldn't matter.
+				out <= 1'b1;
+			end
+
+			if (dump)
+			begin
+				sigma[10:0] <= 10'b10_0000_0000; // Clear the accumulator to avoid standing tones.
+			end
 		end
 	end
-end
 
 endmodule
 
@@ -396,15 +390,13 @@ reg dump;
 reg dump_d;
 
 always @(posedge clk)
-begin
-	if(dump_d==1'b0 && strhor==1'b1)
-		dump<=1'b1;
-	else
-		dump<=1'b0;
-	dump_d<=strhor;
-//	dumpcounter<=dumpcounter+1;
-//	dump<=dumpcounter==0 ? 1'b1 : 1'b0;
-end
+	begin
+		if(dump_d==1'b0 && strhor==1'b1)
+			dump <= 1'b1;
+		else
+			dump <= 1'b0;
+		dump_d <= strhor;
+	end
 
 hybrid_pwm_sd leftdac
 (
@@ -453,7 +445,7 @@ module svmul
 	output	[13:0] out			//signed product out
 );
 
-wire	[13:0] sesample;   		//sign extended sample
+wire	[13:0] sesample;			//sign extended sample
 wire	[13:0] sevolume;			//sign extended volume
 
 //sign extend input parameters
@@ -574,7 +566,7 @@ always @(posedge clk)
 		AUDxDAT <= 1;
 	else if (cck)
 		AUDxDAT <= 0;
-	
+
 //--------------------------------------------------------------------------------------
 
 assign	AUDxON = (dmaena);	//dma enable
@@ -585,44 +577,43 @@ assign intreq = (AUDxIR);		//audio interrupt request
 
 //--------------------------------------------------------------------------------------
 
-//period counter 
+//period counter
 always @(posedge clk)
-	if (percntrld && cck)//load period counter from audio period register
+	if (percntrld && cck) //load period counter from audio period register
 		percnt[15:0] <= (audper[15:0]);
-	else if (percount && cck)//period counter count down
+	else if (percount && cck) //period counter count down
 		percnt[15:0] <= (percnt[15:0] - 1);
 
-assign perfin = (percnt[15:0]==1 && cck) ? 1 : 0;
+assign perfin = (percnt[15:0] == 1 && cck) ? 1 : 0;
 
 //length counter
 always @(posedge clk)
 	begin
-		if (lencntrld && cck)//load length counter from audio length register
+		if (lencntrld && cck) //load length counter from audio length register
 		begin
 			lencnt[15:0] <= (audlen[15:0]);
-			silence<=1'b0;
-			if(audlen==1 || audlen==0)
-				silence<=1'b1;
+			silence <= 1'b0;
+			if (audlen==1 || audlen==0)
+				silence <= 1'b1;
 		end
-		else if (lencount && cck)//length counter count down
+		else if (lencount && cck) //length counter count down
 			lencnt[15:0] <= (lencnt[15:0] - 1);
 
 		// Silence fix
-		dmaena_d<=dmaena;
+		dmaena_d <= dmaena;
 		if(dmaena_d==1'b1 && dmaena==1'b0)
 		begin
-			silence_d<=1'b1; // Prevent next write from unsilencing the channel.
-			silence<=1'b1;
+			silence_d <= 1'b1; // Prevent next write from unsilencing the channel.
+			silence <= 1'b1;
 		end
-		if(AUDxDAT && cck)	// Unsilence the channel if the CPU writes to AUDxDAT
-			if(silence_d)
-				silence_d<=1'b0;
+		if (AUDxDAT && cck)	// Unsilence the channel if the CPU writes to AUDxDAT
+			if (silence_d)
+				silence_d <= 1'b0;
 			else
-				silence<=1'b0;
-			
+				silence <= 1'b0;
 	end
 
-assign lenfin = (lencnt[15:0]==1 && cck) ? 1 : 0;
+assign lenfin = (lencnt[15:0] == 1 && cck) ? 1 : 0;
 
 //--------------------------------------------------------------------------------------
 
@@ -643,23 +634,23 @@ assign volume[6:0] = (audvol[6:0]);
 
 //dma request logic
 always @(posedge clk)
-begin
-	if (reset)
 	begin
-		dmareq <= 0;
-		dmas <= 0;
+		if (reset)
+		begin
+			dmareq <= 0;
+			dmas <= 0;
+		end
+		else if (AUDxDR && cck)
+		begin
+			dmareq <= 1;
+			dmas <= (dmasen | lenfin);
+		end
+		else if (strhor) //dma request are cleared when transfered to Agnus
+		begin
+			dmareq <= 0;
+			dmas <= 0;
+		end
 	end
-	else if (AUDxDR && cck)
-	begin
-		dmareq <= 1;
-		dmas <= (dmasen | lenfin);
-	end
-	else if (strhor) //dma request are cleared when transfered to Agnus
-	begin
-		dmareq <= 0;
-		dmas <= 0;
-	end
-end
 
 //buffered interrupt request
 always @(posedge clk)
@@ -678,12 +669,12 @@ parameter AUDIO_STATE_4 = 3'b110;
 
 //audio channel state machine
 always @(posedge clk)
-begin
-	if (reset)
-		audio_state <= (AUDIO_STATE_0);
-	else if (cck)
-		audio_state <= (audio_next);
-end
+	begin
+		if (reset)
+			audio_state <= (AUDIO_STATE_0);
+		else if (cck)
+			audio_state <= (audio_next);
+	end
 
 //transition function
 always @(audio_state or AUDxON or AUDxDAT or AUDxIP or lenfin or perfin or intreq2)
@@ -698,7 +689,7 @@ begin
 			penhi = 0;
 			percount = 0;
 			percntrld = 1;
-						
+
 			if (AUDxON) //start of DMA driven audio playback
 			begin
 				audio_next = AUDIO_STATE_1;
@@ -707,12 +698,12 @@ begin
 				dmasen = 1;
 				lencntrld = 1;
 				pbufld1 = 0;
-				volcntrld = 0;	
+				volcntrld = 0;
 			end
 			else if (AUDxDAT && !AUDxON && !AUDxIP)	//CPU driven audio playback
 			begin
 				audio_next = AUDIO_STATE_3;
-				AUDxDR = 0;				
+				AUDxDR = 0;
 				AUDxIR = 1;
 				dmasen = 0;
 				lencntrld = 0;
@@ -722,12 +713,12 @@ begin
 			else
 			begin
 				audio_next = AUDIO_STATE_0;
-				AUDxDR = 0;				
+				AUDxDR = 0;
 				AUDxIR = 0;
 				dmasen = 0;
 				lencntrld = 0;
 				pbufld1 = 0;
-				volcntrld = 0;	
+				volcntrld = 0;
 			end
 		end
 
@@ -747,7 +738,7 @@ begin
 				AUDxIR = 1;
 				lencount = ~lenfin;
 				pbufld1 = 0;	//first data received, discard it since first data access is used to reload pointer		
-				percntrld = 0; 				
+				percntrld = 0; 
 				volcntrld = 0;
 			end
 			else if (!AUDxON) //audio DMA has been switched off so go to IDLE state
@@ -757,7 +748,7 @@ begin
 				AUDxIR = 0;
 				lencount = 0;
 				pbufld1 = 0;
-				percntrld = 0; 
+				percntrld = 0;
 				volcntrld = 0;
 			end
 			else
@@ -766,7 +757,7 @@ begin
 				AUDxDR = 0;
 				AUDxIR = 0;
 				lencount = 0;
-				pbufld1 = 0;				
+				pbufld1 = 0;
 				percntrld = 0;
 				volcntrld = 0;
 			end
@@ -787,8 +778,8 @@ begin
 				AUDxDR = 1;
 				AUDxIR = 0;
 				lencount = ~lenfin;
-				pbufld1 = 1;	//new data has been just received so put it in the output buffer		
-				percntrld = 1; 				
+				pbufld1 = 1;	//new data has been just received so put it in the output buffer
+				percntrld = 1;
 				volcntrld = 1;
 			end
 			else if (!AUDxON) //audio DMA has been switched off so go to IDLE state
@@ -798,7 +789,7 @@ begin
 				AUDxIR = 0;
 				lencount = 0;
 				pbufld1 = 0;
-				percntrld = 0; 
+				percntrld = 0;
 				volcntrld = 0;
 			end
 			else
@@ -807,7 +798,7 @@ begin
 				AUDxDR = 0;
 				AUDxIR = 0;
 				lencount = 0;
-				pbufld1 = 0;				
+				pbufld1 = 0;
 				percntrld = 0;
 				volcntrld = 0;
 			end
@@ -895,9 +886,9 @@ begin
 			penhi = 0;
 			percount = 0;
 			percntrld = 0;
-			volcntrld = 0;	
-		end		
-		
+			volcntrld = 0;
+		end
+
 	endcase
 end
 

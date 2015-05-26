@@ -66,7 +66,7 @@
 // SB:
 // 2014-04-12	- implemented sprite collision detection fix, developed by Yaqube. thanks a lot!
 //		- games Archon1, Rotor and Spaceport finally works normal
-
+// 2014-12-24	- finally fixed sprite enable/disable signal, no trashed pointer sprite at VDIWSTOP in More Lemmings
 
 module Denise
 (
@@ -151,7 +151,7 @@ always @(posedge clk)
 
 // sprite display enable signal - sprites are visible after the first write to the BPL1DAT register in a scanline
 always @(posedge clk)
-	if (reset || hpos[8:0]==8)
+	if (reset || blank)
 		display_ena <= 0;
 	else if (reg_address_in[8:1]==BPL1DAT[8:1])
 		display_ena <= 1;

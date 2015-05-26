@@ -102,7 +102,7 @@ module userio
 	output	bootrst					// user reset to bootloader
 );
 
-// local signals	
+// local signals
 reg		[5:0] _sjoy1;				// synchronized joystick 1 signals
 reg		[5:0] _xjoy2;				// synchronized joystick 2 signals
 wire	[5:0] _sjoy2;				// synchronized joystick 2 signals
