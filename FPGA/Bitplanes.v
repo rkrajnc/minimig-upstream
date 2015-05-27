@@ -49,7 +49,7 @@ module bitplanes
 	output 	[6:1] bpldata			// bitplane data out
 );
 //register names and adresses
-parameter BPLCON1 = 9'h102;  		
+parameter BPLCON1 = 9'h102;
 parameter BPL1DAT = 9'h110;
 parameter BPL2DAT = 9'h112;
 parameter BPL3DAT = 9'h114;
@@ -94,7 +94,7 @@ always @(posedge clk)
 
 always @(posedge clk)
 	pf1h_del <= pf1h;
-		
+
 //playfield 2 effective horizontal scroll
 always @(posedge clk)
 	if (load)
@@ -102,7 +102,7 @@ always @(posedge clk)
 
 always @(posedge clk)
 	pf2h_del <= pf2h;
-	
+
 //writing bplcon1 register : horizontal scroll codes for even and odd bitplanes
 always @(posedge clk)
 	if (reg_address_in[8:1]==BPLCON1[8:1])
@@ -114,7 +114,7 @@ always @(posedge clk)
 always @(posedge clk)
 	if (reg_address_in[8:1]==BPL1DAT[8:1])
 		bpl1dat <= data_in[15:0];
-		
+
 //bitplane buffer register for plane 2
 always @(posedge clk)
 	if (reg_address_in[8:1]==BPL2DAT[8:1])
@@ -157,12 +157,12 @@ bitplane_shifter bplshft1
 	.shres(shres),
 	.data_in(bpl1dat),
 	.scroll(pf1h_del),
-	.out(bpldata[1])	
+	.out(bpldata[1])
 );
 
 //instantiate bitplane 2 to 6 parallel to serial converters, (loaded from buffer registers)
-bitplane_shifter bplshft2 
-(	
+bitplane_shifter bplshft2
+(
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
@@ -171,11 +171,11 @@ bitplane_shifter bplshft2
 	.shres(shres),
 	.data_in(bpl2dat),
 	.scroll(pf2h_del),
-	.out(bpldata[2])	
+	.out(bpldata[2])
 );
 
-bitplane_shifter bplshft3 
-(	
+bitplane_shifter bplshft3
+(
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
@@ -184,11 +184,11 @@ bitplane_shifter bplshft3
 	.shres(shres),
 	.data_in(bpl3dat),
 	.scroll(pf1h_del),
-	.out(bpldata[3])	
+	.out(bpldata[3])
 );
 
-bitplane_shifter bplshft4 
-(	
+bitplane_shifter bplshft4
+(
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
@@ -197,11 +197,11 @@ bitplane_shifter bplshft4
 	.shres(shres),
 	.data_in(bpl4dat),
 	.scroll(pf2h_del),
-	.out(bpldata[4])	
+	.out(bpldata[4])
 );
 
-bitplane_shifter bplshft5 
-(	
+bitplane_shifter bplshft5
+(
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
@@ -210,11 +210,11 @@ bitplane_shifter bplshft5
 	.shres(shres),
 	.data_in(bpl5dat),
 	.scroll(pf1h_del),
-	.out(bpldata[5])	
+	.out(bpldata[5])
 );
 
-bitplane_shifter bplshft6 
-(	
+bitplane_shifter bplshft6
+(
 	.clk28m(clk28m),
 	.c1(c1),
 	.c3(c3),
@@ -223,7 +223,7 @@ bitplane_shifter bplshft6
 	.shres(shres),
 	.data_in(bpl6dat),
 	.scroll(pf2h_del),
-	.out(bpldata[6])	
+	.out(bpldata[6])
 );
 
 //--------------------------------------------------------------------------------------
@@ -268,7 +268,7 @@ begin
 		if (bpldata[6] || bpldata[4] || bpldata[2]) //detect data valid for playfield 2
 			nplayfield[2] = 1;
 		else
-			nplayfield[2] = 0;	
+			nplayfield[2] = 0;
 	end
 	else //single playfield is always playfield 2
 	begin
@@ -276,7 +276,7 @@ begin
 		if (bpldata[6:1]!=6'b000000)
 			nplayfield[2] = 1;
 		else
-			nplayfield[2] = 0;	
+			nplayfield[2] = 0;
 	end
 end
 
@@ -363,7 +363,7 @@ assign scroller_out = scroller[select[3:0]];//select odd pixel
 //delay by one low resolution pixel
 always @(posedge clk28m)
 	delay[3:0] <= {delay[2:0], scroller_out};
-	
+
 // select output pixel
 assign out = delay[3];
 
@@ -386,6 +386,6 @@ always @(hires or shres or scroll or c1 or c3)
 		shift = ~c1 & ~c3; // shifter enabled once every 4 clock cycles
 		select[3:0] = scroll[3:0]; // scroll in 1 pixel steps
 	end
-			
+
 endmodule
 

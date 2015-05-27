@@ -256,7 +256,7 @@ begin
 	end
 	else // all sprites transparant
 	begin
-		sprdata[3:0] = 4'b0000;	
+		sprdata[3:0] = 4'b0000;
 	end
 end
 

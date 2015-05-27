@@ -174,7 +174,7 @@ always @(posedge clk)
 		sector_count <= sector_count - 1;
 
 assign sector_count_dec = pio_in & fifo_last & sel_fifo & rd;
-		
+
 // task file register control
 assign tfr_we = busy ? hdd_wr : sel_tfr & hwr;
 assign tfr_sel = busy ? hdd_addr : address_in[4:2];
@@ -187,7 +187,7 @@ assign hdd_data_in = tfr_sel==0 ? fifo_data_out : {8'h00,tfr_out};
 always @(posedge clk)
 	if (tfr_we)
 		tfr[tfr_sel] <= tfr_in;
-		
+
 assign tfr_out = tfr[tfr_sel];
 
 // master/slave drive select
@@ -196,14 +196,14 @@ always @(posedge clk)
 		dev <= 0;
 	else if (sel_tfr && address_in[4:2]==6 && hwr)
 		dev <= data_in[12];
-		
+
 // IDE interrupt enable register
 always @(posedge clk)
 	if (reset)
 		intena <= GND;
 	else if (sel_intena && hwr)
 		intena <= data_in[15];
-			
+
 // gayle id register: reads 1->1->0->1 on MSB
 always @(posedge clk)
 	if (sel_gayleid)
@@ -251,7 +251,7 @@ always @(posedge clk)
 	else if (drdy) // reset when processing of the current command ends
 		pio_in <= GND;
 	else if (busy && hdd_status_wr && hdd_data_out[3])	// set by SPI host 
-		pio_in <= VCC;		
+		pio_in <= VCC;
 
 // pio out command type
 always @(posedge clk)
@@ -260,8 +260,8 @@ always @(posedge clk)
 	else if (busy && hdd_status_wr && hdd_data_out[7]) 	// reset by SPI host when command processing completes
 		pio_out <= GND;
 	else if (busy && hdd_status_wr && hdd_data_out[2])	// set by SPI host
-		pio_out <= VCC;	
-		
+		pio_out <= VCC;
+
 assign drq = (fifo_full & pio_in) | (~fifo_full & pio_out); // HDD data request status bit
 
 // error status
@@ -271,8 +271,8 @@ always @(posedge clk)
 	else if (sel_command) // reset by the CPU when command register is written
 		error <= GND;
 	else if (busy && hdd_status_wr && hdd_data_out[0]) // set by SPI host
-		error <= VCC;	
-		
+		error <= VCC;
+
 assign hdd_cmd_req = bsy; // bsy is set when command register is written, tells the SPI host about new command
 assign hdd_dat_req = (fifo_full & pio_out); // the FIFO is full so SPI host may read it
 
@@ -365,10 +365,9 @@ assign empty = empty_rd | empty_wr;
 
 // at least 512 bytes are in FIFO 
 // this signal is activated when 512th byte is written to the empty fifo
-// then it's deactivated when 512th byte is read from the fifo (hysteresis)		
-assign full = inptr[12:8]!=outptr[12:8] ? 1'b1 : 1'b0;	
+// then it's deactivated when 512th byte is read from the fifo (hysteresis)
+assign full = inptr[12:8]!=outptr[12:8] ? 1'b1 : 1'b0;
 
-assign last = outptr[7:0] == 8'hFF ? 1'b1 : 1'b0;	
+assign last = outptr[7:0] == 8'hFF ? 1'b1 : 1'b0;
 
 endmodule
-

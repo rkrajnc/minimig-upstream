@@ -39,8 +39,9 @@
 // 2009-05-24	- clean-up & renaming
 // 2009-08-31	- scanlines synthesis option
 // 2010-05-30	- htotal changed
-
-//`define SCANLINES
+//
+// SB:
+// 2014-05-05  - changed OSD background to no dimmed scanlines at 31KHz
 
 module Amber
 (
@@ -112,9 +113,9 @@ always @(posedge clk28m)
 		end
 
 //horizontal interpolation
-assign red	= hfilter ? red_in + red_del : red_in*2;
-assign green = hfilter ? green_in + green_del : green_in*2;
-assign blue	= hfilter ? blue_in + blue_del : blue_in*2;
+assign red	= hfilter ? red_in + red_del : red_in * 2;
+assign green = hfilter ? green_in + green_del : green_in * 2;
+assign blue	= hfilter ? blue_in + blue_del : blue_in * 2;
 
 // line buffer write pointer
 always @(posedge clk28m)
@@ -138,10 +139,6 @@ always @(posedge clk28m)
 		scanline_ena <= 0;
 	else if (eol)
 		scanline_ena <= 1;
-
-reg	do_scanline;
-always @(posedge clk28m)
-	do_scanline <= scanline[0] & scanline_ena;
 		
 //horizontal interpolation enable
 always @(posedge clk28m)
@@ -186,7 +183,7 @@ begin
 		_vsync_out <= dblscan ? _vsync_in : 1'b1;
 
 		if (~dblscan)
-		begin  //pass through
+		begin  // 15KHz pass through
 			if (osd_blank) //osd window
 			begin
 				if (osd_pixel)	//osd text colour
@@ -209,7 +206,7 @@ begin
 					t_blue   <= blue_in;
 			end
 		end
-		else
+		else // 31KHz double scan
 		begin
 			if (lbfo2[16]) //osd window
 			begin
@@ -220,41 +217,23 @@ begin
 					t_blue   <= 4'b1110;
 				end
 				else	//osd background
-					if (vfilter)
-					begin //dimmed transparent background with vertical interpolation
-						if (do_scanline)
-						begin
-							t_red    <= (4'b0000 + ( lbfo2[14:10] + lbfdo[14:10] ) / 8) / 2;
-							t_green  <= (4'b0000 + ( lbfo2[9:5] + lbfdo[9:5] ) / 8) / 2;
-							t_blue   <= (4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8) / 2;
-						end
-						else
-						begin
-							t_red    <= 4'b0000 + ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
-							t_green  <= 4'b0000 + ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
-							t_blue   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8;
-						end
+				if (vfilter)
+					begin
+						t_red    <= 4'b0000 + ( lbfo2[14:10] + lbfdo[14:10] ) / 8;
+						t_green  <= 4'b0000 + ( lbfo2[9:5] + lbfdo[9:5] ) / 8;
+						t_blue   <= 4'b0100 + ( lbfo2[4:0] + lbfdo[4:0] ) / 8;
 					end
-					else
-					begin //dimmed transparent background without vertical interpolation
-						if (do_scanline)
-						begin
-							t_red    <= (4'b0000 + lbfo2[14:11] / 2) / 2;
-							t_green  <= (4'b0000 + lbfo2[9:6] / 2) / 2;
-							t_blue   <= (4'b0100 + lbfo2[4:1] / 2) / 2;
-						end
-						else
-						begin
-							t_red    <= 4'b0000 + lbfo2[14:11] / 2;
-							t_green  <= 4'b0000 + lbfo2[9:6] / 2;
-							t_blue   <= 4'b0100 + lbfo2[4:1] / 2;
-						end
+				else //dimmed transparent background without vertical interpolation
+					begin
+						t_red    <= 4'b0000 + lbfo2[14:11] / 2;
+						t_green  <= 4'b0000 + lbfo2[9:6] / 2;
+						t_blue   <= 4'b0100 + lbfo2[4:1] / 2;
 					end
 			end
 			else	//no osd
 				if (vfilter)
 				begin //vertical interpolation
-					if (do_scanline)
+					if (scanline[0] & scanline_ena)
 					begin
 						t_red    <= (( lbfo2[14:10] + lbfdo[14:10] ) / 4) / 2;
 						t_green  <= (( lbfo2[9:5] + lbfdo[9:5] ) / 4) / 2;
@@ -269,7 +248,7 @@ begin
 				end
 				else
 				begin //no vertical interpolation
-					if (do_scanline)
+					if (scanline[0] & scanline_ena)
 					begin
 						t_red    <= lbfo2[14:11] / 2;
 						t_green  <= lbfo2[9:6] / 2;
@@ -288,19 +267,4 @@ end
 always @(posedge clk28m)
 		{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
 
-//scanlines effect
-/*
-`ifdef SCANLINES 
-always @(posedge clk28m)
-	if (dblscan && scanline_ena && scanline[1])
-		{red_out,green_out,blue_out} <= 12'h000;
-	else if (dblscan && scanline_ena && scanline[0])
-		{red_out,green_out,blue_out} <= {1'b0,t_red[3:1],1'b0,t_green[3:1],1'b0,t_blue[3:1]};
-	else
-		{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
-`else
-always @(t_red or t_green or t_blue)
-	{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
-`endif
-*/
 endmodule

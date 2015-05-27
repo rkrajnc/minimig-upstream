@@ -124,9 +124,9 @@ module Paula
 //--------------------------------------------------------------------------------------
 
 //register names and addresses
-parameter DMACON  = 9'h096;	
+parameter DMACON  = 9'h096;
 parameter ADKCON  = 9'h09e;
-parameter ADKCONR = 9'h010;	
+parameter ADKCONR = 9'h010;
 
 //local signals
 reg		[4:0] dmacon;			//dmacon paula bits 
@@ -166,7 +166,7 @@ always @(posedge clk)
 		if (data_in[15])
 			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} | {data_in[9],data_in[4:0]};
 		else
-			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} & (~{data_in[9],data_in[4:0]});	
+			{dmaen,dmacon[4:0]} <= {dmaen,dmacon[4:0]} & (~{data_in[9],data_in[4:0]});
 	end
 
 //assign disk and audio dma enable bits
@@ -358,7 +358,7 @@ always @(posedge clk)
 		if (data_in[15])
 			intena[14:0] <= intena[14:0] | data_in[14:0];
 		else
-			intena[14:0] <= intena[14:0] & (~data_in[14:0]);	
+			intena[14:0] <= intena[14:0] & (~data_in[14:0]);
 	end
 
 //intenar register
@@ -395,7 +395,7 @@ always @(posedge clk)
 begin
 	if (reset)//synchronous reset
 		intreq <= 0;
-	else 
+	else
 	begin
 		//transmit buffer empty interrupt
 		intreq[0] <= tmp[0] | txint;
@@ -515,7 +515,7 @@ reg		[9:0] rxdat;			//received data buffer
 reg		[1:0] rxstate;			//receiver state
 reg		[1:0] rxnextstate;		//next receiver state
 wire	rxbaud;					//receiver baud clock
-reg		rxpreset;				//preset receiver baud clock	
+reg		rxpreset;				//preset receiver baud clock
 reg		lrxd1;					//latched rxd signal
 reg		lrxd2;					//latched rxd signal
 reg		ninebit;						// Expect to receive a 9-bit value
@@ -540,7 +540,7 @@ assign txbaud = (txdiv==0) ? 1 : 0;
 //txd shifter
 always @(posedge clk)
 	if (reset)
-		txshift[11:0] <= 12'b0000_0000_0001;	
+		txshift[11:0] <= 12'b0000_0000_0001;
 	else if (txload && txbaud)
 		txshift[11:0] <= {serdat[10:0],1'b0};
 	else if (!tsre && txbaud)

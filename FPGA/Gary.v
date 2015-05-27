@@ -109,7 +109,7 @@ assign ram_lwr = (dbr) ?  dbwe : cpu_lwr;
 
 //--------------------------------------------------------------------------------------
 
-// ram address multiplexer (512KB bank)		
+// ram address multiplexer (512KB bank)
 assign ram_address_out = (dbr) ? dma_address_in[18:1] : cpu_address_in[18:1];
 
 //--------------------------------------------------------------------------------------
@@ -123,7 +123,7 @@ begin
 		sel_chip[1] = (~dma_address_in[20] &  dma_address_in[19]);
 		sel_chip[2] = ( dma_address_in[20] & ~dma_address_in[19]);
 		sel_chip[3] = ( dma_address_in[20] &  dma_address_in[19]);
-		sel_slow[0] = ( ecs && memory_config==4'b0100 && dma_address_in[20:19]==2'b01) ? 1'b1 : 1'b0; 
+		sel_slow[0] = ( ecs && memory_config==4'b0100 && dma_address_in[20:19]==2'b01) ? 1'b1 : 1'b0;
 		sel_slow[1] = (1'b0);
 		sel_slow[2] = (1'b0);
 		sel_kick    = (1'b0);
@@ -152,14 +152,17 @@ assign sel_xram = ((t_sel_slow[0] & (memory_config[2] | memory_config[3]))
 				| (t_sel_slow[1] & memory_config[3])
 				| (t_sel_slow[2] & memory_config[2] & memory_config[3]));
 
+//IDE registers at $DA0000 - $DAFFFF
+assign sel_ide = (hdc_ena && cpu_address_in[23:16]==8'b1101_1010) ? 1'b1 : 1'b0;
 
-assign sel_ide = (hdc_ena && cpu_address_in[23:16]==8'b1101_1010) ? 1'b1 : 1'b0;		//IDE registers at $DA0000 - $DAFFFF
+//GAYLE registers at $DE1000 - $DE1FFF
+assign sel_gayle = (hdc_ena && cpu_address_in[23:12]==12'b1101_1110_0001) ? 1'b1 : 1'b0;
 
-assign sel_gayle = (hdc_ena && cpu_address_in[23:12]==12'b1101_1110_0001) ? 1'b1 : 1'b0;		//GAYLE registers at $DE1000 - $DE1FFF
+//RTC registers at $DC0000 - $DCFFFF
+assign sel_rtc = (cpu_address_in[23:16]==8'b1101_1100) ? 1'b1 : 1'b0;
 
-assign sel_rtc = (cpu_address_in[23:16]==8'b1101_1100) ? 1'b1 : 1'b0;		//RTC registers at $DC0000 - $DCFFFF
-
-assign sel_reg = (cpu_address_in[23:21]==3'b110) ? (~(sel_xram | sel_rtc | sel_ide | sel_gayle)) : 1'b0;		//chip registers at $DF0000 - $DFFFFF
+//chip registers at $DF0000 - $DFFFFF
+assign sel_reg = (cpu_address_in[23:21]==3'b110) ? (~(sel_xram | sel_rtc | sel_ide | sel_gayle)) : 1'b0;
 
 assign sel_cia = cpu_address_in[23:16]==8'b1011_1111 ? 1'b1 : 1'b0;
 

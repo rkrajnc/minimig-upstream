@@ -63,7 +63,7 @@ reg		pal;			// pal mode switch
 reg		long_line;		// long line signal for NTSC compatibility (actually long lines are not supported yet)
 reg		vser;			// vertical sync serration pulses for composite sync
 
-//register names and adresses		
+//register names and adresses
 parameter	VPOSR    = 9'h004;
 parameter	VPOSW    = 9'h02A;
 parameter	VHPOSR   = 9'h006;
@@ -128,9 +128,9 @@ always @(reg_address_in or long_frame or long_line or vpos or hpos or ntsc or ec
 always @(posedge clk)
 	if (reset)
 		ersy <= 1'b0;
-	else if (reg_address_in[8:1] == BPLCON0[8:1])
+	else if (reg_address_in[8:1]==BPLCON0[8:1])
 		ersy <= data_in[1];
-		
+
 //BPLCON0 register
 always @(posedge clk)
 	if (reset)
@@ -166,7 +166,7 @@ always @(posedge clk)
 		hpos[8:1] <= 0;
 	else if (cck && (~ersy || |hpos[8:1]))
 		hpos[8:1] <= hpos[8:1] + 1;
-		
+
 always @(cck)
 	hpos[0] = cck;
 
@@ -179,7 +179,7 @@ always @(posedge clk)
 			long_line <= ~long_line;
 
 //--------------------------------------------------------------------------------------//
-//                                                                                      //
+//                                                                        	              //
 //   VERTICAL BEAM COUNTER                                                              //
 //                                                                                      //
 //--------------------------------------------------------------------------------------//
@@ -219,7 +219,7 @@ always @(posedge clk)
 //maximum position of vertical beam position
 assign vpos_equ_vtotal = vpos==vtotal ? 1'b1 : 1'b0;
 
-//extra line in interlaced mode	
+//extra line in interlaced mode
 always @(posedge clk)
 	if (vpos_inc)
 		if (long_frame && vpos_equ_vtotal)
@@ -258,7 +258,7 @@ always @(posedge clk)
 	if ((vpos==vsstrt && hpos==hsstrt && !long_frame) || (vpos==vsstrt && hpos==hcenter && long_frame))
 		_vsync <= 1'b0;
 	else if ((vpos==vsstop && hpos==hcenter && !long_frame) || (vpos==vsstop+1 && hpos==hsstrt && long_frame))
-		_vsync <= 1'b1;		
+		_vsync <= 1'b1;
 
 //apparently generating csync from vsync alligned with leading edge of hsync results in malfunction of the AD724 CVBS/S-Video encoder (no colour in interlaced mode)
 //to overcome this limitation semi (only present before horizontal sync pulses) vertical sync serration pulses are inserted into csync
@@ -267,7 +267,7 @@ always @(posedge clk)//sync
 		vser <= 1'b1;
 	else if (hpos==hsstrt)//end of sync pulse	(sync pulse = 4.65us)
 		vser <= 1'b0;
-		
+
 //composite sync
 assign _csync = _hsync & _vsync | vser; //composite sync with serration pulses
 
@@ -283,7 +283,7 @@ assign vbl = vpos <= vbstop ? 1'b1 : 1'b0;
 //vertical blanking end (last line)
 assign vblend = vpos==vbstop ? 1'b1 : 1'b0;
 
-//composite display blanking		
+//composite display blanking
 always @(posedge clk)
 	if (hpos==hbstrt)//start of blanking (active line=51.88us)
 		blank <= 1'b1;
