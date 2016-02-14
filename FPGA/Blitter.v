@@ -75,6 +75,10 @@
 //				- there is still incopatibility when C channel is selected without D: extra idle cycle is inserted 
 // 2009-12-15	- fixed channel B data flow
 // 2009-12-19	- ECS extensions available only with ECS chipset selected
+// ----------
+// RK:
+// 2016-02-11	- Blitter line mode fix (first line pixel is written to D pointer address, all the rest to C pointer address)
+
 
 module blitter
 (
@@ -181,6 +185,7 @@ wire	sign_out;				// new accumulator sign calculated by address generator (line 
 reg		sign;					// current sign of accumulator (line mode)
 reg		sign_del;
 reg		first_pixel;			// first pixel in a horizontal segment (used in one-dot line mode)
+reg   first_line_pixel; // first pixel of line (use D pointer)
 
 reg		start;					// busy delayed by one blitter cycle (for cycle exact compatibility)
 wire	init;					// blitter initialization cycle
@@ -517,6 +522,7 @@ address_generator address_generator_1
 (
 	.clk(clk),
 	.reset(reset),
+  .first_line_pixel(line && first_line_pixel),
 	.ptrsel(ptrsel),
 	.modsel(modsel),
 	.enaptr(enaptr),
@@ -842,6 +848,17 @@ always @(posedge clk)
 		else if (blt_state==BLT_L4)
 			first_pixel <= ~sign_del;
 
+always @ (posedge clk) begin
+  if (reset) begin
+    first_line_pixel <= #1 1'b0;
+  end else if (enable) begin
+    if (blt_state == BLT_INIT)
+      first_line_pixel <= #1 1'b1;
+    else if (blt_state == BLT_L4)
+      first_line_pixel <= #1 1'b0;
+  end
+end
+
 always @(posedge clk)
 	if (reg_address_in[8:1]==BLTCON1[8:1])
 		sign <= data_in[6]; // initial sign value
@@ -1035,6 +1052,7 @@ module address_generator
 (
 	input	clk,					// bus clock
 	input	reset,					// reset
+  input first_line_pixel,
 	input	[1:0] ptrsel,			// pointer register selection
 	input	[1:0] modsel,			// modulo register selection
 	input	enaptr,					// enable pointer selection and update
@@ -1106,7 +1124,7 @@ assign bltptl_out = bltptl[bltptr_sel];
 
 assign bltptr_out = {bltpth_out, bltptl_out};
 
-assign address_out = bltptr_out;
+assign address_out = enaptr && first_line_pixel ? {bltpth[CHD], bltptl[CHD]} : bltptr_out;
 
 //--------------------------------------------------------------------------------------
 
