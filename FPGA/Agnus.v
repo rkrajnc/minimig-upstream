@@ -145,9 +145,11 @@
 // 2009-12-27	- OCS Denise compatible display window generation
 // 2010-04-13	- undocumented 7 bitplane mode implemented
 // 2010-06-29	- added more magic to ddf logic
-
 //SB:
 // 2011-03-08	- added DIP and FatAgnus handling of scanline 0 (fix for RoboCop2 game)
+//RK:
+// 2016-02-14	- fix for 7-bitplane mode
+
 
 module Agnus
 (
@@ -922,7 +924,7 @@ assign planes = bpu[2:0]==3'b111 ? 3'b100 : bpu[2:0];
 
 // generate dma signal
 // for a dma to happen plane must be less than BPU, dma must be enabled and data fetch must be true
-assign dma = ddfrun && dmaena_delayed[1] && hpos[0] && (plane[2:0] < bpu[2:0]) ? 1'b1 : 1'b0;
+assign dma = ddfrun && dmaena_delayed[1] && hpos[0] && (plane[2:0] < planes[2:0]) ? 1'b1 : 1'b0;
 
 //--------------------------------------------------------------------------------------
 
