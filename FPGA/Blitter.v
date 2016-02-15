@@ -1124,6 +1124,7 @@ assign bltptl_out = bltptl[bltptr_sel];
 
 assign bltptr_out = {bltpth_out, bltptl_out};
 
+// this D address bypass for fist pixel line is a big ugly hack, but the Blitter would require major rewrite to make it fully compatible (pipelining)
 assign address_out = enaptr && first_line_pixel ? {bltpth[CHD], bltptl[CHD]} : bltptr_out;
 
 //--------------------------------------------------------------------------------------
